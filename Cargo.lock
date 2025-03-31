@@ -3557,6 +3557,7 @@ dependencies = [
  "serde",
  "socketioxide",
  "socketioxide-redis",
+ "thiserror 2.0.12",
  "time",
  "tokio",
  "tower",
