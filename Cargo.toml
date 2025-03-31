@@ -10,6 +10,8 @@ salvo = { version = "*", features = [
     "affix-state",
     "jwt-auth",
     "logging",
+    "rate-limiter",
+    "size-limiter",
 ] }
 serde = "1.0.219"
 socketioxide = { version = "0.16.2", features = ["extensions", "state"] }
