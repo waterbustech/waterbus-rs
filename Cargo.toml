@@ -15,7 +15,7 @@ socketioxide = { version = "0.16.2", features = ["extensions", "state"] }
 socketioxide-redis = "0.2.1"
 tokio = "1.44.1"
 tower = { version = "0.5.0", default-features = false }
-tower-http = { version = "0.6.2", features = ["cors", "fs"] }
+tower-http = { version = "0.6.2", features = ["cors", "fs", "auth"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 chrono = "0.4.40"
@@ -24,3 +24,4 @@ diesel-derive-enum = "2.1.0"
 dotenvy = "0.15.7"
 time = "0.3.41"
 jsonwebtoken = "9.3.1"
+anyhow = "1.0.97"

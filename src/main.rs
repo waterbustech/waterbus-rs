@@ -28,7 +28,7 @@ async fn main() {
     let db_pooled_connection = DbConnection(pool);
     let jwt_utils = JwtUtils::new(env.clone());
 
-    let socket_router = get_socket_router()
+    let socket_router = get_socket_router(jwt_utils.clone())
         .await
         .expect("Failed to config socket.io");
     let api_router = get_api_router().await;

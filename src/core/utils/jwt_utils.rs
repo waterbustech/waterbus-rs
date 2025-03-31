@@ -1,10 +1,8 @@
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use salvo::{
-    jwt_auth::{ConstDecoder, HeaderFinder},
-    prelude::JwtAuth,
-};
+use salvo::Handler;
+use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 
 use crate::core::env::env_config::EnvConfig;
 
@@ -18,6 +16,8 @@ pub struct JwtClaims {
 pub struct JwtUtils {
     secret_key: String,
     refresh_secret_key: String,
+    token_expires_at: OffsetDateTime,
+    refresh_token_expires_at: OffsetDateTime,
 }
 
 impl JwtUtils {
@@ -25,14 +25,15 @@ impl JwtUtils {
         Self {
             secret_key: env.jwt.jwt_token,
             refresh_secret_key: env.jwt.refresh_token,
+            token_expires_at: env.jwt.token_expires_at,
+            refresh_token_expires_at: env.jwt.refresh_token_expires_at,
         }
     }
 
-    pub fn generate_token(&self, user_id: &str, expires_in_days: i64) -> String {
-        let exp = OffsetDateTime::now_utc() + Duration::days(expires_in_days);
+    pub fn generate_token(&self, user_id: &str) -> String {
         let claims = JwtClaims {
             id: user_id.to_owned(),
-            exp: exp.unix_timestamp(),
+            exp: self.token_expires_at.unix_timestamp(),
         };
 
         encode(
@@ -53,10 +54,9 @@ impl JwtUtils {
     }
 
     pub fn generate_refresh_token(&self, user_id: &str) -> String {
-        let exp = OffsetDateTime::now_utc() + Duration::days(30);
         let claims = JwtClaims {
             id: user_id.to_owned(),
-            exp: exp.unix_timestamp(),
+            exp: self.refresh_token_expires_at.unix_timestamp(),
         };
 
         encode(
@@ -79,8 +79,32 @@ impl JwtUtils {
         Ok(token_data.claims)
     }
 
-    pub fn auth_middleware() -> JwtAuth<JwtClaims, ConstDecoder> {
-        JwtAuth::new(ConstDecoder::from_secret("YOUR_SECRET_KEY".as_bytes()))
-            .finders(vec![Box::new(HeaderFinder::new())])
+    pub fn auth_middleware(&self) -> impl Handler {
+        #[handler]
+        async fn middleware(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+            let token = req
+                .headers()
+                .get("Authorization")
+                .and_then(|h| h.to_str().ok());
+
+            let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
+
+            if let Some(token) = token {
+                let token = token.trim_start_matches("Bearer ");
+                match jwt_utils.decode_token(token) {
+                    Ok(claims) => {
+                        depot.insert("user_id", claims.id.clone());
+                    }
+                    Err(_) => {
+                        res.status_code(StatusCode::UNAUTHORIZED);
+                        return;
+                    }
+                }
+            } else {
+                res.status_code(StatusCode::UNAUTHORIZED);
+                return;
+            }
+        }
+        middleware
     }
 }
