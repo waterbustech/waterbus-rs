@@ -1,4 +1,4 @@
-use salvo::{oapi::extract::QueryParam, prelude::*};
+use salvo::prelude::*;
 use tracing::info;
 use waterbus_rs::core::{
     api::salvo_config::{DbConnection, get_api_router},
@@ -7,11 +7,6 @@ use waterbus_rs::core::{
     socket::socket::get_socket_router,
     utils::jwt_utils::JwtUtils,
 };
-
-#[endpoint]
-async fn hello(name: QueryParam<String, false>) -> String {
-    format!("Hello, {}!", name.as_deref().unwrap_or("World"))
-}
 
 #[tokio::main]
 async fn main() {
@@ -28,7 +23,7 @@ async fn main() {
     let db_pooled_connection = DbConnection(pool);
     let jwt_utils = JwtUtils::new(env.clone());
 
-    let socket_router = get_socket_router(jwt_utils.clone())
+    let socket_router = get_socket_router(&env, jwt_utils.clone())
         .await
         .expect("Failed to config socket.io");
     let api_router = get_api_router().await;

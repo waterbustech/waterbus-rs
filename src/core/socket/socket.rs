@@ -11,7 +11,7 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::warn;
 
-use crate::core::utils::jwt_utils::JwtUtils;
+use crate::core::{env::env_config::EnvConfig, utils::jwt_utils::JwtUtils};
 
 #[derive(Clone)]
 pub struct UserId(pub String);
@@ -45,8 +45,11 @@ impl RemoteUserCnt {
     }
 }
 
-pub async fn get_socket_router(jwt_utils: JwtUtils) -> Result<Router, Box<dyn std::error::Error>> {
-    let client = redis::Client::open("redis://127.0.0.1:6379?protocol=resp3")?;
+pub async fn get_socket_router(
+    env: &EnvConfig,
+    jwt_utils: JwtUtils,
+) -> Result<Router, Box<dyn std::error::Error>> {
+    let client = redis::Client::open(env.clone().redis_uri.0)?;
     let adapter = RedisAdapterCtr::new_with_redis(&client).await?;
     let conn = client.get_multiplexed_tokio_connection().await?;
 
