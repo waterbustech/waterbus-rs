@@ -39,6 +39,7 @@ async fn main() {
     let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0").merge_router(&router);
 
     let router = router
+        .hoop(Logger::new())
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))
         .push(doc.into_router("/api-doc/openapi.json"))
