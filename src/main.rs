@@ -17,8 +17,8 @@ async fn main() {
     tracing_subscriber::fmt().init();
 
     let env = EnvConfig::new();
-    let http2_addr = format!("0.0.0.0:{}", env.app_port.http2_port);
-    let http3_addr = format!("0.0.0.0:{}", env.app_port.http3_port);
+    let http2_addr = format!("127.0.0.1:{}", env.app_port.http2_port);
+    let http3_addr = format!("127.0.0.1:{}", env.app_port.http3_port);
 
     let pool = establish_connection(env.clone());
 
@@ -43,7 +43,7 @@ async fn main() {
         .hoop(CachingHeaders::new())
         .hoop(Compression::new().min_length(1024))
         .push(doc.into_router("/api-doc/openapi.json"))
-        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("swagger-ui"));
+        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("docs"));
 
     // Load TLS certificate and key
     let cert = include_bytes!("../certificates/cert.pem").to_vec();
@@ -51,10 +51,7 @@ async fn main() {
     let config = RustlsConfig::new(Keycert::new().cert(cert.as_slice()).key(key.as_slice()));
 
     // HTTP/2 Listener
-    let http2_listener = TcpListener::new(http2_addr.clone())
-        .rustls(config.clone())
-        .bind()
-        .await;
+    let http2_listener = TcpListener::new(http2_addr).bind().await;
 
     // HTTP/3 Listener
     let http3_listener = QuinnListener::new(config, http3_addr).bind().await;
