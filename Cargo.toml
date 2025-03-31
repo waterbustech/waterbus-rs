@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-salvo = { version = "*", features = ["tower-compat", "oapi", "affix-state"] }
+salvo = { version = "*", features = [
+    "tower-compat",
+    "oapi",
+    "affix-state",
+    "jwt-auth",
+] }
 serde = "1.0.219"
 socketioxide = { version = "0.16.2", features = ["extensions", "state"] }
 socketioxide-redis = "0.2.1"
@@ -17,3 +22,5 @@ chrono = "0.4.40"
 diesel = { version = "2.2.8", features = ["postgres", "r2d2", "chrono"] }
 diesel-derive-enum = "2.1.0"
 dotenvy = "0.15.7"
+time = "0.3.41"
+jsonwebtoken = "9.3.1"

@@ -5,6 +5,7 @@ use waterbus_rs::core::{
     database::db::establish_connection,
     env::env_config::EnvConfig,
     socket::socket::get_socket_router,
+    utils::jwt_utils::JwtUtils,
 };
 
 #[endpoint]
@@ -25,6 +26,7 @@ async fn main() {
     let pool = establish_connection(env.clone());
 
     let db_pooled_connection = DbConnection(pool);
+    let jwt_utils = JwtUtils::new(env.clone());
 
     let socket_router = get_socket_router()
         .await
@@ -38,6 +40,7 @@ async fn main() {
 
     let router = router
         .hoop(affix_state::inject(db_pooled_connection))
+        .hoop(affix_state::inject(jwt_utils))
         .push(doc.into_router("/api-doc/openapi.json"))
         .push(SwaggerUi::new("/api-doc/openapi.json").into_router("swagger-ui"));
 
