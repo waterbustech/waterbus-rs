@@ -58,7 +58,6 @@ async fn main() {
 
     // Run both servers concurrently
     let router = Arc::new(router);
-    // Run both servers concurrently
     let router1 = Arc::clone(&router);
     let router2 = Arc::clone(&router);
     tokio::join!(
