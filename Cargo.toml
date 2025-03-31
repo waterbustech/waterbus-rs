@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-salvo = { version = "*", features = ["tower-compat"] }
+salvo = { version = "*", features = ["tower-compat", "oapi", "affix-state"] }
 serde = "1.0.219"
 socketioxide = { version = "0.16.2", features = ["extensions", "state"] }
 socketioxide-redis = "0.2.1"

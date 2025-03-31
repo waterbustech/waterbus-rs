@@ -8,7 +8,7 @@ use socketioxide_redis::{RedisAdapter, RedisAdapterCtr, drivers::redis::redis_cl
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
-#[handler]
+#[endpoint]
 async fn version() -> &'static str {
     "[v3] Waterbus Service written in Rust"
 }
@@ -54,7 +54,7 @@ pub async fn get_socket_router() -> Result<Router, Box<dyn std::error::Error>> {
     io.ns("/", on_connect).await?;
 
     let layer = layer.compat();
-    let router = Router::with_path("/socket.io").hoop(layer).goal(version);
+    let router = Router::with_path("/socket.io").hoop(layer).get(version);
 
     Ok(router)
 }

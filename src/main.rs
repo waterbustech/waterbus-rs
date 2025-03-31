@@ -1,9 +1,16 @@
-use salvo::prelude::*;
+use salvo::{oapi::extract::QueryParam, prelude::*};
 use tracing::info;
 use waterbus_rs::core::{
-    api::salvo_config::get_api_router, database::db::establish_connection,
-    env::env_config::EnvConfig, socket::socket::get_socket_router,
+    api::salvo_config::{DbConnection, get_api_router},
+    database::db::establish_connection,
+    env::env_config::EnvConfig,
+    socket::socket::get_socket_router,
 };
+
+#[endpoint]
+async fn hello(name: QueryParam<String, false>) -> String {
+    format!("Hello, {}!", name.as_deref().unwrap_or("World"))
+}
 
 #[tokio::main]
 async fn main() {
@@ -16,14 +23,24 @@ async fn main() {
     info!(local_addr);
 
     let pool = establish_connection(env.clone());
-    let mut conn = pool.get().expect("Failed to get DB connection");
+
+    let db_pooled_connection = DbConnection(pool);
 
     let socket_router = get_socket_router()
         .await
         .expect("Failed to config socket.io");
     let api_router = get_api_router().await;
 
-    let router = api_router.push(socket_router);
+    let router = Router::new();
+
+    let router = router.push(api_router).push(socket_router);
+    let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0").merge_router(&router);
+
+    let router = router
+        .hoop(affix_state::inject(db_pooled_connection))
+        .push(doc.into_router("/api-doc/openapi.json"))
+        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("swagger-ui"));
+
     let acceptor = TcpListener::new(local_addr).bind().await;
 
     Server::new(acceptor).serve(router).await;
