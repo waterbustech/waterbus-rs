@@ -4,12 +4,18 @@ use time::{Duration, OffsetDateTime};
 
 #[derive(Debug, Clone)]
 pub struct EnvConfig {
-    pub app_port: u16,
+    pub app_port: AppPort,
     pub db_uri: DbUri,
     pub redis_uri: RedisUri,
     pub typesense: TypesenseConfig,
     pub aws: AwsConfig,
     pub jwt: JwtConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppPort {
+    pub http2_port: u16,
+    pub http3_port: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +52,10 @@ impl EnvConfig {
         dotenv().ok();
 
         Self {
-            app_port: Self::get_env("APP_PORT", 8080),
+            app_port: AppPort {
+                http2_port: Self::get_env("HTTP2_PORT", 3000),
+                http3_port: Self::get_env("HTTP3_PORT", 3001),
+            },
             db_uri: DbUri(env::var("DATABASE_URI").expect("DATABASE_URI must be set")),
             redis_uri: RedisUri(env::var("REDIS_URI").expect("REDIS_URI must be set")),
             typesense: TypesenseConfig {

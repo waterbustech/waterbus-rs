@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 salvo = { version = "*", features = [
+    "quinn",
     "tower-compat",
     "oapi",
     "affix-state",
@@ -12,6 +13,7 @@ salvo = { version = "*", features = [
     "logging",
     "rate-limiter",
     "size-limiter",
+
 ] }
 serde = "1.0.219"
 socketioxide = { version = "0.16.2", features = ["extensions", "state"] }

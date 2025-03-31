@@ -758,12 +758,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
+name = "futures"
+version = "0.3.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dff15bf788c671c1934e366d07e30c1814a8ef514e1af724a602e8a2fbe1b10"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -771,6 +787,17 @@ name = "futures-core"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f29059c0c2090612e8d742178b0580d2dc940c837851ad723096f87af6663e"
+
+[[package]]
+name = "futures-executor"
+version = "0.3.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e28d1d997f585e54aebc3f97d39e72338912123a67330d723fdbb564d646c9f"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
 
 [[package]]
 name = "futures-io"
@@ -807,6 +834,7 @@ version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fa08315bb612088cc391249efdc3bc77536f16c91f6cf495e6fbe85b20a4a81"
 dependencies = [
+ "futures-channel",
  "futures-core",
  "futures-io",
  "futures-macro",
@@ -914,6 +942,46 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "h3"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dfb059a4f28a66f186ed16ad912d142f490676acba59353831d7cb45a96b0d3"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures-util",
+ "http",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "h3-datagram"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98c058c00e0ff53a456ad97cc0df2d0f44fbe7a2c11c9eca87c25471ca68fa1c"
+dependencies = [
+ "bytes",
+ "h3",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "h3-quinn"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d482318ae94198fc8e3cbb0b7ba3099c865d744e6ec7c62039ca7b6b6c66fbf"
+dependencies = [
+ "bytes",
+ "futures",
+ "h3",
+ "h3-datagram",
+ "quinn",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1780,6 +1848,7 @@ checksum = "c3bd15a6f2967aef83887dcb9fec0014580467e33720d073560cf015a5683012"
 dependencies = [
  "bytes",
  "cfg_aliases",
+ "futures-io",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
@@ -2281,6 +2350,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "salvo-http3"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f19a88b0ea8eb8461795886272c6ff43767909341de61a823553b246a2ecae3"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "h3",
+ "h3-datagram",
+ "h3-quinn",
+ "http",
+ "pin-project-lite",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "salvo-jwt-auth"
 version = "0.77.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2421,9 +2507,11 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "pin-project",
+ "quinn",
  "rand 0.9.0",
  "regex",
  "rustls-pemfile",
+ "salvo-http3",
  "salvo_macros",
  "serde",
  "serde-xml-rs",
