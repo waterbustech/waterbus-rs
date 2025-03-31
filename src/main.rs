@@ -39,6 +39,9 @@ async fn main() {
         .hoop(Logger::new())
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))
+        .hoop(CatchPanic::new())
+        .hoop(CachingHeaders::new())
+        .hoop(Compression::new().min_length(1024))
         .push(doc.into_router("/api-doc/openapi.json"))
         .push(SwaggerUi::new("/api-doc/openapi.json").into_router("swagger-ui"));
 
