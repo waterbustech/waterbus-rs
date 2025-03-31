@@ -1,0 +1,19 @@
+[package]
+name = "waterbus-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+salvo = "0.77.1"
+serde = "1.0.219"
+socketioxide = "0.16.2"
+socketioxide-redis = "0.2.1"
+tokio = "1.44.1"
+tower = "0.5.2"
+tower-http = "0.6.2"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+chrono = "0.4.40"
+diesel = { version = "2.2.8", features = ["postgres", "r2d2", "chrono"] }
+diesel-derive-enum = "2.1.0"
+dotenvy = "0.15.7"
