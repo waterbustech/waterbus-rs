@@ -6,7 +6,7 @@ use salvo::async_trait;
 
 use crate::core::{
     entities::models::User,
-    errors::{auth_error::AuthError, general::GeneralError},
+    types::errors::{auth_error::AuthError, general::GeneralError},
 };
 
 #[async_trait]

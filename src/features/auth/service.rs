@@ -1,6 +1,6 @@
 use salvo::async_trait;
 
-use crate::core::{entities::models::User, errors::auth_error::AuthError};
+use crate::core::{entities::models::User, types::errors::auth_error::AuthError};
 
 #[async_trait]
 trait AuthService: Send + Sync {

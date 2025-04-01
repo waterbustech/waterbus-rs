@@ -16,7 +16,7 @@ use crate::core::{env::env_config::EnvConfig, utils::jwt_utils::JwtUtils};
 #[derive(Clone)]
 pub struct UserId(pub String);
 
-#[endpoint]
+#[endpoint(tags("socket.io"))]
 async fn version() -> &'static str {
     "[v3] Waterbus Service written in Rust"
 }

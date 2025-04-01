@@ -2,7 +2,7 @@ use salvo::async_trait;
 
 use crate::core::{
     entities::models::{Meeting, Message},
-    errors::chat_error::ChatError,
+    types::errors::chat_error::ChatError,
 };
 
 #[async_trait]

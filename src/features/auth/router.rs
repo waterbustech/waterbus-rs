@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
 use crate::core::env::env_config::EnvConfig;
+use crate::core::types::res::failed_response::FailedResponse;
 use crate::core::utils::aws_utils::get_s3_client;
 use crate::core::utils::jwt_utils::JwtUtils;
 
@@ -111,7 +112,9 @@ async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
         }
         Err(_) => {
             res.status_code(StatusCode::BAD_REQUEST);
-            res.render("Failed to create presigned url");
+            res.render(Json(FailedResponse {
+                message: "Failed to create presigned url".to_string(),
+            }));
         }
     }
 }

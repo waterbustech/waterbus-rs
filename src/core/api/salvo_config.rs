@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-#[endpoint]
+#[endpoint(tags("system"))]
 async fn health_check(res: &mut Response) {
     res.render("[v3] Waterbus Service written in Rust");
 }
@@ -36,7 +36,7 @@ pub async fn get_api_router(jwt_utils: JwtUtils) -> Router {
     let chat_router = get_chat_router(jwt_utils.clone());
     let meeting_router = get_meeting_router(jwt_utils.clone());
 
-    let router = Router::new()
+    let router = Router::with_path("busapi/v3")
         .hoop(limiter)
         .hoop(max_size)
         .push(auth_router)

@@ -1,6 +1,6 @@
 use salvo::async_trait;
 
-use crate::core::{entities::models::Meeting, errors::meeting_error::MeetingError};
+use crate::core::{entities::models::Meeting, types::errors::meeting_error::MeetingError};
 
 #[async_trait]
 trait MeetingRepository: Send + Sync {
