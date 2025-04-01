@@ -7,6 +7,9 @@ pub enum UserError {
     #[error("User with ID {0} not found")]
     UserNotFound(i32),
 
+    #[error("User with username {0} not found")]
+    UserNameNotFound(String),
+
     #[error("User with ID {0} is already exists")]
     UserExists(i32),
 

@@ -4876,6 +4876,7 @@ dependencies = [
  "rustls 0.23.25",
  "salvo",
  "serde",
+ "serde_json",
  "socketioxide",
  "socketioxide-redis",
  "thiserror 2.0.12",

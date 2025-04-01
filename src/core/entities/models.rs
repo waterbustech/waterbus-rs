@@ -158,7 +158,7 @@ pub struct Session {
     pub userId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Serialize, Deserialize)]
+#[derive(Queryable, Selectable, Debug, Serialize, Deserialize, Clone)]
 #[diesel(table_name = users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
