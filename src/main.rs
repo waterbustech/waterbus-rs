@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use salvo::{
     conn::rustls::{Keycert, RustlsConfig},
+    oapi::{
+        security::{Http, HttpAuthScheme}, SecurityScheme
+    },
     prelude::*,
 };
 use waterbus_rs::core::{
@@ -37,7 +40,11 @@ async fn main() {
     let router = Router::new();
 
     let router = router.push(api_router).push(socket_router);
-    let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0").merge_router(&router);
+
+    let security_scheme = SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer));
+    let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0")
+        .add_security_scheme("BearerAuth", security_scheme)
+        .merge_router(&router);
 
     let router = router
         .hoop(Logger::new())
