@@ -3,7 +3,8 @@ use std::sync::Arc;
 use salvo::{
     conn::rustls::{Keycert, RustlsConfig},
     oapi::{
-        security::{Http, HttpAuthScheme}, SecurityScheme
+        Contact, Info, License, SecurityScheme,
+        security::{Http, HttpAuthScheme},
     },
     prelude::*,
 };
@@ -41,8 +42,15 @@ async fn main() {
 
     let router = router.push(api_router).push(socket_router);
 
+    let doc_info = Info::new("[v3] Waterbus Service API", "3.0.0")
+        .description(
+            "Open source video conferencing app built on latest WebRTC SDK. Android/iOS/MacOS/Windows/Linux/Web",
+        )
+        .license(License::new("Apache-2.0"))
+        .contact(Contact::new().name("Kai").email("lambiengcode@gmail.com"));
     let security_scheme = SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer));
     let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0")
+        .info(doc_info.clone())
         .add_security_scheme("BearerAuth", security_scheme)
         .merge_router(&router);
 
