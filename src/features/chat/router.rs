@@ -1,6 +1,15 @@
-use salvo::{oapi::extract::PathParam, prelude::*};
+use salvo::{
+    oapi::extract::{JsonBody, PathParam, QueryParam},
+    prelude::*,
+};
 
-use crate::core::utils::jwt_utils::JwtUtils;
+use crate::core::{
+    dtos::{
+        chat::send_message_dto::SendMessageDto,
+        pagination_dto::{self, PaginationDto},
+    },
+    utils::jwt_utils::JwtUtils,
+};
 
 pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
     let router = Router::with_hoop(jwt_utils.auth_middleware())
@@ -16,15 +25,30 @@ pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
 
 /// Get messages by room
 #[endpoint(tags("chats"))]
-async fn get_messages_by_meeting(res: &mut Response, meeting_id: PathParam<i32>) {}
+async fn get_messages_by_meeting(
+    res: &mut Response,
+    meeting_id: PathParam<i32>,
+    pagination_dto: QueryParam<PaginationDto>,
+) {
+}
 
 /// Send message
 #[endpoint(tags("chats"))]
-async fn create_message(res: &mut Response, meeting_id: PathParam<i32>) {}
+async fn create_message(
+    res: &mut Response,
+    meeting_id: PathParam<i32>,
+    data: JsonBody<SendMessageDto>,
+) {
+}
 
 /// Update message
 #[endpoint(tags("chats"))]
-async fn update_message(res: &mut Response, message_id: PathParam<i32>) {}
+async fn update_message(
+    res: &mut Response,
+    message_id: PathParam<i32>,
+    data: JsonBody<SendMessageDto>,
+) {
+}
 
 /// Delete message
 #[endpoint(tags("chats"))]

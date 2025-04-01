@@ -9,6 +9,7 @@ use salvo::{Response, Router, oapi::endpoint};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::core::dtos::auth::login_dto::LoginDto;
 use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
 use crate::core::env::env_config::EnvConfig;
 use crate::core::types::res::failed_response::FailedResponse;
@@ -121,7 +122,7 @@ async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
 
 /// Login
 #[endpoint(tags("auth"))]
-async fn login_with_social(res: &mut Response) {}
+async fn login_with_social(res: &mut Response, data: JsonBody<LoginDto>) {}
 
 /// Refresh Token
 #[endpoint(tags("auth"))]
