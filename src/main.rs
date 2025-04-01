@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use salvo::{
     conn::rustls::{Keycert, RustlsConfig},
+    cors::Cors,
+    http::Method,
     oapi::{
-        Contact, Info, License, SecurityScheme,
+        Contact, Info, License, SecurityRequirement, SecurityScheme,
         security::{Http, HttpAuthScheme},
     },
     prelude::*,
@@ -48,14 +50,32 @@ async fn main() {
         )
         .license(License::new("Apache-2.0"))
         .contact(Contact::new().name("Kai").email("lambiengcode@gmail.com"));
-    let security_scheme = SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer));
+    let http_auth_schema = Http::new(HttpAuthScheme::Bearer)
+        .bearer_format("JWT")
+        .description("jsonwebtoken");
+    let security_scheme = SecurityScheme::Http(http_auth_schema);
+    let security_requirement = SecurityRequirement::new("BearerAuth", ["*"]);
     let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0")
         .info(doc_info.clone())
         .add_security_scheme("BearerAuth", security_scheme)
+        .security([security_requirement])
         .merge_router(&router);
+
+    let cors = Cors::new()
+        .allow_origin("*") // Allow all origins
+        .allow_methods(vec![
+            Method::GET,
+            Method::POST,
+            Method::DELETE,
+            Method::PUT,
+            Method::OPTIONS,
+        ])
+        .allow_headers(vec!["Authorization", "Content-Type"])
+        .into_handler();
 
     let router = router
         .hoop(Logger::new())
+        .hoop(cors)
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))
         .hoop(affix_state::inject(env))

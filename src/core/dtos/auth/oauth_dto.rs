@@ -6,13 +6,13 @@ use validator_derive::Validate;
 pub struct OauthRequestDto {
     #[validate(length(min = 1))]
     #[serde(rename = "code")]
-    code: String,
+    pub code: String,
 
     #[validate(length(min = 1))]
     #[serde(rename = "clientId")]
-    client_id: String,
+    pub client_id: String,
 
     #[validate(length(min = 1))]
     #[serde(rename = "redirectUri")]
-    redirect_uri: String,
+    pub redirect_uri: String,
 }

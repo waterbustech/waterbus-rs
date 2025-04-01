@@ -3,6 +3,7 @@ use salvo::Handler;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use tracing::info;
 
 use crate::core::env::env_config::EnvConfig;
 
@@ -82,6 +83,8 @@ impl JwtUtils {
     pub fn auth_middleware(&self) -> impl Handler {
         #[handler]
         async fn middleware(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+            info!("Headers: {:?}", req.headers());
+
             let token = req
                 .headers()
                 .get("Authorization")

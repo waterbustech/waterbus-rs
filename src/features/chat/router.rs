@@ -4,10 +4,7 @@ use salvo::{
 };
 
 use crate::core::{
-    dtos::{
-        chat::send_message_dto::SendMessageDto,
-        pagination_dto::{self, PaginationDto},
-    },
+    dtos::{chat::send_message_dto::SendMessageDto, pagination_dto::PaginationDto},
     utils::jwt_utils::JwtUtils,
 };
 

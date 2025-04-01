@@ -6,7 +6,7 @@ use crate::core::{
 };
 
 #[async_trait]
-trait ChatRepository: Send + Sync {
+pub trait ChatService: Send + Sync {
     async fn get_messages_by_meeting(&self, meeting_id: i32) -> Result<Vec<Message>, ChatError>;
 
     async fn create_message(&self, message: Message) -> Result<Message, ChatError>;

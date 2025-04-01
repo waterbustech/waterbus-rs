@@ -9,12 +9,16 @@ use salvo::{Response, Router, oapi::endpoint};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::core::api::salvo_config::DbConnection;
 use crate::core::dtos::auth::login_dto::LoginDto;
 use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
 use crate::core::env::env_config::EnvConfig;
 use crate::core::types::res::failed_response::FailedResponse;
 use crate::core::utils::aws_utils::get_s3_client;
 use crate::core::utils::jwt_utils::JwtUtils;
+
+use super::repository::AuthRepositoryImpl;
+use super::service::{AuthService, AuthServiceImpl};
 
 #[derive(Serialize, Deserialize)]
 struct OauthResponse {
@@ -30,6 +34,18 @@ struct PresignedResponse {
     presigned_url: String,
 }
 
+#[handler]
+async fn set_auth_service(depot: &mut Depot) {
+    let pool = depot.obtain::<DbConnection>().unwrap();
+
+    let auth_repository = AuthRepositoryImpl::new(pool.clone().0);
+    let auth_service: AuthServiceImpl = AuthServiceImpl {
+        repository: auth_repository,
+    };
+
+    depot.inject(auth_service);
+}
+
 pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
     let token_route = Router::with_hoop(jwt_utils.auth_middleware())
         .path("token")
@@ -38,6 +54,7 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
         .path("presigned-url")
         .post(generate_presigned_url);
     let router = Router::new()
+        .hoop(set_auth_service)
         .path("auth")
         .post(login_with_social)
         .push(Router::with_hoop(jwt_utils.refresh_token_middleware()).get(refresh_token))
@@ -122,8 +139,47 @@ async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
 
 /// Login
 #[endpoint(tags("auth"))]
-async fn login_with_social(res: &mut Response, data: JsonBody<LoginDto>) {}
+async fn login_with_social(res: &mut Response, data: JsonBody<LoginDto>, depot: &mut Depot) {
+    let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
+    let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
+
+    let auth_response = auth_service
+        .login_with_social(data.0, jwt_utils.clone())
+        .await;
+
+    match auth_response {
+        Ok(response) => {
+            res.render(Json(response));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
+}
 
 /// Refresh Token
 #[endpoint(tags("auth"))]
-async fn refresh_token(res: &mut Response) {}
+async fn refresh_token(res: &mut Response, depot: &mut Depot) {
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
+    let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
+
+    let auth_response = auth_service
+        .refresh_token(jwt_utils.clone(), user_id.parse().unwrap())
+        .await;
+
+    match auth_response {
+        Ok(response) => {
+            res.render(Json(response));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
+}

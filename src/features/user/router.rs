@@ -4,10 +4,7 @@ use salvo::{
 };
 
 use crate::core::{
-    dtos::{
-        pagination_dto::{self, PaginationDto},
-        user::update_user_dto::UpdateUserDto,
-    },
+    dtos::{pagination_dto::PaginationDto, user::update_user_dto::UpdateUserDto},
     utils::jwt_utils::JwtUtils,
 };
 
