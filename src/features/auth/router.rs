@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
 use crate::core::env::env_config::EnvConfig;
 use crate::core::utils::aws_utils::get_s3_client;
+use crate::core::utils::jwt_utils::JwtUtils;
 
 #[derive(Serialize, Deserialize)]
 struct OauthResponse {
@@ -27,20 +28,25 @@ struct PresignedResponse {
     presigned_url: String,
 }
 
-pub fn get_auth_router() -> Router {
-    let token_route = Router::new().path("token").post(get_oauth_token);
-    let presinged_route = Router::new()
+pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
+    let token_route = Router::with_hoop(jwt_utils.auth_middleware())
+        .path("token")
+        .post(get_oauth_token);
+    let presinged_route = Router::with_hoop(jwt_utils.auth_middleware())
         .path("presigned-url")
         .post(generate_presigned_url);
     let router = Router::new()
         .path("auth")
+        .post(login_with_social)
+        .push(Router::with_hoop(jwt_utils.refresh_token_middleware()).get(refresh_token))
         .push(token_route)
         .push(presinged_route);
 
     router
 }
 
-#[endpoint]
+/// Get Oauth Token
+#[endpoint(tags("auth"))]
 async fn get_oauth_token(res: &mut Response, data: JsonBody<OauthRequestDto>) {
     let oauth_req: OauthRequestDto = data.0;
 
@@ -70,7 +76,8 @@ async fn get_oauth_token(res: &mut Response, data: JsonBody<OauthRequestDto>) {
     }
 }
 
-#[endpoint]
+/// Get AWS-S3 presigned url
+#[endpoint(tags("auth"))]
 async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
     let env = depot.obtain::<EnvConfig>().unwrap();
     let bucket_name = env.clone().aws.bucket_name;
@@ -108,3 +115,11 @@ async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
         }
     }
 }
+
+/// Login
+#[endpoint(tags("auth"))]
+async fn login_with_social(res: &mut Response) {}
+
+/// Refresh Token
+#[endpoint(tags("auth"))]
+async fn refresh_token(res: &mut Response) {}

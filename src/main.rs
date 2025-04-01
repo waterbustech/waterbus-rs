@@ -32,7 +32,7 @@ async fn main() {
     let socket_router = get_socket_router(&env, jwt_utils.clone())
         .await
         .expect("Failed to config socket.io");
-    let api_router = get_api_router().await;
+    let api_router = get_api_router(jwt_utils.clone()).await;
 
     let router = Router::new();
 

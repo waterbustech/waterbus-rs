@@ -107,4 +107,33 @@ impl JwtUtils {
         }
         middleware
     }
+
+    pub fn refresh_token_middleware(&self) -> impl Handler {
+        #[handler]
+        async fn middleware(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+            let token = req
+                .headers()
+                .get("Authorization")
+                .and_then(|h| h.to_str().ok());
+
+            let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
+
+            if let Some(token) = token {
+                let token = token.trim_start_matches("Bearer ");
+                match jwt_utils.decode_refresh_token(token) {
+                    Ok(claims) => {
+                        depot.insert("user_id", claims.id.clone());
+                    }
+                    Err(_) => {
+                        res.status_code(StatusCode::UNAUTHORIZED);
+                        return;
+                    }
+                }
+            } else {
+                res.status_code(StatusCode::UNAUTHORIZED);
+                return;
+            }
+        }
+        middleware
+    }
 }

@@ -22,7 +22,7 @@ async fn version() -> &'static str {
 }
 
 #[derive(Clone)]
-pub struct RemoteUserCnt(redis::aio::MultiplexedConnection);
+struct RemoteUserCnt(redis::aio::MultiplexedConnection);
 impl RemoteUserCnt {
     fn new(conn: redis::aio::MultiplexedConnection) -> Self {
         Self(conn)
@@ -71,7 +71,7 @@ pub async fn get_socket_router(
     Ok(router)
 }
 
-pub async fn authenticate_middleware<A: Adapter>(
+async fn authenticate_middleware<A: Adapter>(
     s: SocketRef<A>,
     State(user_cnt): State<RemoteUserCnt>,
     State(jwt_utils): State<JwtUtils>,
