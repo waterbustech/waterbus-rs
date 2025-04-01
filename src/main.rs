@@ -16,6 +16,10 @@ use waterbus_rs::core::{
 async fn main() {
     tracing_subscriber::fmt().init();
 
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     let env = EnvConfig::new();
     let http2_addr = format!("127.0.0.1:{}", env.app_port.http2_port);
     let http3_addr = format!("127.0.0.1:{}", env.app_port.http3_port);
@@ -39,6 +43,7 @@ async fn main() {
         .hoop(Logger::new())
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))
+        .hoop(affix_state::inject(env))
         .hoop(CatchPanic::new())
         .hoop(CachingHeaders::new())
         .hoop(Compression::new().min_length(1024))
