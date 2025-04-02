@@ -26,7 +26,7 @@ pub trait AuthService: Send + Sync {
 
 #[derive(Debug, Clone)]
 pub struct AuthServiceImpl {
-    pub repository: AuthRepositoryImpl,
+    repository: AuthRepositoryImpl,
 }
 
 impl AuthServiceImpl {

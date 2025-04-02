@@ -39,9 +39,7 @@ async fn set_auth_service(depot: &mut Depot) {
     let pool = depot.obtain::<DbConnection>().unwrap();
 
     let auth_repository = AuthRepositoryImpl::new(pool.clone().0);
-    let auth_service: AuthServiceImpl = AuthServiceImpl {
-        repository: auth_repository,
-    };
+    let auth_service: AuthServiceImpl = AuthServiceImpl::new(auth_repository);
 
     depot.inject(auth_service);
 }
