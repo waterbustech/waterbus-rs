@@ -9,6 +9,8 @@ pub struct MeetingResponse {
     pub title: String,
     pub avatar: Option<String>,
     pub status: MeetingsStatusEnum,
+    #[serde(skip_serializing)]
+    pub password: String,
     #[serde(rename = "latestMessageCreatedAt")]
     pub latest_message_created_at: Option<NaiveDateTime>,
     pub code: i32,
@@ -18,8 +20,8 @@ pub struct MeetingResponse {
     pub updated_at: NaiveDateTime,
     #[serde(rename = "deletedAt")]
     pub deleted_at: Option<NaiveDateTime>,
-    pub member: Option<Member>,
-    pub participant: Option<Participant>,
+    pub members: Vec<Member>,
+    pub participants: Vec<Participant>,
     pub latest_message: Option<Message>,
     pub created_by: Option<User>,
 }

@@ -227,6 +227,7 @@ pub struct NewMessage<'a> {
 pub struct NewMeeting<'a> {
     pub title: &'a str,
     pub password: &'a str,
+    pub code: &'a i32,
     pub createdAt: NaiveDateTime,
     pub updatedAt: NaiveDateTime,
 }

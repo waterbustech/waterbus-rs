@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use diesel::{
     ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgConnection, PgSortExpressionMethods,
     QueryDsl, RunQueryDsl, SelectableHelper, insert_into,
@@ -35,9 +37,12 @@ pub trait MeetingRepository: Send + Sync {
     async fn get_meeting_by_code(&self, meeting_code: i32)
     -> Result<MeetingResponse, MeetingError>;
 
-    async fn create_meeting(&self, meeting: NewMeeting<'_>) -> Result<Meeting, MeetingError>;
+    async fn create_meeting(
+        &self,
+        meeting: NewMeeting<'_>,
+    ) -> Result<MeetingResponse, MeetingError>;
 
-    async fn update_meeting(&self, meeting: Meeting) -> Result<Meeting, MeetingError>;
+    async fn update_meeting(&self, meeting: Meeting) -> Result<MeetingResponse, MeetingError>;
 
     async fn create_member(&self, member: NewMember<'_>) -> Result<Member, MeetingError>;
 
@@ -147,26 +152,42 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 MeetingError::UnexpectedError("Failed to load meeting data".to_string())
             })?;
 
-        let meeting_responses: Vec<MeetingResponse> = results
+        let mut meeting_responses_map: HashMap<i32, MeetingResponse> = HashMap::new();
+
+        for (meeting, member, participant, message, created_by) in results {
+            let meeting_response =
+                meeting_responses_map
+                    .entry(meeting.id)
+                    .or_insert(MeetingResponse {
+                        id: meeting.id,
+                        title: meeting.title,
+                        avatar: meeting.avatar,
+                        status: meeting.status,
+                        password: meeting.password,
+                        latest_message_created_at: meeting.latestMessageCreatedAt,
+                        code: meeting.code,
+                        created_at: meeting.createdAt,
+                        updated_at: meeting.updatedAt,
+                        deleted_at: meeting.deletedAt,
+                        members: Vec::new(),
+                        participants: Vec::new(),
+                        latest_message: message,
+                        created_by,
+                    });
+
+            if let Some(member) = member {
+                meeting_response.members.push(member);
+            }
+
+            if let Some(participant) = participant {
+                meeting_response.participants.push(participant);
+            }
+        }
+
+        let meeting_responses = meeting_responses_map
             .into_iter()
-            .map(
-                |(meeting, member, participant, message, created_by)| MeetingResponse {
-                    id: meeting.id,
-                    title: meeting.title,
-                    avatar: meeting.avatar,
-                    status: meeting.status,
-                    latest_message_created_at: meeting.latestMessageCreatedAt,
-                    code: meeting.code,
-                    created_at: meeting.createdAt,
-                    updated_at: meeting.updatedAt,
-                    deleted_at: meeting.deletedAt,
-                    member,
-                    participant,
-                    latest_message: message,
-                    created_by,
-                },
-            )
-            .collect();
+            .map(|(_, response)| response)
+            .collect::<Vec<MeetingResponse>>();
 
         Ok(meeting_responses)
     }
@@ -183,28 +204,47 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 participants::all_columns.nullable(),
                 members::all_columns.nullable(),
             ))
-            .first::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
+            .load::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_id))?;
 
-        let (meeting, participant, member) = result;
+        let (meeting, participants, members) = result.into_iter().fold(
+            (None, Vec::new(), Vec::new()),
+            |(mut meeting, mut participants, mut members), (m, p, mem)| {
+                if meeting.is_none() {
+                    meeting = Some(m);
+                }
+                if let Some(p) = p {
+                    participants.push(p);
+                }
+                if let Some(mem) = mem {
+                    members.push(mem);
+                }
+                (meeting, participants, members)
+            },
+        );
 
-        let meeting_response = MeetingResponse {
-            id: meeting.id,
-            title: meeting.title,
-            avatar: meeting.avatar,
-            status: meeting.status,
-            latest_message_created_at: meeting.latestMessageCreatedAt,
-            code: meeting.code,
-            created_at: meeting.createdAt,
-            updated_at: meeting.updatedAt,
-            deleted_at: meeting.deletedAt,
-            member,
-            participant,
-            latest_message: None,
-            created_by: None,
-        };
+        if let Some(meeting) = meeting {
+            let meeting_response = MeetingResponse {
+                id: meeting.id,
+                title: meeting.title,
+                avatar: meeting.avatar,
+                status: meeting.status,
+                password: meeting.password,
+                latest_message_created_at: meeting.latestMessageCreatedAt,
+                code: meeting.code,
+                created_at: meeting.createdAt,
+                updated_at: meeting.updatedAt,
+                deleted_at: meeting.deletedAt,
+                members: members,
+                participants: participants,
+                latest_message: None,
+                created_by: None,
+            };
 
-        Ok(meeting_response)
+            Ok(meeting_response)
+        } else {
+            Err(MeetingError::MeetingNotFound(meeting_id))
+        }
     }
 
     async fn get_meeting_by_code(
@@ -222,31 +262,53 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 participants::all_columns.nullable(),
                 members::all_columns.nullable(),
             ))
-            .first::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
+            .load::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_code))?;
 
-        let (meeting, participant, member) = result;
+        let (meeting, participants, members) = result.into_iter().fold(
+            (None, Vec::new(), Vec::new()),
+            |(mut meeting, mut participants, mut members), (m, p, mem)| {
+                if meeting.is_none() {
+                    meeting = Some(m);
+                }
+                if let Some(p) = p {
+                    participants.push(p);
+                }
+                if let Some(mem) = mem {
+                    members.push(mem);
+                }
+                (meeting, participants, members)
+            },
+        );
 
-        let meeting_response = MeetingResponse {
-            id: meeting.id,
-            title: meeting.title,
-            avatar: meeting.avatar,
-            status: meeting.status,
-            latest_message_created_at: meeting.latestMessageCreatedAt,
-            code: meeting.code,
-            created_at: meeting.createdAt,
-            updated_at: meeting.updatedAt,
-            deleted_at: meeting.deletedAt,
-            member,
-            participant,
-            latest_message: None,
-            created_by: None,
-        };
+        if let Some(meeting) = meeting {
+            let meeting_response = MeetingResponse {
+                id: meeting.id,
+                title: meeting.title,
+                avatar: meeting.avatar,
+                status: meeting.status,
+                password: meeting.password,
+                latest_message_created_at: meeting.latestMessageCreatedAt,
+                code: meeting.code,
+                created_at: meeting.createdAt,
+                updated_at: meeting.updatedAt,
+                deleted_at: meeting.deletedAt,
+                members: members,
+                participants: participants,
+                latest_message: None,
+                created_by: None,
+            };
 
-        Ok(meeting_response)
+            Ok(meeting_response)
+        } else {
+            Err(MeetingError::MeetingNotFound(meeting_code))
+        }
     }
 
-    async fn create_meeting(&self, meeting: NewMeeting<'_>) -> Result<Meeting, MeetingError> {
+    async fn create_meeting(
+        &self,
+        meeting: NewMeeting<'_>,
+    ) -> Result<MeetingResponse, MeetingError> {
         let mut conn = self.get_conn()?;
 
         let new_meeting = insert_into(meetings::table)
@@ -255,10 +317,12 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
 
-        Ok(new_meeting)
+        let meeting_response = self.get_meeting_by_id(new_meeting.id).await?;
+
+        Ok(meeting_response)
     }
 
-    async fn update_meeting(&self, meeting: Meeting) -> Result<Meeting, MeetingError> {
+    async fn update_meeting(&self, meeting: Meeting) -> Result<MeetingResponse, MeetingError> {
         let mut conn = self.get_conn()?;
 
         let updated_meeting = update(meetings::table)
@@ -272,7 +336,9 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
 
-        Ok(updated_meeting)
+        let meeting_response = self.get_meeting_by_id(updated_meeting.id).await?;
+
+        Ok(meeting_response)
     }
 
     async fn create_member(&self, member: NewMember<'_>) -> Result<Member, MeetingError> {
