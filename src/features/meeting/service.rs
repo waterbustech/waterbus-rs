@@ -7,6 +7,7 @@ use crate::core::entities::models::{
 };
 use crate::core::types::errors::meeting_error::MeetingError;
 use crate::core::types::res::meeting_response::MeetingResponse;
+use crate::core::utils::bcrypt_utils::hash_password;
 use crate::core::utils::id_utils::generate_meeting_code;
 use crate::features::meeting::repository::{MeetingRepository, MeetingRepositoryImpl};
 use chrono::Utc;
@@ -80,9 +81,11 @@ impl MeetingService for MeetingServiceImpl {
         let create_meeting_dto = data.clone();
         let now = Utc::now().naive_utc();
 
+        let password_hashed = hash_password(&data.password);
+
         let new_meeting = NewMeeting {
             title: &*data.title,
-            password: &*data.password,
+            password: &password_hashed,
             code: &generate_meeting_code(),
             createdAt: now,
             updatedAt: now,
@@ -116,9 +119,10 @@ impl MeetingService for MeetingServiceImpl {
             .unwrap();
 
         // Check whether user_id is host or not
-        let is_host = meeting.members.iter().any(|member| {
-            member.userId == Some(user_id) && member.role == MembersRoleEnum::Host
-        });
+        let is_host = meeting
+            .members
+            .iter()
+            .any(|member| member.userId == Some(user_id) && member.role == MembersRoleEnum::Host);
 
         if !is_host {
             return Err(MeetingError::YouDontHavePermissions);
@@ -144,7 +148,8 @@ impl MeetingService for MeetingServiceImpl {
         }
 
         if let Some(password) = update_meeting_dto.password {
-            meeting.password = password;
+            let password_hashed = hash_password(&password);
+            meeting.password = password_hashed;
         }
 
         if let Some(avatar) = update_meeting_dto.avatar {
