@@ -6,8 +6,11 @@
 
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use diesel::sql_types::Integer;
 use diesel_derive_enum::DbEnum;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use thiserror::Error;
 
 use crate::core::database::schema::*;
 
@@ -15,7 +18,7 @@ use crate::core::database::schema::*;
 #[ExistingTypePath = "crate::core::database::schema::sql_types::MeetingsStatusEnum"]
 pub enum MeetingsStatusEnum {
     Active,
-    Archied,
+    Archived,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
@@ -230,6 +233,7 @@ pub struct NewMeeting<'a> {
     pub code: &'a i32,
     pub createdAt: NaiveDateTime,
     pub updatedAt: NaiveDateTime,
+    pub status: MeetingsStatusEnum,
 }
 
 #[derive(Insertable)]
@@ -238,7 +242,7 @@ pub struct NewMember<'a> {
     pub meetingId: &'a i32,
     pub createdAt: NaiveDateTime,
     pub userId: Option<i32>,
-    pub status : MembersStatusEnum,
+    pub status: MembersStatusEnum,
     pub role: MembersRoleEnum,
 }
 

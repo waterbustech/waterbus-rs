@@ -3,9 +3,9 @@ use salvo::Handler;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tracing::info;
 
 use crate::core::env::env_config::EnvConfig;
+use crate::core::types::res::failed_response::FailedResponse;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
@@ -83,8 +83,6 @@ impl JwtUtils {
     pub fn auth_middleware(&self) -> impl Handler {
         #[handler]
         async fn middleware(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-            info!("Headers: {:?}", req.headers());
-
             let token = req
                 .headers()
                 .get("Authorization")
@@ -100,12 +98,16 @@ impl JwtUtils {
                     }
                     Err(_) => {
                         res.status_code(StatusCode::UNAUTHORIZED);
-                        return;
+                        return res.render(Json(FailedResponse {
+                            message: "Failed to decode token".to_string(),
+                        }));
                     }
                 }
             } else {
                 res.status_code(StatusCode::UNAUTHORIZED);
-                return;
+                return res.render(Json(FailedResponse {
+                    message: "Missing bearer token".to_string(),
+                }));
             }
         }
         middleware
@@ -129,12 +131,16 @@ impl JwtUtils {
                     }
                     Err(_) => {
                         res.status_code(StatusCode::UNAUTHORIZED);
-                        return;
+                        return res.render(Json(FailedResponse {
+                            message: "Failed to decode token".to_string(),
+                        }));
                     }
                 }
             } else {
                 res.status_code(StatusCode::UNAUTHORIZED);
-                return;
+                return res.render(Json(FailedResponse {
+                    message: "Missing bearer token".to_string(),
+                }));
             }
         }
         middleware

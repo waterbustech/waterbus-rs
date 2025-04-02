@@ -3,7 +3,7 @@
 use crate::core::dtos::meeting::create_meeting_dto::CreateMeetingDto;
 use crate::core::dtos::meeting::update_meeting_dto::{self, UpdateMeetingDto};
 use crate::core::entities::models::{
-    Meeting, MembersRoleEnum, MembersStatusEnum, NewMeeting, NewMember,
+    Meeting, MeetingsStatusEnum, MembersRoleEnum, MembersStatusEnum, NewMeeting, NewMember
 };
 use crate::core::types::errors::meeting_error::MeetingError;
 use crate::core::types::res::meeting_response::MeetingResponse;
@@ -29,9 +29,9 @@ pub trait MeetingService {
 
     async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError>;
 
-    async fn get_meeting(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError>;
+    async fn get_meeting_by_code(&self, meeting_code: i32) -> Result<MeetingResponse, MeetingError>;
 
-    async fn leave_meeting(&self, meeting_id: i32, user_id: i32) -> Result<Meeting, MeetingError>;
+    async fn leave_meeting(&self, meeting_code: i32, user_id: i32) -> Result<Meeting, MeetingError>;
 
     async fn join_meeting_without_password(
         &self,
@@ -87,6 +87,7 @@ impl MeetingService for MeetingServiceImpl {
             title: &*data.title,
             password: &password_hashed,
             code: &generate_meeting_code(),
+            status: MeetingsStatusEnum::Active,
             createdAt: now,
             updatedAt: now,
         };
@@ -167,13 +168,13 @@ impl MeetingService for MeetingServiceImpl {
         Ok(meeting)
     }
 
-    async fn get_meeting(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError> {
-        let meeting = self.repository.get_meeting_by_id(meeting_id).await?;
+    async fn get_meeting_by_code(&self, meeting_code: i32) -> Result<MeetingResponse, MeetingError> {
+        let meeting = self.repository.get_meeting_by_code(meeting_code).await?;
 
         Ok(meeting)
     }
 
-    async fn leave_meeting(&self, meeting_id: i32, user_id: i32) -> Result<Meeting, MeetingError> {
+    async fn leave_meeting(&self, meeting_code: i32, user_id: i32) -> Result<Meeting, MeetingError> {
         todo!()
     }
 

@@ -6,6 +6,7 @@ use salvo::{
 };
 
 use crate::core::{
+    api::salvo_config::DbConnection,
     dtos::{
         meeting::{
             add_member_dto::AddMemberDto, create_meeting_dto::CreateMeetingDto,
@@ -13,8 +14,24 @@ use crate::core::{
         },
         pagination_dto::PaginationDto,
     },
+    types::res::failed_response::FailedResponse,
     utils::jwt_utils::JwtUtils,
 };
+
+use super::{
+    repository::MeetingRepositoryImpl,
+    service::{MeetingService, MeetingServiceImpl},
+};
+
+#[handler]
+async fn set_meeting_service(depot: &mut Depot) {
+    let pool = depot.obtain::<DbConnection>().unwrap();
+
+    let meeting_repository = MeetingRepositoryImpl::new(pool.clone().0);
+    let meeting_service = MeetingServiceImpl::new(meeting_repository);
+
+    depot.inject(meeting_service);
+}
 
 pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
     let conversation_router = Router::with_path("conversations")
@@ -38,6 +55,7 @@ pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
         .delete(stop_records);
 
     let router = Router::with_hoop(jwt_utils.auth_middleware())
+        .hoop(set_meeting_service)
         .path("meetings")
         .get(get_meeting_by_code)
         .delete(leave_meeting)
@@ -54,11 +72,49 @@ pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
 
 /// Retrieves meeting details using a unique meeting code.
 #[endpoint(tags("meeting"))]
-async fn get_meeting_by_code(res: &mut Response, code: PathParam<i32>) {}
+async fn get_meeting_by_code(res: &mut Response, code: PathParam<i32>, depot: &mut Depot) {
+    let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
+
+    let meeting_code = code.0;
+
+    let meeting = meeting_service.get_meeting_by_code(meeting_code).await;
+
+    match meeting {
+        Ok(meeting) => {
+            res.render(Json(meeting));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
+}
 
 /// Allows a user to leave an ongoing meeting.
 #[endpoint(tags("meeting"))]
-async fn leave_meeting(res: &mut Response, code: PathParam<i32>) {}
+async fn leave_meeting(res: &mut Response, code: PathParam<i32>, depot: &mut Depot) {
+    let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let meeting_code = code.0;
+
+    let meeting = meeting_service
+        .leave_meeting(meeting_code, user_id.parse().unwrap())
+        .await;
+
+    match meeting {
+        Ok(meeting) => {
+            res.render(Json(meeting));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
+}
 
 /// Fetches a list of meetings filtered by their status (e.g., active, scheduled).
 #[endpoint(tags("meeting"))]
@@ -66,20 +122,66 @@ async fn get_meetings_by_status(
     res: &mut Response,
     status: PathParam<i32>,
     pagination_dto: QueryParam<PaginationDto>,
+    depot: &mut Depot,
 ) {
 }
 
 /// Retrieves meetings that have been archived.
 #[endpoint(tags("meeting"))]
-async fn get_archived_meetings(res: &mut Response, pagination_dto: QueryParam<PaginationDto>) {}
+async fn get_archived_meetings(
+    res: &mut Response,
+    pagination_dto: QueryParam<PaginationDto>,
+    depot: &mut Depot,
+) {
+}
 
 /// Creates a new meeting with specified parameters.
 #[endpoint(tags("meeting"))]
-async fn create_meeting(res: &mut Response, data: JsonBody<CreateMeetingDto>) {}
+async fn create_meeting(res: &mut Response, data: JsonBody<CreateMeetingDto>, depot: &mut Depot) {
+    let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let create_meeting_dto = data.0;
+
+    let meeting = meeting_service
+        .create_meeting(create_meeting_dto, user_id.parse().unwrap())
+        .await;
+
+    match meeting {
+        Ok(meeting) => {
+            res.render(Json(meeting));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
+}
 
 /// Updates an existing meeting’s details.
 #[endpoint(tags("meeting"))]
-async fn update_meeting(res: &mut Response, data: JsonBody<UpdateMeetingDto>) {}
+async fn update_meeting(res: &mut Response, data: JsonBody<UpdateMeetingDto>, depot: &mut Depot) {
+    let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+
+    let update_meeting_dto = data.0;
+
+    let meeting = meeting_service
+        .update_meeting(update_meeting_dto, user_id.parse().unwrap())
+        .await;
+    match meeting {
+        Ok(meeting) => {
+            res.render(Json(meeting));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
+}
 
 /// Adds a new member to a meeting.
 #[endpoint(tags("meeting"))]
