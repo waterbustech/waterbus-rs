@@ -6,6 +6,7 @@ use diesel::{
 };
 use salvo::async_trait;
 
+use crate::core::entities::models::{NewMember, NewParticipant};
 use crate::core::{
     database::schema::{meetings, members, messages, participants, users},
     entities::models::{
@@ -29,13 +30,28 @@ pub trait MeetingRepository: Send + Sync {
         limit: i64,
     ) -> Result<Vec<MeetingResponse>, MeetingError>;
 
-    async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<Meeting, MeetingError>;
+    async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError>;
 
-    async fn get_meeting_by_code(&self, meeting_code: i32) -> Result<Meeting, MeetingError>;
+    async fn get_meeting_by_code(&self, meeting_code: i32)
+    -> Result<MeetingResponse, MeetingError>;
 
     async fn create_meeting(&self, meeting: NewMeeting<'_>) -> Result<Meeting, MeetingError>;
 
     async fn update_meeting(&self, meeting: Meeting) -> Result<Meeting, MeetingError>;
+
+    async fn create_member(&self, member: NewMember<'_>) -> Result<Member, MeetingError>;
+
+    async fn update_member(&self, member: Member) -> Result<Member, MeetingError>;
+
+    async fn create_participant(
+        &self,
+        participant: NewParticipant<'_>,
+    ) -> Result<Participant, MeetingError>;
+
+    async fn update_participant(
+        &self,
+        participant: Participant,
+    ) -> Result<Participant, MeetingError>;
 }
 
 #[derive(Debug, Clone)]
@@ -135,11 +151,19 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .into_iter()
             .map(
                 |(meeting, member, participant, message, created_by)| MeetingResponse {
-                    meeting: meeting,
-                    member: member,
-                    participant: participant,
+                    id: meeting.id,
+                    title: meeting.title,
+                    avatar: meeting.avatar,
+                    status: meeting.status,
+                    latest_message_created_at: meeting.latestMessageCreatedAt,
+                    code: meeting.code,
+                    created_at: meeting.createdAt,
+                    updated_at: meeting.updatedAt,
+                    deleted_at: meeting.deletedAt,
+                    member,
+                    participant,
                     latest_message: message,
-                    created_by: created_by,
+                    created_by,
                 },
             )
             .collect();
@@ -147,26 +171,79 @@ impl MeetingRepository for MeetingRepositoryImpl {
         Ok(meeting_responses)
     }
 
-    async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<Meeting, MeetingError> {
+    async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError> {
         let mut conn = self.get_conn()?;
 
-        let meeting = meetings::table
+        let result = meetings::table
             .filter(meetings::id.eq(meeting_id))
-            .first::<Meeting>(&mut conn)
+            .left_join(members::table.on(meetings::id.nullable().eq(members::meetingId)))
+            .left_join(participants::table.on(meetings::id.nullable().eq(participants::meetingId)))
+            .select((
+                meetings::all_columns,
+                participants::all_columns.nullable(),
+                members::all_columns.nullable(),
+            ))
+            .first::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_id))?;
 
-        Ok(meeting)
+        let (meeting, participant, member) = result;
+
+        let meeting_response = MeetingResponse {
+            id: meeting.id,
+            title: meeting.title,
+            avatar: meeting.avatar,
+            status: meeting.status,
+            latest_message_created_at: meeting.latestMessageCreatedAt,
+            code: meeting.code,
+            created_at: meeting.createdAt,
+            updated_at: meeting.updatedAt,
+            deleted_at: meeting.deletedAt,
+            member,
+            participant,
+            latest_message: None,
+            created_by: None,
+        };
+
+        Ok(meeting_response)
     }
 
-    async fn get_meeting_by_code(&self, meeting_code: i32) -> Result<Meeting, MeetingError> {
+    async fn get_meeting_by_code(
+        &self,
+        meeting_code: i32,
+    ) -> Result<MeetingResponse, MeetingError> {
         let mut conn = self.get_conn()?;
 
-        let meeting = meetings::table
+        let result = meetings::table
             .filter(meetings::code.eq(meeting_code))
-            .first::<Meeting>(&mut conn)
+            .left_join(members::table.on(meetings::id.nullable().eq(members::meetingId)))
+            .left_join(participants::table.on(meetings::id.nullable().eq(participants::meetingId)))
+            .select((
+                meetings::all_columns,
+                participants::all_columns.nullable(),
+                members::all_columns.nullable(),
+            ))
+            .first::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_code))?;
 
-        Ok(meeting)
+        let (meeting, participant, member) = result;
+
+        let meeting_response = MeetingResponse {
+            id: meeting.id,
+            title: meeting.title,
+            avatar: meeting.avatar,
+            status: meeting.status,
+            latest_message_created_at: meeting.latestMessageCreatedAt,
+            code: meeting.code,
+            created_at: meeting.createdAt,
+            updated_at: meeting.updatedAt,
+            deleted_at: meeting.deletedAt,
+            member,
+            participant,
+            latest_message: None,
+            created_by: None,
+        };
+
+        Ok(meeting_response)
     }
 
     async fn create_meeting(&self, meeting: NewMeeting<'_>) -> Result<Meeting, MeetingError> {
@@ -196,5 +273,60 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
 
         Ok(updated_meeting)
+    }
+
+    async fn create_member(&self, member: NewMember<'_>) -> Result<Member, MeetingError> {
+        let mut conn = self.get_conn()?;
+        let new_member = insert_into(members::table)
+            .values(&member)
+            .returning(Member::as_select())
+            .get_result(&mut conn)
+            .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
+
+        Ok(new_member)
+    }
+
+    async fn update_member(&self, member: Member) -> Result<Member, MeetingError> {
+        let mut conn = self.get_conn()?;
+
+        let updated_member = update(members::table)
+            .filter(members::id.eq(member.id))
+            .set(members::status.eq(member.status))
+            .returning(Member::as_select())
+            .get_result(&mut conn)
+            .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
+
+        Ok(updated_member)
+    }
+
+    async fn create_participant(
+        &self,
+        participant: NewParticipant<'_>,
+    ) -> Result<Participant, MeetingError> {
+        let mut conn = self.get_conn()?;
+
+        let new_participant = insert_into(participants::table)
+            .values(&participant)
+            .returning(Participant::as_select())
+            .get_result(&mut conn)
+            .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
+
+        Ok(new_participant)
+    }
+
+    async fn update_participant(
+        &self,
+        participant: Participant,
+    ) -> Result<Participant, MeetingError> {
+        let mut conn = self.get_conn()?;
+
+        let updated_participant = update(participants::table)
+            .filter(participants::id.eq(participant.id))
+            .set(participants::status.eq(participant.status))
+            .returning(Participant::as_select())
+            .get_result(&mut conn)
+            .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
+
+        Ok(updated_participant)
     }
 }

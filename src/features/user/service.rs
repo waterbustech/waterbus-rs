@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use salvo::async_trait;
 
 use crate::core::{

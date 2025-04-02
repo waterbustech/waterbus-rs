@@ -230,3 +230,22 @@ pub struct NewMeeting<'a> {
     pub createdAt: NaiveDateTime,
     pub updatedAt: NaiveDateTime,
 }
+
+#[derive(Insertable)]
+#[diesel(table_name = members)]
+pub struct NewMember<'a> {
+    pub meetingId: &'a i32,
+    pub createdAt: NaiveDateTime,
+    pub userId: Option<i32>,
+    pub status : MembersStatusEnum,
+    pub role: MembersRoleEnum,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = participants)]
+pub struct NewParticipant<'a> {
+    pub meetingId: &'a i32,
+    pub userId: Option<i32>,
+    pub createdAt: NaiveDateTime,
+    pub status: ParticipantsStatusEnum,
+}

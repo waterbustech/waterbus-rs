@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use salvo::{
     oapi::extract::{JsonBody, PathParam, QueryParam},
     prelude::*,
@@ -9,7 +11,7 @@ use crate::core::{
             add_member_dto::AddMemberDto, create_meeting_dto::CreateMeetingDto,
             join_meeting_dto::JoinMeetingDto, update_meeting_dto::UpdateMeetingDto,
         },
-        pagination_dto::{self, PaginationDto},
+        pagination_dto::PaginationDto,
     },
     utils::jwt_utils::JwtUtils,
 };

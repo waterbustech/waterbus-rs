@@ -1,3 +1,4 @@
+#![allow(unused)]
 use salvo::{
     oapi::extract::{JsonBody, PathParam, QueryParam},
     prelude::*,
