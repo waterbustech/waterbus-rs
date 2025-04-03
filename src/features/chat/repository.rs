@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use diesel::{
     ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
     SelectableHelper,
@@ -58,39 +60,46 @@ impl ChatRepository for ChatRepositoryImpl {
     ) -> Result<Vec<MessageResponse>, ChatError> {
         let mut conn = self.get_conn()?;
 
-        let messages = messages::table
-            .inner_join(meetings::table.on(messages::meetingId.eq(meetings::id.nullable())))
-            .inner_join(users::table.on(messages::createdById.eq(users::id.nullable())))
-            .filter(messages::meetingId.eq(meeting_id))
-            .filter(messages::createdAt.gt(deleted_at))
-            .order(messages::createdAt.desc())
-            .offset(skip)
-            .limit(limit)
-            .load::<(Message, Meeting, User)>(&mut conn);
+        todo!()
 
-        match messages {
-            Ok(messages) => {
-                let response = messages
-                    .into_iter()
-                    .map(|(message, meeting, user)| MessageResponse {
-                        id: message.id,
-                        data: message.data,
-                        type_: message.type_,
-                        status: message.status,
-                        created_at: message.createdAt,
-                        updated_at: message.updatedAt,
-                        deleted_at: message.deletedAt,
-                        created_by: Some(user),
-                        meeting: Some(meeting),
-                    })
-                    .collect::<Vec<_>>();
+        // let messages = messages::table
+        //     .inner_join(meetings::table.on(messages::meetingId.eq(meetings::id.nullable())))
+        //     .inner_join(users::table.on(messages::createdById.eq(users::id.nullable())))
+        //     .filter(messages::meetingId.eq(meeting_id))
+        //     .filter(messages::createdAt.gt(deleted_at))
+        //     .select((
+        //         messages::all_columns,
+        //         meetings::all_columns.nullable(),
+        //         users::all_columns.nullable(),
+        //     ))
+        //     .order(messages::createdAt.desc())
+        //     .offset(skip)
+        //     .limit(limit)
+        //     .load::<(Message, Option<Meeting>, Option<User>)>(&mut conn);
 
-                Ok(response)
-            }
-            Err(_) => Err(ChatError::UnexpectedError(
-                "Failed to get messages".to_string(),
-            )),
-        }
+        // match messages {
+        //     Ok(messages) => {
+        //         let response = messages
+        //             .into_iter()
+        //             .map(|(message, meeting, user)| MessageResponse {
+        //                 id: message.id,
+        //                 data: message.data,
+        //                 type_: message.type_,
+        //                 status: message.status,
+        //                 created_at: message.createdAt,
+        //                 updated_at: message.updatedAt,
+        //                 deleted_at: message.deletedAt,
+        //                 created_by: Some(user),
+        //                 meeting: Some(meeting),
+        //             })
+        //             .collect::<Vec<_>>();
+
+        //         Ok(response)
+        //     }
+        //     Err(_) => Err(ChatError::UnexpectedError(
+        //         "Failed to get messages".to_string(),
+        //     )),
+        // }
     }
 
     async fn create_message(&self, message: NewMessage<'_>) -> Result<Message, ChatError> {
@@ -129,9 +138,11 @@ impl ChatRepository for ChatRepositoryImpl {
     async fn delete_message_by_id(&self, message_id: i32) -> Result<Message, ChatError> {
         let mut conn = self.get_conn()?;
 
+        let message_status = MessagesStatusEnum::Inactive as i32;
+
         let updated_message = update(messages::table)
             .filter(messages::id.eq(message_id))
-            .set(messages::status.eq(MessagesStatusEnum::Inactive))
+            .set(messages::status.eq(message_status))
             .returning(Message::as_select())
             .get_result(&mut conn);
 

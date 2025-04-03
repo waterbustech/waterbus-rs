@@ -3,7 +3,7 @@
 use crate::core::dtos::meeting::create_meeting_dto::CreateMeetingDto;
 use crate::core::dtos::meeting::update_meeting_dto::{self, UpdateMeetingDto};
 use crate::core::entities::models::{
-    Meeting, MeetingsStatusEnum, MembersRoleEnum, MembersStatusEnum, NewMeeting, NewMember
+    Meeting, MeetingsStatusEnum, MembersRoleEnum, MembersStatusEnum, NewMeeting, NewMember,
 };
 use crate::core::types::errors::meeting_error::MeetingError;
 use crate::core::types::res::meeting_response::MeetingResponse;
@@ -29,9 +29,11 @@ pub trait MeetingService {
 
     async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError>;
 
-    async fn get_meeting_by_code(&self, meeting_code: i32) -> Result<MeetingResponse, MeetingError>;
+    async fn get_meeting_by_code(&self, meeting_code: i32)
+    -> Result<MeetingResponse, MeetingError>;
 
-    async fn leave_meeting(&self, meeting_code: i32, user_id: i32) -> Result<Meeting, MeetingError>;
+    async fn leave_meeting(&self, meeting_code: i32, user_id: i32)
+    -> Result<Meeting, MeetingError>;
 
     async fn join_meeting_without_password(
         &self,
@@ -87,22 +89,24 @@ impl MeetingService for MeetingServiceImpl {
             title: &*data.title,
             password: &password_hashed,
             code: &generate_meeting_code(),
-            status: MeetingsStatusEnum::Active,
+            status: MeetingsStatusEnum::Active as i32,
             createdAt: now,
             updatedAt: now,
         };
 
-        let new_meeting = self.repository.create_meeting(new_meeting).await.unwrap();
+        let mut new_meeting = self.repository.create_meeting(new_meeting).await.unwrap();
 
         let new_member = NewMember {
             meetingId: &new_meeting.id,
             userId: Some(user_id),
-            status: MembersStatusEnum::Joined,
-            role: MembersRoleEnum::Host,
+            status: MembersStatusEnum::Joined as i32,
+            role: MembersRoleEnum::Host as i32,
             createdAt: now,
         };
 
         let new_member = self.repository.create_member(new_member).await.unwrap();
+
+        new_meeting.members = Vec::from([new_member]);
 
         Ok(new_meeting)
     }
@@ -120,10 +124,9 @@ impl MeetingService for MeetingServiceImpl {
             .unwrap();
 
         // Check whether user_id is host or not
-        let is_host = meeting
-            .members
-            .iter()
-            .any(|member| member.userId == Some(user_id) && member.role == MembersRoleEnum::Host);
+        let is_host = meeting.members.iter().any(|member| {
+            member.userId == Some(user_id) && member.role == MembersRoleEnum::Host as i32
+        });
 
         if !is_host {
             return Err(MeetingError::YouDontHavePermissions);
@@ -168,13 +171,23 @@ impl MeetingService for MeetingServiceImpl {
         Ok(meeting)
     }
 
-    async fn get_meeting_by_code(&self, meeting_code: i32) -> Result<MeetingResponse, MeetingError> {
+    async fn get_meeting_by_code(
+        &self,
+        meeting_code: i32,
+    ) -> Result<MeetingResponse, MeetingError> {
+        println!("code: {}", meeting_code);
         let meeting = self.repository.get_meeting_by_code(meeting_code).await?;
+
+        println!("meeting: {:?}", meeting);
 
         Ok(meeting)
     }
 
-    async fn leave_meeting(&self, meeting_code: i32, user_id: i32) -> Result<Meeting, MeetingError> {
+    async fn leave_meeting(
+        &self,
+        meeting_code: i32,
+        user_id: i32,
+    ) -> Result<Meeting, MeetingError> {
         todo!()
     }
 

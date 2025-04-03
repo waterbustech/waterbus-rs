@@ -14,58 +14,58 @@ use thiserror::Error;
 
 use crate::core::database::schema::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
-#[ExistingTypePath = "crate::core::database::schema::sql_types::MeetingsStatusEnum"]
+#[repr(i32)]
+#[derive(Debug)]
 pub enum MeetingsStatusEnum {
     Active,
     Archived,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
-#[ExistingTypePath = "crate::core::database::schema::sql_types::MembersRoleEnum"]
+#[repr(i32)]
+#[derive(Debug)]
 pub enum MembersRoleEnum {
     Host,
     Attendee,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
-#[ExistingTypePath = "crate::core::database::schema::sql_types::MembersStatusEnum"]
+#[repr(i32)]
+#[derive(Debug)]
 pub enum MembersStatusEnum {
     Inviting,
     Invisible,
     Joined,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
-#[ExistingTypePath = "crate::core::database::schema::sql_types::MessagesTypeEnum"]
+#[repr(i32)]
+#[derive(Debug)]
 pub enum MessagesTypeEnum {
     Default,
     System,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
-#[ExistingTypePath = "crate::core::database::schema::sql_types::MessagesStatusEnum"]
+#[repr(i32)]
+#[derive(Debug)]
 pub enum MessagesStatusEnum {
     Active,
     Inactive,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
-#[ExistingTypePath = "crate::core::database::schema::sql_types::RecordsStatusEnum"]
+#[repr(i32)]
+#[derive(Debug)]
 pub enum RecordsStatusEnum {
     Recording,
     Processing,
     Finish,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, DbEnum, Serialize, Deserialize)]
-#[ExistingTypePath = "crate::core::database::schema::sql_types::ParticipantsStatusEnum"]
+#[repr(i32)]
+#[derive(Debug)]
 pub enum ParticipantsStatusEnum {
     Active,
     Inactive,
 }
 
-#[derive(Queryable, Selectable, Debug, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = ccus)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Ccu {
@@ -76,7 +76,7 @@ pub struct Ccu {
     pub userId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = meetings)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Meeting {
@@ -84,7 +84,7 @@ pub struct Meeting {
     pub title: String,
     pub password: String,
     pub avatar: Option<String>,
-    pub status: MeetingsStatusEnum,
+    pub status: i32,
     pub latestMessageCreatedAt: Option<NaiveDateTime>,
     pub code: i32,
     pub createdAt: NaiveDateTime,
@@ -93,13 +93,14 @@ pub struct Meeting {
     pub latestMessageId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = members)]
+#[diesel(belongs_to(Meeting))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Member {
     pub id: i32,
-    pub role: MembersRoleEnum,
-    pub status: MembersStatusEnum,
+    pub role: i32,
+    pub status: i32,
     pub createdAt: NaiveDateTime,
     pub deletedAt: Option<NaiveDateTime>,
     pub softDeletedAt: Option<NaiveDateTime>,
@@ -107,14 +108,14 @@ pub struct Member {
     pub meetingId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = messages)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Message {
     pub id: i32,
     pub data: String,
-    pub type_: MessagesTypeEnum,
-    pub status: MessagesStatusEnum,
+    pub type_: i32,
+    pub status: i32,
     pub createdAt: NaiveDateTime,
     pub updatedAt: NaiveDateTime,
     pub deletedAt: Option<NaiveDateTime>,
@@ -122,12 +123,13 @@ pub struct Message {
     pub meetingId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = participants)]
+#[diesel(belongs_to(Meeting))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Participant {
     pub id: i32,
-    pub status: ParticipantsStatusEnum,
+    pub status: i32,
     pub createdAt: NaiveDateTime,
     pub deletedAt: Option<NaiveDateTime>,
     pub userId: Option<i32>,
@@ -135,7 +137,7 @@ pub struct Participant {
     pub ccuId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = record_tracks)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct RecordTrack {
@@ -149,7 +151,7 @@ pub struct RecordTrack {
     pub userId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = records)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Record {
@@ -157,14 +159,14 @@ pub struct Record {
     pub urlToVideo: Option<String>,
     pub thumbnail: Option<String>,
     pub duration: i32,
-    pub status: RecordsStatusEnum,
+    pub status: i32,
     pub createdAt: NaiveDateTime,
     pub deletedAt: Option<NaiveDateTime>,
     pub meetingId: Option<i32>,
     pub createdById: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 pub struct Session {
     pub id: i32,
     pub createdAt: NaiveDateTime,
@@ -172,7 +174,7 @@ pub struct Session {
     pub userId: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
@@ -190,7 +192,7 @@ pub struct User {
     pub lastSeenAt: Option<NaiveDateTime>,
 }
 
-#[derive(Queryable, Selectable, Debug, Serialize, Deserialize, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = white_boards)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct WhiteBoard {
@@ -233,7 +235,7 @@ pub struct NewMeeting<'a> {
     pub code: &'a i32,
     pub createdAt: NaiveDateTime,
     pub updatedAt: NaiveDateTime,
-    pub status: MeetingsStatusEnum,
+    pub status: i32,
 }
 
 #[derive(Insertable)]
@@ -242,8 +244,8 @@ pub struct NewMember<'a> {
     pub meetingId: &'a i32,
     pub createdAt: NaiveDateTime,
     pub userId: Option<i32>,
-    pub status: MembersStatusEnum,
-    pub role: MembersRoleEnum,
+    pub status: i32,
+    pub role: i32,
 }
 
 #[derive(Insertable)]
@@ -252,5 +254,5 @@ pub struct NewParticipant<'a> {
     pub meetingId: &'a i32,
     pub userId: Option<i32>,
     pub createdAt: NaiveDateTime,
-    pub status: ParticipantsStatusEnum,
+    pub status: i32,
 }

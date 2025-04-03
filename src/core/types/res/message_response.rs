@@ -1,14 +1,14 @@
 use chrono::NaiveDateTime;
 use serde::Serialize;
 
-use crate::core::entities::models::{Meeting, MessagesStatusEnum, MessagesTypeEnum, User};
+use crate::core::entities::models::{Meeting, User};
 
 #[derive(Debug, Serialize)]
 pub struct MessageResponse {
     pub id: i32,
     pub data: String,
-    pub type_: MessagesTypeEnum,
-    pub status: MessagesStatusEnum,
+    pub type_: i32,
+    pub status: i32,
     #[serde(rename = "createdAt")]
     pub created_at: NaiveDateTime,
     #[serde(rename = "updatedAt")]

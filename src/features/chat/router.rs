@@ -30,11 +30,17 @@ pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
     let router = Router::with_hoop(jwt_utils.auth_middleware())
         .hoop(set_chat_service)
         .path("chats")
-        .post(create_message)
-        .get(get_messages_by_meeting)
-        .put(update_message)
-        .delete(delete_message)
-        .push(Router::with_path("conversations").delete(delete_conversation));
+        .push(
+            Router::with_path("/{meeting_id}")
+                .post(create_message)
+                .get(get_messages_by_meeting),
+        )
+        .push(
+            Router::with_path("/{message_id}")
+                .put(update_message)
+                .delete(delete_message),
+        )
+        .push(Router::with_path("conversations/{meeting_id}").delete(delete_conversation));
 
     router
 }

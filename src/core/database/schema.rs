@@ -1,35 +1,5 @@
 // @generated automatically by Diesel CLI.
 
-pub mod sql_types {
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "meetings_status_enum"))]
-    pub struct MeetingsStatusEnum;
-
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "members_role_enum"))]
-    pub struct MembersRoleEnum;
-
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "members_status_enum"))]
-    pub struct MembersStatusEnum;
-
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "messages_status_enum"))]
-    pub struct MessagesStatusEnum;
-
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "messages_type_enum"))]
-    pub struct MessagesTypeEnum;
-
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "participants_status_enum"))]
-    pub struct ParticipantsStatusEnum;
-
-    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "records_status_enum"))]
-    pub struct RecordsStatusEnum;
-}
-
 diesel::table! {
     ccus (id) {
         id -> Int4,
@@ -41,72 +11,58 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::MeetingsStatusEnum;
-
     meetings (id) {
         id -> Int4,
         title -> Varchar,
         password -> Varchar,
         avatar -> Nullable<Varchar>,
-        status -> MeetingsStatusEnum,
         latestMessageCreatedAt -> Nullable<Timestamp>,
         code -> Int4,
         createdAt -> Timestamp,
         updatedAt -> Timestamp,
         deletedAt -> Nullable<Timestamp>,
         latestMessageId -> Nullable<Int4>,
+        status -> Int4,
     }
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::MembersRoleEnum;
-    use super::sql_types::MembersStatusEnum;
-
     members (id) {
         id -> Int4,
-        role -> MembersRoleEnum,
-        status -> MembersStatusEnum,
         createdAt -> Timestamp,
         deletedAt -> Nullable<Timestamp>,
         softDeletedAt -> Nullable<Timestamp>,
         userId -> Nullable<Int4>,
         meetingId -> Nullable<Int4>,
+        role -> Int4,
+        status -> Int4,
     }
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::MessagesTypeEnum;
-    use super::sql_types::MessagesStatusEnum;
-
     messages (id) {
         id -> Int4,
         data -> Varchar,
-        #[sql_name = "type"]
-        type_ -> MessagesTypeEnum,
-        status -> MessagesStatusEnum,
         createdAt -> Timestamp,
         updatedAt -> Timestamp,
         deletedAt -> Nullable<Timestamp>,
         createdById -> Nullable<Int4>,
         meetingId -> Nullable<Int4>,
+        #[sql_name = "type"]
+        type_ -> Int4,
+        status -> Int4,
     }
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::ParticipantsStatusEnum;
-
     participants (id) {
         id -> Int4,
-        status -> ParticipantsStatusEnum,
         createdAt -> Timestamp,
         deletedAt -> Nullable<Timestamp>,
         userId -> Nullable<Int4>,
         meetingId -> Nullable<Int4>,
         ccuId -> Nullable<Int4>,
+        status -> Int4,
     }
 }
 
@@ -125,19 +81,16 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::RecordsStatusEnum;
-
     records (id) {
         id -> Int4,
         urlToVideo -> Nullable<Varchar>,
         thumbnail -> Nullable<Varchar>,
         duration -> Int4,
-        status -> RecordsStatusEnum,
         createdAt -> Timestamp,
         deletedAt -> Nullable<Timestamp>,
         meetingId -> Nullable<Int4>,
         createdById -> Nullable<Int4>,
+        status -> Int4,
     }
 }
 

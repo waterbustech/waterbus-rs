@@ -35,32 +35,39 @@ async fn set_meeting_service(depot: &mut Depot) {
 
 pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
     let conversation_router = Router::with_path("conversations")
-        .get(get_meetings_by_status)
+        .push(Router::with_path("/{status}").get(get_meetings_by_status))
         .push(Router::with_path("archived").get(get_archived_meetings));
 
     let member_router = Router::with_path("members")
-        .post(add_member)
-        .delete(delete_member)
-        .push(Router::with_path("accept").post(accept_invitation));
+        .push(
+            Router::with_path("/{code}")
+                .post(add_member)
+                .delete(delete_member),
+        )
+        .push(Router::with_path("accept/{meeting_id}").post(accept_invitation));
 
     let join_router = Router::with_path("join")
-        .post(join_meeting_without_password)
-        .push(Router::with_path("password").post(join_meeting_with_password));
+        .push(Router::with_path("/{code}").post(join_meeting_without_password))
+        .push(Router::with_path("password/{code}").post(join_meeting_with_password));
 
-    let archived_router = Router::with_path("archived").post(archived_meeting);
+    let archived_router = Router::with_path("archived/{code}").post(archived_meeting);
 
-    let record_router = Router::with_path("records")
-        .get(get_records)
-        .post(start_records)
-        .delete(stop_records);
+    let record_router = Router::with_path("records").get(get_records).push(
+        Router::with_path("/{code}")
+            .post(start_records)
+            .delete(stop_records),
+    );
 
     let router = Router::with_hoop(jwt_utils.auth_middleware())
         .hoop(set_meeting_service)
         .path("meetings")
-        .get(get_meeting_by_code)
-        .delete(leave_meeting)
         .post(create_meeting)
         .put(update_meeting)
+        .push(
+            Router::with_path("/{code}")
+                .get(get_meeting_by_code)
+                .delete(leave_meeting),
+        )
         .push(conversation_router)
         .push(member_router)
         .push(join_router)
@@ -75,7 +82,7 @@ pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
 async fn get_meeting_by_code(res: &mut Response, code: PathParam<i32>, depot: &mut Depot) {
     let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
 
-    let meeting_code = code.0;
+    let meeting_code = code.into_inner();
 
     let meeting = meeting_service.get_meeting_by_code(meeting_code).await;
 

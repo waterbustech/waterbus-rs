@@ -35,7 +35,7 @@ pub fn get_user_router(jwt_utils: JwtUtils) -> Router {
         .put(update_user)
         .push(Router::with_path("search").get(search_user))
         .push(
-            Router::with_path("username")
+            Router::with_path("username/{user_name}")
                 .get(check_username_exists)
                 .put(update_username),
         );

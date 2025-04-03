@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+#![allow(unused)]
 
 use diesel::{
     ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgConnection, PgSortExpressionMethods,
@@ -86,6 +86,9 @@ impl MeetingRepository for MeetingRepositoryImpl {
     ) -> Result<Vec<MeetingResponse>, MeetingError> {
         let mut conn = self.get_conn()?;
 
+        let meeting_status = meeting_status as i32;
+        let member_status = member_status as i32;
+
         let meeting_ids = meetings::table
             .inner_join(members::table.on(meetings::id.nullable().eq(members::meetingId)))
             .inner_join(users::table.on(members::userId.eq(users::id.nullable())))
@@ -103,93 +106,94 @@ impl MeetingRepository for MeetingRepositoryImpl {
         let (users_for_member, users_for_message) =
             diesel::alias!(users as users_for_member, users as users_for_message);
 
-        let results = meetings::table
-            .filter(meetings::id.eq_any(meeting_ids))
-            .left_join(members::table.on(meetings::id.nullable().eq(members::meetingId)))
-            .left_join(
-                users_for_member
-                    .on(members::userId.eq(users_for_member.field(users::id).nullable())),
-            )
-            .left_join(participants::table.on(meetings::id.nullable().eq(participants::meetingId)))
-            .left_join(messages::table.on(meetings::latestMessageId.eq(messages::id.nullable())))
-            .left_join(
-                users_for_message
-                    .on(messages::createdById.eq(users_for_message.field(users::id).nullable())),
-            )
-            .select((
-                meetings::all_columns,
-                members::all_columns.nullable(),
-                participants::all_columns.nullable(),
-                messages::all_columns.nullable(),
-                users_for_message
-                    .fields((
-                        users::id,
-                        users::fullName,
-                        users::userName,
-                        users::bio,
-                        users::googleId,
-                        users::githubId,
-                        users::appleId,
-                        users::avatar,
-                        users::createdAt,
-                        users::updatedAt,
-                        users::deletedAt,
-                        users::lastSeenAt,
-                    ))
-                    .nullable(),
-            ))
-            .order(messages::createdAt.desc().nulls_last())
-            .offset(skip)
-            .limit(limit)
-            .load::<(
-                Meeting,
-                Option<Member>,
-                Option<Participant>,
-                Option<Message>,
-                Option<User>,
-            )>(&mut conn)
-            .map_err(|_| {
-                MeetingError::UnexpectedError("Failed to load meeting data".to_string())
-            })?;
+        // let results = meetings::table
+        //     .filter(meetings::id.eq_any(meeting_ids))
+        //     .left_join(members::table.on(meetings::id.nullable().eq(members::meetingId)))
+        //     .left_join(
+        //         users_for_member
+        //             .on(members::userId.eq(users_for_member.field(users::id).nullable())),
+        //     )
+        //     .left_join(participants::table.on(meetings::id.nullable().eq(participants::meetingId)))
+        //     .left_join(messages::table.on(meetings::latestMessageId.eq(messages::id.nullable())))
+        //     .left_join(
+        //         users_for_message
+        //             .on(messages::createdById.eq(users_for_message.field(users::id).nullable())),
+        //     )
+        //     .select((
+        //         meetings::all_columns,
+        //         members::all_columns.nullable(),
+        //         participants::all_columns.nullable(),
+        //         messages::all_columns.nullable(),
+        //         users_for_message
+        //             .fields((
+        //                 users::id,
+        //                 users::fullName,
+        //                 users::userName,
+        //                 users::bio,
+        //                 users::googleId,
+        //                 users::githubId,
+        //                 users::appleId,
+        //                 users::avatar,
+        //                 users::createdAt,
+        //                 users::updatedAt,
+        //                 users::deletedAt,
+        //                 users::lastSeenAt,
+        //             ))
+        //             .nullable(),
+        //     ))
+        //     .order(messages::createdAt.desc().nulls_last())
+        //     .offset(skip)
+        //     .limit(limit)
+        //     .load::<(
+        //         Meeting,
+        //         Option<Member>,
+        //         Option<Participant>,
+        //         Option<Message>,
+        //         Option<User>,
+        //     )>(&mut conn)
+        //     .map_err(|_| {
+        //         MeetingError::UnexpectedError("Failed to load meeting data".to_string())
+        //     })?;
 
-        let mut meeting_responses_map: HashMap<i32, MeetingResponse> = HashMap::new();
+        // let mut meeting_responses_map: HashMap<i32, MeetingResponse> = HashMap::new();
 
-        for (meeting, member, participant, message, created_by) in results {
-            let meeting_response =
-                meeting_responses_map
-                    .entry(meeting.id)
-                    .or_insert(MeetingResponse {
-                        id: meeting.id,
-                        title: meeting.title,
-                        avatar: meeting.avatar,
-                        status: meeting.status,
-                        password: meeting.password,
-                        latest_message_created_at: meeting.latestMessageCreatedAt,
-                        code: meeting.code,
-                        created_at: meeting.createdAt,
-                        updated_at: meeting.updatedAt,
-                        deleted_at: meeting.deletedAt,
-                        members: Vec::new(),
-                        participants: Vec::new(),
-                        latest_message: message,
-                        created_by,
-                    });
+        // for (meeting, member, participant, message, created_by) in results {
+        //     let meeting_response =
+        //         meeting_responses_map
+        //             .entry(meeting.id)
+        //             .or_insert(MeetingResponse {
+        //                 id: meeting.id,
+        //                 title: meeting.title,
+        //                 avatar: meeting.avatar,
+        //                 status: meeting.status,
+        //                 password: meeting.password,
+        //                 latest_message_created_at: meeting.latestMessageCreatedAt,
+        //                 code: meeting.code,
+        //                 created_at: meeting.createdAt,
+        //                 updated_at: meeting.updatedAt,
+        //                 deleted_at: meeting.deletedAt,
+        //                 members: Vec::new(),
+        //                 participants: Vec::new(),
+        //                 latest_message: message,
+        //                 created_by,
+        //             });
 
-            if let Some(member) = member {
-                meeting_response.members.push(member);
-            }
+        //     if let Some(member) = member {
+        //         meeting_response.members.push(member);
+        //     }
 
-            if let Some(participant) = participant {
-                meeting_response.participants.push(participant);
-            }
-        }
+        //     if let Some(participant) = participant {
+        //         meeting_response.participants.push(participant);
+        //     }
+        // }
 
-        let meeting_responses = meeting_responses_map
-            .into_iter()
-            .map(|(_, response)| response)
-            .collect::<Vec<MeetingResponse>>();
+        // let meeting_responses = meeting_responses_map
+        //     .into_iter()
+        //     .map(|(_, response)| response)
+        //     .collect::<Vec<MeetingResponse>>();
 
-        Ok(meeting_responses)
+        // Ok(meeting_responses)
+        todo!()
     }
 
     async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError> {
@@ -200,14 +204,14 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .left_join(members::table.on(meetings::id.nullable().eq(members::meetingId)))
             .left_join(participants::table.on(meetings::id.nullable().eq(participants::meetingId)))
             .select((
-                meetings::all_columns,
-                participants::all_columns.nullable(),
-                members::all_columns.nullable(),
+                Meeting::as_select(),
+                Option::<Member>::as_select(),
+                Option::<Participant>::as_select(),
             ))
-            .load::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
+            .load::<(Meeting, Option<Member>, Option<Participant>)>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_id))?;
 
-        let (meeting, participants, members) = result.into_iter().fold(
+        let (meeting, members, participants) = result.into_iter().fold(
             (None, Vec::new(), Vec::new()),
             |(mut meeting, mut participants, mut members), (m, p, mem)| {
                 if meeting.is_none() {
@@ -235,8 +239,8 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 created_at: meeting.createdAt,
                 updated_at: meeting.updatedAt,
                 deleted_at: meeting.deletedAt,
-                members: members,
-                participants: participants,
+                members,
+                participants,
                 latest_message: None,
                 created_by: None,
             };
@@ -258,14 +262,14 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .left_join(members::table.on(meetings::id.nullable().eq(members::meetingId)))
             .left_join(participants::table.on(meetings::id.nullable().eq(participants::meetingId)))
             .select((
-                meetings::all_columns,
-                participants::all_columns.nullable(),
-                members::all_columns.nullable(),
+                Meeting::as_select(),
+                Option::<Member>::as_select(),
+                Option::<Participant>::as_select(),
             ))
-            .load::<(Meeting, Option<Participant>, Option<Member>)>(&mut conn)
+            .load::<(Meeting, Option<Member>, Option<Participant>)>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_code))?;
 
-        let (meeting, participants, members) = result.into_iter().fold(
+        let (meeting, members, participants) = result.into_iter().fold(
             (None, Vec::new(), Vec::new()),
             |(mut meeting, mut participants, mut members), (m, p, mem)| {
                 if meeting.is_none() {
@@ -293,8 +297,8 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 created_at: meeting.createdAt,
                 updated_at: meeting.updatedAt,
                 deleted_at: meeting.deletedAt,
-                members: members,
-                participants: participants,
+                members,
+                participants,
                 latest_message: None,
                 created_by: None,
             };
