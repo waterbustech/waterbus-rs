@@ -2,7 +2,6 @@
 
 #![allow(unused)]
 #![allow(clippy::all)]
-#![allow(non_snake_case)]
 
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
@@ -67,17 +66,19 @@ pub enum ParticipantsStatusEnum {
 
 #[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = ccus)]
+#[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Ccu {
     pub id: i32,
-    pub socketId: String,
-    pub podName: String,
-    pub createdAt: NaiveDateTime,
-    pub userId: Option<i32>,
+    pub socket_id: String,
+    pub pod_name: String,
+    pub created_at: NaiveDateTime,
+    pub user_id: Option<i32>,
 }
 
 #[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = meetings)]
+#[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Meeting {
     pub id: i32,
@@ -85,146 +86,171 @@ pub struct Meeting {
     pub password: String,
     pub avatar: Option<String>,
     pub status: i32,
-    pub latestMessageCreatedAt: Option<NaiveDateTime>,
+    pub latest_message_created_at: Option<NaiveDateTime>,
     pub code: i32,
-    pub createdAt: NaiveDateTime,
-    pub updatedAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub latestMessageId: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub latest_message_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+)]
 #[diesel(table_name = members)]
 #[diesel(belongs_to(Meeting))]
+#[diesel(belongs_to(User))]
+#[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Member {
     pub id: i32,
     pub role: i32,
     pub status: i32,
-    pub createdAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub softDeletedAt: Option<NaiveDateTime>,
-    pub userId: Option<i32>,
-    pub meetingId: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub soft_deleted_at: Option<NaiveDateTime>,
+    pub user_id: Option<i32>,
+    pub meeting_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+)]
 #[diesel(table_name = messages)]
+#[diesel(belongs_to(Meeting, foreign_key = meeting_id))]
+#[diesel(belongs_to(User, foreign_key = created_by_id))]
+#[serde(rename_all = "camelCase")]
+#[diesel(primary_key(id))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Message {
     pub id: i32,
     pub data: String,
     pub type_: i32,
     pub status: i32,
-    pub createdAt: NaiveDateTime,
-    pub updatedAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub createdById: Option<i32>,
-    pub meetingId: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub created_by_id: Option<i32>,
+    pub meeting_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+)]
 #[diesel(table_name = participants)]
+#[serde(rename_all = "camelCase")]
 #[diesel(belongs_to(Meeting))]
+#[diesel(belongs_to(User))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Participant {
     pub id: i32,
     pub status: i32,
-    pub createdAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub userId: Option<i32>,
-    pub meetingId: Option<i32>,
-    pub ccuId: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub user_id: Option<i32>,
+    pub meeting_id: Option<i32>,
+    pub ccu_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+)]
 #[diesel(table_name = record_tracks)]
+#[serde(rename_all = "camelCase")]
+#[diesel(belongs_to(Record))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct RecordTrack {
     pub id: i32,
-    pub urlToVideo: String,
-    pub startTime: String,
-    pub endTime: String,
-    pub createdAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub recordId: Option<i32>,
-    pub userId: Option<i32>,
+    pub url_to_video: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub created_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub record_id: Option<i32>,
+    pub user_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+)]
 #[diesel(table_name = records)]
+#[serde(rename_all = "camelCase")]
+#[diesel(belongs_to(Meeting))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Record {
     pub id: i32,
-    pub urlToVideo: Option<String>,
+    pub url_to_video: Option<String>,
     pub thumbnail: Option<String>,
     pub duration: i32,
     pub status: i32,
-    pub createdAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub meetingId: Option<i32>,
-    pub createdById: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub meeting_id: Option<i32>,
+    pub created_by_id: Option<i32>,
 }
 
 #[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[serde(rename_all = "camelCase")]
 pub struct Session {
     pub id: i32,
-    pub createdAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub userId: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub user_id: Option<i32>,
 }
 
 #[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = users)]
+#[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
     pub id: i32,
-    pub fullName: Option<String>,
-    pub userName: String,
+    pub full_name: Option<String>,
+    pub user_name: String,
     pub bio: Option<String>,
-    pub googleId: Option<String>,
-    pub githubId: Option<String>,
-    pub appleId: Option<String>,
+    pub google_id: Option<String>,
+    pub github_id: Option<String>,
+    pub apple_id: Option<String>,
     pub avatar: Option<String>,
-    pub createdAt: NaiveDateTime,
-    pub updatedAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub lastSeenAt: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub last_seen_at: Option<NaiveDateTime>,
 }
 
 #[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
 #[diesel(table_name = white_boards)]
+#[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct WhiteBoard {
     pub id: i32,
     pub paints: String,
-    pub createdAt: NaiveDateTime,
-    pub deletedAt: Option<NaiveDateTime>,
-    pub meetingId: Option<i32>,
+    pub created_at: NaiveDateTime,
+    pub deleted_at: Option<NaiveDateTime>,
+    pub meeting_id: Option<i32>,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name = users)]
 pub struct NewUser<'a> {
-    pub fullName: Option<&'a str>,
-    pub userName: &'a str,
+    pub full_name: Option<&'a str>,
+    pub user_name: &'a str,
     pub bio: Option<&'a str>,
-    pub googleId: Option<&'a str>,
-    pub githubId: Option<&'a str>,
-    pub appleId: Option<&'a str>,
+    pub google_id: Option<&'a str>,
+    pub github_id: Option<&'a str>,
+    pub apple_id: Option<&'a str>,
     pub avatar: Option<&'a str>,
-    pub createdAt: NaiveDateTime,
-    pub updatedAt: NaiveDateTime,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name = messages)]
 pub struct NewMessage<'a> {
     pub data: &'a str,
-    pub createdById: Option<&'a i32>,
-    pub meetingId: Option<&'a i32>,
-    pub createdAt: NaiveDateTime,
-    pub updatedAt: NaiveDateTime,
+    pub created_by_id: Option<&'a i32>,
+    pub meeting_id: Option<&'a i32>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]
@@ -233,17 +259,17 @@ pub struct NewMeeting<'a> {
     pub title: &'a str,
     pub password: &'a str,
     pub code: &'a i32,
-    pub createdAt: NaiveDateTime,
-    pub updatedAt: NaiveDateTime,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
     pub status: i32,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name = members)]
 pub struct NewMember<'a> {
-    pub meetingId: &'a i32,
-    pub createdAt: NaiveDateTime,
-    pub userId: Option<i32>,
+    pub meeting_id: &'a i32,
+    pub created_at: NaiveDateTime,
+    pub user_id: Option<i32>,
     pub status: i32,
     pub role: i32,
 }
@@ -251,8 +277,8 @@ pub struct NewMember<'a> {
 #[derive(Insertable)]
 #[diesel(table_name = participants)]
 pub struct NewParticipant<'a> {
-    pub meetingId: &'a i32,
-    pub userId: Option<i32>,
-    pub createdAt: NaiveDateTime,
+    pub meeting_id: &'a i32,
+    pub user_id: Option<i32>,
+    pub created_at: NaiveDateTime,
     pub status: i32,
 }

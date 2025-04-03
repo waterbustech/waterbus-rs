@@ -55,7 +55,7 @@ impl UserRepository for UserRepositoryImpl {
         let updated_user = update(users::table)
             .filter(users::id.eq(user.id))
             .set((
-                users::fullName.eq(user.fullName),
+                users::full_name.eq(user.full_name),
                 users::avatar.eq(user.avatar),
                 users::bio.eq(user.bio),
             ))
@@ -74,7 +74,7 @@ impl UserRepository for UserRepositoryImpl {
         let mut conn = self.get_conn()?;
 
         let user = users::table
-            .filter(users::userName.eq(username))
+            .filter(users::user_name.eq(username))
             .first::<User>(&mut conn);
 
         match user {
@@ -88,7 +88,7 @@ impl UserRepository for UserRepositoryImpl {
 
         let updated_user = update(users::table)
             .filter(users::id.eq(user_id))
-            .set(users::userName.eq(username))
+            .set(users::user_name.eq(username))
             .returning(User::as_select())
             .get_result(&mut conn);
 

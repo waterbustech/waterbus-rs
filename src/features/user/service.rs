@@ -47,7 +47,7 @@ impl UserService for UserServiceImpl {
             Ok(user) => {
                 let mut updated_user = user.clone();
 
-                updated_user.fullName = Some(new_user_info.full_name);
+                updated_user.full_name = Some(new_user_info.full_name);
 
                 if let Some(avatar) = new_user_info.avatar {
                     updated_user.avatar = Some(avatar);

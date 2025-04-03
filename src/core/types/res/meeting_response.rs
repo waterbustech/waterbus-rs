@@ -1,27 +1,29 @@
-use chrono::NaiveDateTime;
 use serde::Serialize;
 
-use crate::core::entities::models::{Member, Message, Participant, User};
+use crate::core::entities::models::{Meeting, Member, Message, Participant, User};
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MeetingResponse {
-    pub id: i32,
-    pub title: String,
-    pub avatar: Option<String>,
-    pub status: i32,
-    #[serde(skip_serializing)]
-    pub password: String,
-    #[serde(rename = "latestMessageCreatedAt")]
-    pub latest_message_created_at: Option<NaiveDateTime>,
-    pub code: i32,
-    #[serde(rename = "createdAt")]
-    pub created_at: NaiveDateTime,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: NaiveDateTime,
-    #[serde(rename = "deletedAt")]
-    pub deleted_at: Option<NaiveDateTime>,
-    pub members: Vec<Member>,
-    pub participants: Vec<Participant>,
+    #[serde(flatten)]
+    pub meeting: Meeting,
+    pub members: Vec<MemberResponse>,
+    pub participants: Vec<ParticipantResponse>,
     pub latest_message: Option<Message>,
-    pub created_by: Option<User>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberResponse {
+    #[serde(flatten)]
+    pub member: Member,
+    pub user: Option<User>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantResponse {
+    #[serde(flatten)]
+    pub participant: Participant,
+    pub user: Option<User>,
 }

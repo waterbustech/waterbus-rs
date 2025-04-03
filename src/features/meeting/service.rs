@@ -90,18 +90,18 @@ impl MeetingService for MeetingServiceImpl {
             password: &password_hashed,
             code: &generate_meeting_code(),
             status: MeetingsStatusEnum::Active as i32,
-            createdAt: now,
-            updatedAt: now,
+            created_at: now,
+            updated_at: now,
         };
 
         let mut new_meeting = self.repository.create_meeting(new_meeting).await.unwrap();
 
         let new_member = NewMember {
-            meetingId: &new_meeting.id,
-            userId: Some(user_id),
+            meeting_id: &new_meeting.meeting.id,
+            user_id: Some(user_id),
             status: MembersStatusEnum::Joined as i32,
             role: MembersRoleEnum::Host as i32,
-            createdAt: now,
+            created_at: now,
         };
 
         let new_member = self.repository.create_member(new_member).await.unwrap();
@@ -125,7 +125,8 @@ impl MeetingService for MeetingServiceImpl {
 
         // Check whether user_id is host or not
         let is_host = meeting.members.iter().any(|member| {
-            member.userId == Some(user_id) && member.role == MembersRoleEnum::Host as i32
+            member.member.user_id == Some(user_id)
+                && member.member.role == MembersRoleEnum::Host as i32
         });
 
         if !is_host {
@@ -133,19 +134,7 @@ impl MeetingService for MeetingServiceImpl {
         }
 
         // Update new meeting metadata
-        let mut meeting = Meeting {
-            id: meeting.id,
-            title: meeting.title,
-            password: meeting.password,
-            avatar: meeting.avatar,
-            status: meeting.status,
-            latestMessageCreatedAt: meeting.latest_message_created_at,
-            code: meeting.code,
-            createdAt: meeting.created_at,
-            updatedAt: meeting.updated_at,
-            deletedAt: meeting.deleted_at,
-            latestMessageId: meeting.latest_message.as_ref().map(|msg| msg.id),
-        };
+        let mut meeting = meeting.meeting;
 
         if let Some(title) = update_meeting_dto.title {
             meeting.title = title;
@@ -175,10 +164,7 @@ impl MeetingService for MeetingServiceImpl {
         &self,
         meeting_code: i32,
     ) -> Result<MeetingResponse, MeetingError> {
-        println!("code: {}", meeting_code);
         let meeting = self.repository.get_meeting_by_code(meeting_code).await?;
-
-        println!("meeting: {:?}", meeting);
 
         Ok(meeting)
     }

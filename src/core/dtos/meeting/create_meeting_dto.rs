@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use validator_derive::Validate;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Validate, Clone)]
+#[salvo(schema(example = json!({"title": "Dev Daily Meeting", "password": "123123"})))]
 pub struct CreateMeetingDto {
     #[validate(length(min = 3))]
     pub title: String,

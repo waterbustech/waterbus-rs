@@ -74,14 +74,14 @@ impl AuthService for AuthServiceImpl {
 
                 // Create new user
                 let new_user = NewUser {
-                    fullName: Some(&login_dto.full_name),
-                    googleId: google_id,
-                    githubId: data.github_id.as_ref().map(|s: &String| s.as_str()),
-                    userName: &generate_username(),
-                    createdAt: now,
-                    updatedAt: now,
+                    full_name: Some(&login_dto.full_name),
+                    google_id: google_id,
+                    github_id: data.github_id.as_ref().map(|s: &String| s.as_str()),
+                    user_name: &generate_username(),
+                    created_at: now,
+                    updated_at: now,
                     bio: None,
-                    appleId: None,
+                    apple_id: None,
                     avatar: None,
                 };
 

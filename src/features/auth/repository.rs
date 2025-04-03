@@ -80,8 +80,8 @@ impl AuthRepository for AuthRepositoryImpl {
         let mut conn = self.get_conn()?;
 
         let user = users::table
-            .filter(users::googleId.eq(google_id))
-            .or_filter(users::githubId.eq(github_id))
+            .filter(users::google_id.eq(google_id))
+            .or_filter(users::github_id.eq(github_id))
             .first::<User>(&mut conn);
 
         match user {
@@ -94,7 +94,7 @@ impl AuthRepository for AuthRepositoryImpl {
         let mut conn = self.get_conn()?;
 
         let user = users::table
-            .filter(users::userName.eq(username))
+            .filter(users::user_name.eq(username))
             .first::<User>(&mut conn);
 
         match user {
