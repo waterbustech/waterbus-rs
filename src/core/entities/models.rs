@@ -20,6 +20,18 @@ pub enum MeetingsStatusEnum {
     Archived,
 }
 
+impl TryFrom<i32> for MeetingsStatusEnum {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MeetingsStatusEnum::Active),
+            1 => Ok(MeetingsStatusEnum::Archived),
+            _ => Err(()),
+        }
+    }
+}
+
 #[repr(i32)]
 #[derive(Debug)]
 pub enum MembersRoleEnum {
@@ -33,6 +45,19 @@ pub enum MembersStatusEnum {
     Inviting,
     Invisible,
     Joined,
+}
+
+impl TryFrom<i32> for MembersStatusEnum {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MembersStatusEnum::Inviting),
+            1 => Ok(MembersStatusEnum::Invisible),
+            2 => Ok(MembersStatusEnum::Joined),
+            _ => Err(()),
+        }
+    }
 }
 
 #[repr(i32)]

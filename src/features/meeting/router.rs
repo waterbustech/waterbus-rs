@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 
 use salvo::{
-    oapi::extract::{JsonBody, PathParam, QueryParam},
+    oapi::extract::{JsonBody, PathParam},
     prelude::*,
 };
 
@@ -14,6 +14,7 @@ use crate::core::{
         },
         pagination_dto::PaginationDto,
     },
+    entities::models::{MeetingsStatusEnum, MembersStatusEnum},
     types::res::failed_response::FailedResponse,
     utils::jwt_utils::JwtUtils,
 };
@@ -104,7 +105,7 @@ async fn get_meeting_by_code(res: &mut Response, code: PathParam<i32>, depot: &m
 async fn leave_meeting(res: &mut Response, code: PathParam<i32>, depot: &mut Depot) {
     let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
-    let meeting_code = code.0;
+    let meeting_code = code.into_inner();
 
     let meeting = meeting_service
         .leave_meeting(meeting_code, user_id.parse().unwrap())
@@ -128,18 +129,65 @@ async fn leave_meeting(res: &mut Response, code: PathParam<i32>, depot: &mut Dep
 async fn get_meetings_by_status(
     res: &mut Response,
     status: PathParam<i32>,
-    pagination_dto: QueryParam<PaginationDto>,
+    pagination_dto: PaginationDto,
     depot: &mut Depot,
 ) {
+    let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let status = status.into_inner();
+
+    let meetings = meeting_service
+        .get_meetings_by_status(
+            status,
+            MeetingsStatusEnum::Active as i32,
+            user_id.parse().unwrap(),
+            pagination_dto.clone(),
+        )
+        .await;
+
+    match meetings {
+        Ok(meetings) => {
+            res.render(Json(meetings));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
 }
 
 /// Retrieves meetings that have been archived.
 #[endpoint(tags("meeting"))]
 async fn get_archived_meetings(
     res: &mut Response,
-    pagination_dto: QueryParam<PaginationDto>,
+    pagination_dto: PaginationDto,
     depot: &mut Depot,
 ) {
+    let meeting_service = depot.obtain::<MeetingServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+
+    let meetings = meeting_service
+        .get_meetings_by_status(
+            MembersStatusEnum::Joined as i32,
+            MeetingsStatusEnum::Archived as i32,
+            user_id.parse().unwrap(),
+            pagination_dto.clone(),
+        )
+        .await;
+
+    match meetings {
+        Ok(meetings) => {
+            res.render(Json(meetings));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
 }
 
 /// Creates a new meeting with specified parameters.
@@ -221,7 +269,7 @@ async fn archived_meeting(res: &mut Response, code: PathParam<i32>) {}
 
 /// Retrieves a list of meeting recordings.
 #[endpoint(tags("meeting"))]
-async fn get_records(res: &mut Response, pagination_dto: QueryParam<PaginationDto>) {}
+async fn get_records(res: &mut Response, pagination_dto: PaginationDto) {}
 
 /// Starts recording the current meeting session.
 #[endpoint(tags("meeting"))]

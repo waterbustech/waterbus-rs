@@ -1,6 +1,8 @@
 use serde::Serialize;
 
-use crate::core::entities::models::{Meeting, Member, Message, Participant, User};
+use crate::core::entities::models::{Meeting, Member, Participant, User};
+
+use super::message_response::MessageResponse;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -9,7 +11,7 @@ pub struct MeetingResponse {
     pub meeting: Meeting,
     pub members: Vec<MemberResponse>,
     pub participants: Vec<ParticipantResponse>,
-    pub latest_message: Option<Message>,
+    pub latest_message: Option<MessageResponse>,
 }
 
 #[derive(Debug, Serialize)]

@@ -50,7 +50,7 @@ pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
 async fn get_messages_by_meeting(
     res: &mut Response,
     meeting_id: PathParam<i32>,
-    pagination_dto: QueryParam<PaginationDto>,
+    pagination_dto: PaginationDto,
     depot: &mut Depot,
 ) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();

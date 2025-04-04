@@ -97,7 +97,9 @@ async fn check_username_exists(
 ) {
     let user_service = depot.obtain::<UserServiceImpl>().unwrap();
 
-    let is_exists = user_service.check_username_exists(&user_name.0).await;
+    let user_name = user_name.into_inner();
+
+    let is_exists = user_service.check_username_exists(&user_name).await;
 
     res.render(Json(serde_json::json!({ "isRegistered": is_exists })));
 }
@@ -127,9 +129,4 @@ async fn update_username(res: &mut Response, user_name: PathParam<String>, depot
 
 /// Search user
 #[endpoint(tags("user"))]
-async fn search_user(
-    res: &mut Response,
-    q: QueryParam<String>,
-    pagination_dto: QueryParam<PaginationDto>,
-) {
-}
+async fn search_user(res: &mut Response, q: QueryParam<String>, pagination_dto: PaginationDto) {}

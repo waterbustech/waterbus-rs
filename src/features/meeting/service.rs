@@ -2,6 +2,7 @@
 
 use crate::core::dtos::meeting::create_meeting_dto::CreateMeetingDto;
 use crate::core::dtos::meeting::update_meeting_dto::{self, UpdateMeetingDto};
+use crate::core::dtos::pagination_dto::{self, PaginationDto};
 use crate::core::entities::models::{
     Meeting, MeetingsStatusEnum, MembersRoleEnum, MembersStatusEnum, NewMeeting, NewMember,
 };
@@ -26,6 +27,14 @@ pub trait MeetingService {
         data: UpdateMeetingDto,
         user_id: i32,
     ) -> Result<MeetingResponse, MeetingError>;
+
+    async fn get_meetings_by_status(
+        &self,
+        member_status: i32,
+        meeting_status: i32,
+        user_id: i32,
+        pagination_dto: PaginationDto,
+    ) -> Result<Vec<MeetingResponse>, MeetingError>;
 
     async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError>;
 
@@ -152,6 +161,33 @@ impl MeetingService for MeetingServiceImpl {
         let updated_meeting = self.repository.update_meeting(meeting).await?;
 
         Ok(updated_meeting)
+    }
+
+    async fn get_meetings_by_status(
+        &self,
+        member_status: i32,
+        meeting_status: i32,
+        user_id: i32,
+        pagination_dto: PaginationDto,
+    ) -> Result<Vec<MeetingResponse>, MeetingError> {
+        let member_status =
+            MembersStatusEnum::try_from(member_status).unwrap_or(MembersStatusEnum::Joined);
+        let meeting_status =
+            MeetingsStatusEnum::try_from(meeting_status).unwrap_or(MeetingsStatusEnum::Active);
+
+        let pagination_dto = pagination_dto.clone();
+        let meetings = self
+            .repository
+            .find_all(
+                user_id,
+                member_status,
+                MeetingsStatusEnum::Active,
+                pagination_dto.skip,
+                pagination_dto.limit,
+            )
+            .await?;
+
+        Ok(meetings)
     }
 
     async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError> {
