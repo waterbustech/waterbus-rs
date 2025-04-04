@@ -58,15 +58,20 @@ pub trait MeetingRepository: Send + Sync {
 
     async fn update_member(&self, member: Member) -> Result<MemberResponse, MeetingError>;
 
+    async fn get_participant_by_id(
+        &self,
+        participant_id: i32,
+    ) -> Result<ParticipantResponse, MeetingError>;
+
     async fn create_participant(
         &self,
         participant: NewParticipant<'_>,
-    ) -> Result<Participant, MeetingError>;
+    ) -> Result<ParticipantResponse, MeetingError>;
 
     async fn update_participant(
         &self,
         participant: Participant,
-    ) -> Result<Participant, MeetingError>;
+    ) -> Result<ParticipantResponse, MeetingError>;
 }
 
 #[derive(Debug, Clone)]
@@ -589,10 +594,37 @@ impl MeetingRepository for MeetingRepositoryImpl {
         member
     }
 
+    async fn get_participant_by_id(
+        &self,
+        participant_id: i32,
+    ) -> Result<ParticipantResponse, MeetingError> {
+        let mut conn = self.get_conn()?;
+
+        let result = participants::table
+            .filter(participants::id.eq(participant_id))
+            .left_join(users::table.on(participants::user_id.nullable().eq(users::id.nullable())))
+            .select((Participant::as_select(), Option::<User>::as_select()))
+            .load::<(Participant, Option<User>)>(&mut conn)
+            .map_err(|err| MeetingError::UnexpectedError("Participant not found".to_string()))?;
+
+        if result.is_empty() {
+            return Err(MeetingError::UnexpectedError(
+                "Participant not found".to_string(),
+            ));
+        }
+
+        match result.into_iter().next() {
+            Some((participant, user)) => Ok(ParticipantResponse { participant, user }),
+            None => Err(MeetingError::UnexpectedError(
+                "Participant not found".to_string(),
+            )),
+        }
+    }
+
     async fn create_participant(
         &self,
         participant: NewParticipant<'_>,
-    ) -> Result<Participant, MeetingError> {
+    ) -> Result<ParticipantResponse, MeetingError> {
         let mut conn = self.get_conn()?;
 
         let new_participant = insert_into(participants::table)
@@ -601,13 +633,17 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
 
-        Ok(new_participant)
+        let participant = self
+            .get_participant_by_id(new_participant.id)
+            .await;
+
+        participant
     }
 
     async fn update_participant(
         &self,
         participant: Participant,
-    ) -> Result<Participant, MeetingError> {
+    ) -> Result<ParticipantResponse, MeetingError> {
         let mut conn = self.get_conn()?;
 
         let updated_participant = update(participants::table)
@@ -617,6 +653,10 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
 
-        Ok(updated_participant)
+        let participant = self
+            .get_participant_by_id(updated_participant.id)
+            .await;
+
+        participant
     }
 }
