@@ -27,6 +27,8 @@ pub trait ChatRepository: Send + Sync {
         limit: i64,
     ) -> Result<Vec<MessageResponse>, ChatError>;
 
+    async fn get_message_by_id(&self, message_id: i32) -> Result<MessageResponse, ChatError>;
+
     async fn create_message(&self, message: NewMessage<'_>) -> Result<Message, ChatError>;
 
     async fn update_message(&self, message: Message) -> Result<Message, ChatError>;
@@ -60,46 +62,56 @@ impl ChatRepository for ChatRepositoryImpl {
     ) -> Result<Vec<MessageResponse>, ChatError> {
         let mut conn = self.get_conn()?;
 
-        todo!()
+        let result = messages::table
+            .filter(messages::meeting_id.eq(meeting_id))
+            .left_join(meetings::table.on(messages::meeting_id.eq(meetings::id.nullable())))
+            .left_join(users::table.on(messages::created_by_id.eq(users::id.nullable())))
+            .select((
+                Message::as_select(),
+                Option::<Meeting>::as_select(),
+                Option::<User>::as_select(),
+            ))
+            .order(messages::created_at.desc())
+            .load::<(Message, Option<Meeting>, Option<User>)>(&mut conn)
+            .map_err(|_| ChatError::UnexpectedError("Failed to get messages".to_string()))?;
 
-        // let messages = messages::table
-        //     .inner_join(meetings::table.on(messages::meetingId.eq(meetings::id.nullable())))
-        //     .inner_join(users::table.on(messages::createdById.eq(users::id.nullable())))
-        //     .filter(messages::meetingId.eq(meeting_id))
-        //     .filter(messages::createdAt.gt(deleted_at))
-        //     .select((
-        //         messages::all_columns,
-        //         meetings::all_columns.nullable(),
-        //         users::all_columns.nullable(),
-        //     ))
-        //     .order(messages::createdAt.desc())
-        //     .offset(skip)
-        //     .limit(limit)
-        //     .load::<(Message, Option<Meeting>, Option<User>)>(&mut conn);
+        let response = result
+            .into_iter()
+            .map(|(message, meeting, user)| MessageResponse {
+                message,
+                created_by: user,
+                meeting,
+            })
+            .collect::<Vec<_>>();
 
-        // match messages {
-        //     Ok(messages) => {
-        //         let response = messages
-        //             .into_iter()
-        //             .map(|(message, meeting, user)| MessageResponse {
-        //                 id: message.id,
-        //                 data: message.data,
-        //                 type_: message.type_,
-        //                 status: message.status,
-        //                 created_at: message.createdAt,
-        //                 updated_at: message.updatedAt,
-        //                 deleted_at: message.deletedAt,
-        //                 created_by: Some(user),
-        //                 meeting: Some(meeting),
-        //             })
-        //             .collect::<Vec<_>>();
+        Ok(response)
+    }
 
-        //         Ok(response)
-        //     }
-        //     Err(_) => Err(ChatError::UnexpectedError(
-        //         "Failed to get messages".to_string(),
-        //     )),
-        // }
+    async fn get_message_by_id(&self, message_id: i32) -> Result<MessageResponse, ChatError> {
+        let mut conn = self.get_conn()?;
+
+        let result = messages::table
+            .filter(messages::id.eq(message_id))
+            .left_join(meetings::table.on(messages::meeting_id.eq(meetings::id.nullable())))
+            .left_join(users::table.on(messages::created_by_id.eq(users::id.nullable())))
+            .select((
+                Message::as_select(),
+                Option::<Meeting>::as_select(),
+                Option::<User>::as_select(),
+            ))
+            .first::<(Message, Option<Meeting>, Option<User>)>(&mut conn)
+            .map_err(|err| match err {
+                diesel::result::Error::NotFound => ChatError::MessageNotFound(message_id),
+                _ => ChatError::UnexpectedError("Failed to get message".into()),
+            })?;
+
+        let (message, meeting, user) = result;
+
+        Ok(MessageResponse {
+            message,
+            created_by: user,
+            meeting,
+        })
     }
 
     async fn create_message(&self, message: NewMessage<'_>) -> Result<Message, ChatError> {

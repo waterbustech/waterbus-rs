@@ -4,11 +4,14 @@ use salvo::{
     prelude::*,
 };
 
-use crate::core::{
-    api::salvo_config::DbConnection,
-    dtos::{chat::send_message_dto::SendMessageDto, pagination_dto::PaginationDto},
-    types::res::failed_response::FailedResponse,
-    utils::jwt_utils::JwtUtils,
+use crate::{
+    core::{
+        api::salvo_config::DbConnection,
+        dtos::{chat::send_message_dto::SendMessageDto, pagination_dto::PaginationDto},
+        types::res::failed_response::FailedResponse,
+        utils::jwt_utils::JwtUtils,
+    },
+    features::{meeting::repository::MeetingRepositoryImpl, user::repository::UserRepositoryImpl},
 };
 
 use super::{
@@ -21,7 +24,9 @@ async fn set_chat_service(depot: &mut Depot) {
     let pool = depot.obtain::<DbConnection>().unwrap();
 
     let chat_repository = ChatRepositoryImpl::new(pool.clone().0);
-    let chat_service = ChatServiceImpl::new(chat_repository);
+    let meeting_repository = MeetingRepositoryImpl::new(pool.clone().0);
+    let user_repository = UserRepositoryImpl::new(pool.clone().0);
+    let chat_service = ChatServiceImpl::new(chat_repository, meeting_repository, user_repository);
 
     depot.inject(chat_service);
 }
@@ -54,12 +59,18 @@ async fn get_messages_by_meeting(
     depot: &mut Depot,
 ) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
 
     let pagination_dto = pagination_dto.clone();
     let meeting_id = meeting_id.0;
 
     let messages = chat_service
-        .get_messages_by_meeting(meeting_id, pagination_dto.skip, pagination_dto.limit)
+        .get_messages_by_meeting(
+            meeting_id,
+            user_id.parse().unwrap(),
+            pagination_dto.skip,
+            pagination_dto.limit,
+        )
         .await;
 
     match messages {
@@ -83,6 +94,26 @@ async fn create_message(
     data: JsonBody<SendMessageDto>,
     depot: &mut Depot,
 ) {
+    let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let data = data.0.data;
+    let meeting_id = meeting_id.into_inner();
+
+    let message = chat_service
+        .create_message(meeting_id, user_id.parse().unwrap(), &data)
+        .await;
+
+    match message {
+        Ok(message) => {
+            res.render(Json(message));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
 }
 
 /// Update message
@@ -94,16 +125,71 @@ async fn update_message(
     depot: &mut Depot,
 ) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let data = data.0.data;
+    let message_id = message_id.into_inner();
+
+    let message = chat_service
+        .update_message(message_id, user_id.parse().unwrap(), &data)
+        .await;
+
+    match message {
+        Ok(message) => {
+            res.render(Json(message));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
 }
 
 /// Delete message
 #[endpoint(tags("chats"))]
 async fn delete_message(res: &mut Response, message_id: PathParam<i32>, depot: &mut Depot) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let message_id = message_id.into_inner();
+
+    let message = chat_service
+        .delete_message_by_id(message_id, user_id.parse().unwrap())
+        .await;
+
+    match message {
+        Ok(message) => {
+            res.render(Json(message));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
 }
 
 /// Delete conversation
 #[endpoint(tags("chats"))]
 async fn delete_conversation(res: &mut Response, meeting_id: PathParam<i32>, depot: &mut Depot) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let user_id = depot.get::<String>("user_id").unwrap();
+    let meeting_id = meeting_id.into_inner();
+
+    let meeting = chat_service
+        .delete_conversation(meeting_id, user_id.parse().unwrap())
+        .await;
+
+    match meeting {
+        Ok(meeting) => {
+            res.render(Json(meeting));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
 }

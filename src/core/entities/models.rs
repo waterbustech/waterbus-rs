@@ -108,6 +108,7 @@ pub struct Ccu {
 pub struct Meeting {
     pub id: i32,
     pub title: String,
+    #[serde(skip_serializing)]
     pub password: String,
     pub avatar: Option<String>,
     pub status: i32,
@@ -286,6 +287,7 @@ pub struct NewMeeting<'a> {
     pub code: &'a i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub latest_message_created_at: NaiveDateTime,
     pub status: i32,
 }
 

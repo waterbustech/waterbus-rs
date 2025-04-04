@@ -101,6 +101,7 @@ impl MeetingService for MeetingServiceImpl {
             status: MeetingsStatusEnum::Active as i32,
             created_at: now,
             updated_at: now,
+            latest_message_created_at: now,
         };
 
         let mut new_meeting = self.repository.create_meeting(new_meeting).await.unwrap();

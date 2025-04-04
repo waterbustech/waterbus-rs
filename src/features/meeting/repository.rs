@@ -198,7 +198,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
                         ))
                         .nullable(),
                 ))
-                .order(messages::created_at.desc().nulls_last())
+                .order(meetings::latest_message_created_at.desc())
                 .offset(skip)
                 .limit(limit)
                 .load::<(
@@ -525,6 +525,8 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 meetings::title.eq(meeting.title),
                 meetings::avatar.eq(meeting.avatar),
                 meetings::password.eq(meeting.password),
+                meetings::latest_message_created_at.eq(meeting.latest_message_created_at),
+                meetings::latest_message_id.eq(meeting.latest_message_id),
             ))
             .returning(Meeting::as_select())
             .get_result(&mut conn)
