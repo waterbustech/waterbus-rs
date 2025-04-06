@@ -1,42 +1,22 @@
-#![allow(unused_variables)]
-
 use salvo::{
     oapi::extract::{JsonBody, PathParam},
     prelude::*,
 };
 
-use crate::{
-    core::{
-        api::salvo_config::DbConnection,
-        dtos::{
-            meeting::{
-                add_member_dto::AddMemberDto, create_meeting_dto::CreateMeetingDto,
-                join_meeting_dto::JoinMeetingDto, update_meeting_dto::UpdateMeetingDto,
-            },
-            pagination_dto::PaginationDto,
+use crate::core::{
+    dtos::{
+        meeting::{
+            add_member_dto::AddMemberDto, create_meeting_dto::CreateMeetingDto,
+            join_meeting_dto::JoinMeetingDto, update_meeting_dto::UpdateMeetingDto,
         },
-        entities::models::{MeetingsStatusEnum, MembersStatusEnum},
-        types::res::failed_response::FailedResponse,
-        utils::jwt_utils::JwtUtils,
+        pagination_dto::PaginationDto,
     },
-    features::user::repository::UserRepositoryImpl,
+    entities::models::{MeetingsStatusEnum, MembersStatusEnum},
+    types::res::failed_response::FailedResponse,
+    utils::jwt_utils::JwtUtils,
 };
 
-use super::{
-    repository::MeetingRepositoryImpl,
-    service::{MeetingService, MeetingServiceImpl},
-};
-
-#[handler]
-async fn set_meeting_service(depot: &mut Depot) {
-    let pool = depot.obtain::<DbConnection>().unwrap();
-
-    let meeting_repository = MeetingRepositoryImpl::new(pool.clone().0);
-    let user_repository = UserRepositoryImpl::new(pool.clone().0);
-    let meeting_service = MeetingServiceImpl::new(meeting_repository, user_repository);
-
-    depot.inject(meeting_service);
-}
+use super::service::{MeetingService, MeetingServiceImpl};
 
 pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
     let conversation_router = Router::with_path("conversations")
@@ -64,7 +44,6 @@ pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
     );
 
     let router = Router::with_hoop(jwt_utils.auth_middleware())
-        .hoop(set_meeting_service)
         .path("meetings")
         .post(create_meeting)
         .put(update_meeting)
@@ -207,6 +186,7 @@ async fn create_meeting(res: &mut Response, data: JsonBody<CreateMeetingDto>, de
 
     match meeting {
         Ok(meeting) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(meeting));
         }
         Err(err) => {
@@ -262,6 +242,7 @@ async fn add_member(
 
     match meeting {
         Ok(meeting) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(meeting));
         }
         Err(err) => {
@@ -318,6 +299,7 @@ async fn accept_invitation(res: &mut Response, meeting_id: PathParam<i32>, depot
 
     match meeting {
         Ok(meeting) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(meeting));
         }
         Err(err) => {
@@ -349,6 +331,7 @@ async fn join_meeting_with_password(
 
     match meeting {
         Ok(meeting) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(meeting));
         }
         Err(err) => {
@@ -378,6 +361,7 @@ async fn join_meeting_without_password(
 
     match meeting {
         Ok(meeting) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(meeting));
         }
         Err(err) => {
@@ -403,6 +387,7 @@ async fn archived_meeting(res: &mut Response, code: PathParam<i32>, depot: &mut 
 
     match meeting {
         Ok(meeting) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(meeting));
         }
         Err(err) => {
@@ -416,12 +401,12 @@ async fn archived_meeting(res: &mut Response, code: PathParam<i32>, depot: &mut 
 
 /// Retrieves a list of meeting recordings.
 #[endpoint(tags("meeting"))]
-async fn get_records(res: &mut Response, pagination_dto: PaginationDto) {}
+async fn get_records(_res: &mut Response, _pagination_dto: PaginationDto) {}
 
 /// Starts recording the current meeting session.
 #[endpoint(tags("meeting"))]
-async fn start_records(res: &mut Response, code: PathParam<i32>) {}
+async fn start_records(_res: &mut Response, _code: PathParam<i32>) {}
 
 /// Stops an ongoing recording of the meeting.
 #[endpoint(tags("meeting"))]
-async fn stop_records(res: &mut Response, code: PathParam<i32>) {}
+async fn stop_records(_res: &mut Response, _code: PathParam<i32>) {}

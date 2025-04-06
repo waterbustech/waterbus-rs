@@ -9,7 +9,6 @@ use salvo::{Response, Router, oapi::endpoint};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::core::api::salvo_config::DbConnection;
 use crate::core::dtos::auth::login_dto::LoginDto;
 use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
 use crate::core::env::env_config::EnvConfig;
@@ -17,7 +16,6 @@ use crate::core::types::res::failed_response::FailedResponse;
 use crate::core::utils::aws_utils::get_s3_client;
 use crate::core::utils::jwt_utils::JwtUtils;
 
-use super::repository::AuthRepositoryImpl;
 use super::service::{AuthService, AuthServiceImpl};
 
 #[derive(Serialize, Deserialize)]
@@ -34,16 +32,6 @@ struct PresignedResponse {
     presigned_url: String,
 }
 
-#[handler]
-async fn set_auth_service(depot: &mut Depot) {
-    let pool = depot.obtain::<DbConnection>().unwrap();
-
-    let auth_repository = AuthRepositoryImpl::new(pool.clone().0);
-    let auth_service: AuthServiceImpl = AuthServiceImpl::new(auth_repository);
-
-    depot.inject(auth_service);
-}
-
 pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
     let token_route = Router::with_hoop(jwt_utils.auth_middleware())
         .path("token")
@@ -52,7 +40,6 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
         .path("presigned-url")
         .post(generate_presigned_url);
     let router = Router::new()
-        .hoop(set_auth_service)
         .path("auth")
         .post(login_with_social)
         .push(Router::with_hoop(jwt_utils.refresh_token_middleware()).get(refresh_token))
@@ -79,10 +66,13 @@ async fn get_oauth_token(res: &mut Response, data: JsonBody<OauthRequestDto>) {
             let oauth_response: Result<OauthResponse, reqwest::Error> = response.json().await;
 
             match oauth_response {
-                Ok(oauth) => res.render(Json(oauth)),
+                Ok(oauth) => {
+                    res.status_code(StatusCode::CREATED);
+                    res.render(Json(oauth));
+                }
                 Err(_) => {
                     res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-                    res.render("Failed to convert response to OathResponse")
+                    res.render("Failed to convert response to OathResponse");
                 }
             }
         }
@@ -124,6 +114,7 @@ async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
                 presigned_url: uri.uri().to_string(),
             };
 
+            res.status_code(StatusCode::CREATED);
             res.render(Json(presigned_url));
         }
         Err(_) => {
@@ -147,6 +138,7 @@ async fn login_with_social(res: &mut Response, data: JsonBody<LoginDto>, depot: 
 
     match auth_response {
         Ok(response) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(response));
         }
         Err(err) => {

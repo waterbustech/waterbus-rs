@@ -1,35 +1,18 @@
-#![allow(unused)]
-
 use salvo::{
     oapi::extract::{JsonBody, PathParam, QueryParam},
     prelude::*,
 };
 
 use crate::core::{
-    api::salvo_config::DbConnection,
     dtos::{pagination_dto::PaginationDto, user::update_user_dto::UpdateUserDto},
     types::res::failed_response::FailedResponse,
     utils::jwt_utils::JwtUtils,
 };
 
-use super::{
-    repository::UserRepositoryImpl,
-    service::{UserService, UserServiceImpl},
-};
-
-#[handler]
-async fn set_user_service(depot: &mut Depot) {
-    let pool = depot.obtain::<DbConnection>().unwrap();
-
-    let user_repository = UserRepositoryImpl::new(pool.clone().0);
-    let user_service: UserServiceImpl = UserServiceImpl::new(user_repository);
-
-    depot.inject(user_service);
-}
+use super::service::{UserService, UserServiceImpl};
 
 pub fn get_user_router(jwt_utils: JwtUtils) -> Router {
     let router = Router::with_hoop(jwt_utils.auth_middleware())
-        .hoop(set_user_service)
         .path("users")
         .get(get_user_by_token)
         .put(update_user)
@@ -129,4 +112,4 @@ async fn update_username(res: &mut Response, user_name: PathParam<String>, depot
 
 /// Search user
 #[endpoint(tags("user"))]
-async fn search_user(res: &mut Response, q: QueryParam<String>, pagination_dto: PaginationDto) {}
+async fn search_user(_res: &mut Response, _q: QueryParam<String>, _pagination_dto: PaginationDto) {}

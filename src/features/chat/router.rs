@@ -1,39 +1,18 @@
-#![allow(unused)]
 use salvo::{
-    oapi::extract::{JsonBody, PathParam, QueryParam},
+    oapi::extract::{JsonBody, PathParam},
     prelude::*,
 };
 
-use crate::{
-    core::{
-        api::salvo_config::DbConnection,
-        dtos::{chat::send_message_dto::SendMessageDto, pagination_dto::PaginationDto},
-        types::res::failed_response::FailedResponse,
-        utils::jwt_utils::JwtUtils,
-    },
-    features::{meeting::repository::MeetingRepositoryImpl, user::repository::UserRepositoryImpl},
+use crate::core::{
+    dtos::{chat::send_message_dto::SendMessageDto, pagination_dto::PaginationDto},
+    types::res::failed_response::FailedResponse,
+    utils::jwt_utils::JwtUtils,
 };
 
-use super::{
-    repository::ChatRepositoryImpl,
-    service::{ChatService, ChatServiceImpl},
-};
-
-#[handler]
-async fn set_chat_service(depot: &mut Depot) {
-    let pool = depot.obtain::<DbConnection>().unwrap();
-
-    let chat_repository = ChatRepositoryImpl::new(pool.clone().0);
-    let meeting_repository = MeetingRepositoryImpl::new(pool.clone().0);
-    let user_repository = UserRepositoryImpl::new(pool.clone().0);
-    let chat_service = ChatServiceImpl::new(chat_repository, meeting_repository, user_repository);
-
-    depot.inject(chat_service);
-}
+use super::service::{ChatService, ChatServiceImpl};
 
 pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
     let router = Router::with_hoop(jwt_utils.auth_middleware())
-        .hoop(set_chat_service)
         .path("chats")
         .push(
             Router::with_path("/{meeting_id}")
@@ -105,6 +84,7 @@ async fn create_message(
 
     match message {
         Ok(message) => {
+            res.status_code(StatusCode::CREATED);
             res.render(Json(message));
         }
         Err(err) => {

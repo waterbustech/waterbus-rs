@@ -1,1 +1,1 @@
-pub mod salvo_config;
+pub mod config;

@@ -11,10 +11,9 @@ use salvo::{
     prelude::*,
 };
 use waterbus_rs::core::{
-    api::salvo_config::{DbConnection, get_api_router},
+    api::config::{DbConnection, get_api_router},
     database::db::establish_connection,
     env::env_config::EnvConfig,
-    socket::socket::get_socket_router,
     utils::jwt_utils::JwtUtils,
 };
 
@@ -35,14 +34,11 @@ async fn main() {
     let db_pooled_connection = DbConnection(pool);
     let jwt_utils = JwtUtils::new(env.clone());
 
-    let socket_router = get_socket_router(&env, jwt_utils.clone())
-        .await
-        .expect("Failed to config socket.io");
-    let api_router = get_api_router(jwt_utils.clone()).await;
+    let api_router = get_api_router(&env, jwt_utils.clone()).await;
 
     let router = Router::new();
 
-    let router = router.push(api_router).push(socket_router);
+    let router = router.push(api_router);
 
     let doc_info = Info::new("[v3] Waterbus Service API", "3.0.0")
         .description(
