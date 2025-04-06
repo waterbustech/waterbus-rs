@@ -2,14 +2,22 @@ use diesel::{
     PgConnection,
     r2d2::{ConnectionManager, Pool},
 };
+use reqwest::Method;
 use salvo::{
+    catcher::Catcher,
+    cors::Cors,
+    oapi::{
+        Contact, Info, License, SecurityRequirement, SecurityScheme,
+        security::{Http, HttpAuthScheme},
+    },
     prelude::*,
     rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
 };
 
 use crate::{
     core::{
-        env::env_config::EnvConfig, socket::socket::get_socket_router, utils::jwt_utils::JwtUtils,
+        database::db::establish_connection, env::env_config::EnvConfig,
+        socket::socket::get_socket_router, utils::jwt_utils::JwtUtils,
     },
     features::{
         auth::{repository::AuthRepositoryImpl, router::get_auth_router, service::AuthServiceImpl},
@@ -52,7 +60,12 @@ async fn set_services(depot: &mut Depot) {
     depot.inject(meeting_service);
 }
 
-pub async fn get_api_router(env: &EnvConfig, jwt_utils: JwtUtils) -> Router {
+pub async fn get_salvo_service(env: &EnvConfig) -> Service {
+    let pool = establish_connection(env.clone());
+
+    let db_pooled_connection = DbConnection(pool);
+    let jwt_utils = JwtUtils::new(env.clone());
+
     let limiter = RateLimiter::new(
         FixedGuard::new(),
         MokaStore::new(),
@@ -71,7 +84,27 @@ pub async fn get_api_router(env: &EnvConfig, jwt_utils: JwtUtils) -> Router {
     let chat_router = get_chat_router(jwt_utils.clone());
     let meeting_router = get_meeting_router(jwt_utils.clone());
 
+    let cors = Cors::new()
+        .allow_origin("*") // Allow all origins
+        .allow_methods(vec![
+            Method::GET,
+            Method::POST,
+            Method::DELETE,
+            Method::PUT,
+            Method::OPTIONS,
+        ])
+        .allow_headers(vec!["Authorization", "Content-Type"])
+        .into_handler();
+
     let router = Router::with_path("busapi/v3")
+        .hoop(Logger::new())
+        .hoop(cors)
+        .hoop(affix_state::inject(db_pooled_connection))
+        .hoop(affix_state::inject(jwt_utils))
+        .hoop(affix_state::inject(env.clone()))
+        .hoop(CatchPanic::new())
+        .hoop(CachingHeaders::new())
+        .hoop(Compression::new().min_length(1024))
         .hoop(limiter)
         .hoop(max_size)
         .hoop(set_services)
@@ -82,7 +115,37 @@ pub async fn get_api_router(env: &EnvConfig, jwt_utils: JwtUtils) -> Router {
         .push(socket_router)
         .push(health_router);
 
-    router
+    // Config
+    let doc_info = Info::new("[v3] Waterbus Service API", "3.0.0")
+    .description(
+        "Open source video conferencing app built on latest WebRTC SDK. Android/iOS/MacOS/Windows/Linux/Web",
+    )
+    .license(License::new("Apache-2.0"))
+    .contact(Contact::new().name("Kai").email("lambiengcode@gmail.com"));
+    let http_auth_schema = Http::new(HttpAuthScheme::Bearer)
+        .bearer_format("JWT")
+        .description("jsonwebtoken");
+    let security_scheme = SecurityScheme::Http(http_auth_schema);
+    let security_requirement = SecurityRequirement::new("BearerAuth", ["*"]);
+    let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0")
+        .info(doc_info.clone())
+        .add_security_scheme("BearerAuth", security_scheme)
+        .security([security_requirement])
+        .merge_router(&router);
+
+    let router = router
+        .push(doc.into_router("/api-doc/openapi.json"))
+        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("docs"));
+
+    Service::new(router).catcher(Catcher::default().hoop(handle404))
+}
+
+#[handler]
+async fn handle404(res: &mut Response, ctrl: &mut FlowCtrl) {
+    if StatusCode::NOT_FOUND == res.status_code.unwrap_or(StatusCode::NOT_FOUND) {
+        res.render("[v3] Waterbus Not Found");
+        ctrl.skip_rest();
+    }
 }
 
 #[derive(Debug, Clone)]
