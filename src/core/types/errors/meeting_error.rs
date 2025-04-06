@@ -16,6 +16,9 @@ pub enum MeetingError {
     #[error("Only the host has permission")]
     YouDontHavePermissions,
 
+    #[error("Password is not correct")]
+    PasswordIncorrect,
+
     #[error("An unexpected error occurred in channel: {0}")]
     UnexpectedError(String),
 

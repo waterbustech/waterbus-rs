@@ -89,7 +89,9 @@ pub enum ParticipantsStatusEnum {
     Inactive,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
+)]
 #[diesel(table_name = ccus)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -101,7 +103,9 @@ pub struct Ccu {
     pub user_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
+)]
 #[diesel(table_name = meetings)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -121,7 +125,15 @@ pub struct Meeting {
 }
 
 #[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+    Queryable,
+    Selectable,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    QueryableByName,
+    Associations,
+    Identifiable,
 )]
 #[diesel(table_name = members)]
 #[diesel(belongs_to(Meeting))]
@@ -140,7 +152,15 @@ pub struct Member {
 }
 
 #[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+    Queryable,
+    Selectable,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    QueryableByName,
+    Associations,
+    Identifiable,
 )]
 #[diesel(table_name = messages)]
 #[diesel(belongs_to(Meeting, foreign_key = meeting_id))]
@@ -161,7 +181,15 @@ pub struct Message {
 }
 
 #[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+    Queryable,
+    Selectable,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    QueryableByName,
+    Associations,
+    Identifiable,
 )]
 #[diesel(table_name = participants)]
 #[serde(rename_all = "camelCase")]
@@ -179,7 +207,15 @@ pub struct Participant {
 }
 
 #[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+    Queryable,
+    Selectable,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    QueryableByName,
+    Associations,
+    Identifiable,
 )]
 #[diesel(table_name = record_tracks)]
 #[serde(rename_all = "camelCase")]
@@ -197,7 +233,15 @@ pub struct RecordTrack {
 }
 
 #[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Associations,
+    Queryable,
+    Selectable,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    QueryableByName,
+    Associations,
+    Identifiable,
 )]
 #[diesel(table_name = records)]
 #[serde(rename_all = "camelCase")]
@@ -215,7 +259,9 @@ pub struct Record {
     pub created_by_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub id: i32,
@@ -224,7 +270,9 @@ pub struct Session {
     pub user_id: Option<i32>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
+)]
 #[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -243,7 +291,9 @@ pub struct User {
     pub last_seen_at: Option<NaiveDateTime>,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName)]
+#[derive(
+    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
+)]
 #[diesel(table_name = white_boards)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -308,4 +358,5 @@ pub struct NewParticipant<'a> {
     pub user_id: Option<i32>,
     pub created_at: NaiveDateTime,
     pub status: i32,
+    pub ccu_id: Option<i32>,
 }

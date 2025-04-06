@@ -2,9 +2,12 @@
 
 use std::collections::HashMap;
 
+use diesel::query_dsl::methods::GroupByDsl;
 use diesel::{
-    ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgConnection, PgSortExpressionMethods,
-    QueryDsl, RunQueryDsl, SelectableHelper, insert_into,
+    BelongingToDsl, ExpressionMethods, GroupedBy, JoinOnDsl, NullableExpressionMethods,
+    PgConnection, PgSortExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
+    dsl::delete,
+    insert_into,
     r2d2::{ConnectionManager, Pool, PooledConnection},
     update,
 };
@@ -58,6 +61,8 @@ pub trait MeetingRepository: Send + Sync {
 
     async fn update_member(&self, member: Member) -> Result<MemberResponse, MeetingError>;
 
+    async fn delete_member_by_id(&self, member_id: i32) -> Result<(), MeetingError>;
+
     async fn get_participant_by_id(
         &self,
         participant_id: i32,
@@ -72,6 +77,8 @@ pub trait MeetingRepository: Send + Sync {
         &self,
         participant: Participant,
     ) -> Result<ParticipantResponse, MeetingError>;
+
+    async fn delete_participant_by_id(&self, participant_id: i32) -> Result<(), MeetingError>;
 }
 
 #[derive(Debug, Clone)]
@@ -104,209 +111,23 @@ impl MeetingRepository for MeetingRepositoryImpl {
         let meeting_status = meeting_status as i32;
         let member_status = member_status as i32;
 
-        // Step 1: Get relevant meeting IDs
-        let meeting_ids = meetings::table
+        let (users_for_message) = diesel::alias!(users as users_for_message);
+
+        let meetings_with_latest = meetings::table
             .inner_join(members::table.on(meetings::id.nullable().eq(members::meeting_id)))
             .inner_join(users::table.on(members::user_id.eq(users::id.nullable())))
             .filter(meetings::status.eq(meeting_status))
             .filter(members::status.eq(member_status))
             .filter(users::id.eq(user_id))
-            .select(meetings::id)
-            .load::<i32>(&mut conn)
-            .map_err(|_| MeetingError::UnexpectedError("Failed to find meeting_ids".to_string()))?;
-
-        if meeting_ids.is_empty() {
-            return Ok(vec![]);
-        }
-
-        // Step 2: Aliased users table for joins
-        let (users_for_member, users_for_participant, users_for_message) = diesel::alias!(
-            users as users_for_member,
-            users as users_for_participant,
-            users as users_for_message
-        );
-
-        // Step 3: Load all related meeting data
-        let results =
-            meetings::table
-                .filter(meetings::id.eq_any(meeting_ids))
-                .left_join(members::table.on(meetings::id.nullable().eq(members::meeting_id)))
-                .left_join(
-                    users_for_member
-                        .on(members::user_id.eq(users_for_member.field(users::id).nullable())),
-                )
-                .left_join(
-                    participants::table.on(meetings::id.nullable().eq(participants::meeting_id)),
-                )
-                .left_join(users_for_participant.on(
-                    participants::user_id.eq(users_for_participant.field(users::id).nullable()),
-                ))
-                .left_join(
-                    messages::table.on(meetings::latest_message_id.eq(messages::id.nullable())),
-                )
-                .left_join(
-                    users_for_message
-                        .on(messages::created_by_id
-                            .eq(users_for_message.field(users::id).nullable())),
-                )
-                .select((
-                    Meeting::as_select(),
-                    Option::<Member>::as_select(),
-                    Option::<Participant>::as_select(),
-                    Option::<Message>::as_select(),
-                    users_for_message
-                        .fields((
-                            users::id,
-                            users::full_name,
-                            users::user_name,
-                            users::bio,
-                            users::google_id,
-                            users::github_id,
-                            users::apple_id,
-                            users::avatar,
-                            users::created_at,
-                            users::updated_at,
-                            users::deleted_at,
-                            users::last_seen_at,
-                        ))
-                        .nullable(),
-                    users_for_member
-                        .fields((
-                            users::id,
-                            users::full_name,
-                            users::user_name,
-                            users::bio,
-                            users::google_id,
-                            users::github_id,
-                            users::apple_id,
-                            users::avatar,
-                            users::created_at,
-                            users::updated_at,
-                            users::deleted_at,
-                            users::last_seen_at,
-                        ))
-                        .nullable(),
-                    users_for_participant
-                        .fields((
-                            users::id,
-                            users::full_name,
-                            users::user_name,
-                            users::bio,
-                            users::google_id,
-                            users::github_id,
-                            users::apple_id,
-                            users::avatar,
-                            users::created_at,
-                            users::updated_at,
-                            users::deleted_at,
-                            users::last_seen_at,
-                        ))
-                        .nullable(),
-                ))
-                .order(meetings::latest_message_created_at.desc())
-                .offset(skip)
-                .limit(limit)
-                .load::<(
-                    Meeting,
-                    Option<Member>,
-                    Option<Participant>,
-                    Option<Message>,
-                    Option<User>, // message created_by
-                    Option<User>, // member user
-                    Option<User>, // participant user
-                )>(&mut conn)
-                .map_err(|_| {
-                    MeetingError::UnexpectedError("Failed to load meeting data".to_string())
-                })?;
-
-        // Step 4: Aggregate results into meeting responses
-        let mut meeting_responses_map: HashMap<i32, MeetingResponse> = HashMap::new();
-
-        for (meeting, member, participant, message, created_by, member_user, participant_user) in
-            results
-        {
-            let mut latest_message = None;
-            if let Some(message) = message {
-                latest_message = Some(MessageResponse {
-                    message: message,
-                    meeting: None,
-                    created_by,
-                });
-            }
-
-            let entry = meeting_responses_map
-                .entry(meeting.id)
-                .or_insert(MeetingResponse {
-                    meeting,
-                    latest_message,
-                    members: Vec::new(),
-                    participants: Vec::new(),
-                });
-
-            if let Some(mem) = member {
-                entry.members.push(MemberResponse {
-                    member: mem,
-                    user: member_user.clone(),
-                });
-            }
-
-            if let Some(part) = participant {
-                entry.participants.push(ParticipantResponse {
-                    participant: part,
-                    user: participant_user.clone(),
-                });
-            }
-        }
-
-        // Step 5: Convert map into Vec
-        let meeting_responses = meeting_responses_map
-            .into_values()
-            .collect::<Vec<MeetingResponse>>();
-
-        Ok(meeting_responses)
-    }
-
-    async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError> {
-        let mut conn = self.get_conn()?;
-
-        let (users_for_member, users_for_participant) =
-            diesel::alias!(users as users_for_member, users as users_for_participant);
-
-        let result = meetings::table
-            .filter(meetings::id.eq(meeting_id))
-            .left_join(members::table.on(meetings::id.nullable().eq(members::meeting_id)))
+            .left_join(messages::table.on(meetings::latest_message_id.eq(messages::id.nullable())))
             .left_join(
-                users_for_member.on(members::user_id
-                    .nullable()
-                    .eq(users_for_member.field(users::id).nullable())),
-            )
-            .left_join(participants::table.on(meetings::id.nullable().eq(participants::meeting_id)))
-            .left_join(
-                users_for_participant.on(participants::user_id
-                    .nullable()
-                    .eq(users_for_participant.field(users::id).nullable())),
+                users_for_message
+                    .on(messages::created_by_id.eq(users_for_message.field(users::id).nullable())),
             )
             .select((
                 Meeting::as_select(),
-                Option::<Member>::as_select(),
-                Option::<Participant>::as_select(),
-                users_for_member
-                    .fields((
-                        users::id,
-                        users::full_name,
-                        users::user_name,
-                        users::bio,
-                        users::google_id,
-                        users::github_id,
-                        users::apple_id,
-                        users::avatar,
-                        users::created_at,
-                        users::updated_at,
-                        users::deleted_at,
-                        users::last_seen_at,
-                    ))
-                    .nullable(),
-                users_for_participant
+                Option::<Message>::as_select(),
+                users_for_message
                     .fields((
                         users::id,
                         users::full_name,
@@ -323,62 +144,127 @@ impl MeetingRepository for MeetingRepositoryImpl {
                     ))
                     .nullable(),
             ))
-            .load::<(
-                Meeting,
-                Option<Member>,
-                Option<Participant>,
-                Option<User>,
-                Option<User>,
-            )>(&mut conn)
+            .order(meetings::latest_message_created_at.desc())
+            .distinct_on(meetings::latest_message_created_at)
+            .offset(skip)
+            .limit(limit)
+            .load::<(Meeting, Option<Message>, Option<User>)>(&mut conn)
+            .map_err(|_| MeetingError::UnexpectedError("Failed to find meetings".to_string()))?;
+
+        if meetings_with_latest.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let meetings_only = meetings_with_latest
+            .iter()
+            .map(|(m, _, _)| m.clone())
+            .collect::<Vec<_>>();
+
+        let participants_with_users = Participant::belonging_to(&meetings_only)
+            .inner_join(users::table.on(users::id.nullable().eq(participants::user_id)))
+            .select((Participant::as_select(), Option::<User>::as_select()))
+            .load::<(Participant, Option<User>)>(&mut conn)
+            .map_err(|_| MeetingError::UnexpectedError("Failed to get participants".into()))?;
+
+        let members_with_users = Member::belonging_to(&meetings_only)
+            .inner_join(users::table.on(users::id.nullable().eq(members::user_id)))
+            .select((Member::as_select(), Option::<User>::as_select()))
+            .load::<(Member, Option<User>)>(&mut conn)
+            .map_err(|_| MeetingError::UnexpectedError("Failed to get members".into()))?;
+
+        let participant_grouped: Vec<Vec<(Participant, Option<User>)>> =
+            participants_with_users.grouped_by(&meetings_only);
+
+        let member_grouped: Vec<Vec<(Member, Option<User>)>> =
+            members_with_users.grouped_by(&meetings_only);
+
+        let meeting_responses = meetings_with_latest
+            .into_iter()
+            .zip(member_grouped)
+            .zip(participant_grouped)
+            .map(|((tuple, members), participants)| {
+                let (meeting, latest_message, message_user) = tuple;
+
+                let members = members
+                    .into_iter()
+                    .map(|(member, user)| MemberResponse { member, user })
+                    .collect();
+
+                let participants = participants
+                    .into_iter()
+                    .map(|(participant, user)| ParticipantResponse { participant, user })
+                    .collect();
+
+                let latest_message = latest_message.map(|message| MessageResponse {
+                    message,
+                    created_by: message_user,
+                    meeting: None,
+                });
+
+                MeetingResponse {
+                    meeting,
+                    members,
+                    participants,
+                    latest_message,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(meeting_responses)
+    }
+
+    async fn get_meeting_by_id(&self, meeting_id: i32) -> Result<MeetingResponse, MeetingError> {
+        let mut conn = self.get_conn()?;
+
+        let meetings = meetings::table
+            .filter(meetings::id.eq(meeting_id))
+            .select(Meeting::as_select())
+            .load::<Meeting>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_id))?;
 
-        // Process the query result into a structured response
-        let (meeting, participants, members) = result.into_iter().fold(
-            (None, Vec::new(), Vec::new()),
-            |(mut meeting, mut participants, mut members), (m, mem, p, user1, user2)| {
-                // Assign meeting if it's not already set
-                if meeting.is_none() {
-                    meeting = Some(m);
-                }
+        let participants_with_users = Participant::belonging_to(&meetings)
+            .inner_join(users::table.on(users::id.nullable().eq(participants::user_id)))
+            .select((Participant::as_select(), Option::<User>::as_select()))
+            .load::<(Participant, Option<User>)>(&mut conn)
+            .map_err(|_| MeetingError::UnexpectedError("Failed to get participants".into()))?;
 
-                // Map users to participants and members
-                if let Some(user) = user1 {
-                    // Map user1 (for members) to a Member object
-                    if let Some(mem) = mem {
-                        members.push(MemberResponse {
-                            member: mem,
-                            user: Some(user.clone()),
-                        });
-                    }
-                }
+        let members_with_users = Member::belonging_to(&meetings)
+            .inner_join(users::table.on(users::id.nullable().eq(members::user_id)))
+            .select((Member::as_select(), Option::<User>::as_select()))
+            .load::<(Member, Option<User>)>(&mut conn)
+            .map_err(|_| MeetingError::UnexpectedError("Failed to get members".into()))?;
 
-                if let Some(user) = user2 {
-                    // Map user2 (for participants) to a Participant object
-                    if let Some(p) = p {
-                        participants.push(ParticipantResponse {
-                            user: Some(user.clone()),
-                            participant: p,
-                        });
-                    }
-                }
+        let participant_grouped: Vec<Vec<(Participant, Option<User>)>> =
+            participants_with_users.grouped_by(&meetings);
 
-                (meeting, participants, members)
-            },
-        );
+        let member_grouped: Vec<Vec<(Member, Option<User>)>> =
+            members_with_users.grouped_by(&meetings);
 
-        // Construct and return the MeetingResponse
-        if let Some(meeting) = meeting {
-            let meeting_response = MeetingResponse {
-                meeting,
-                participants,
-                members,
-                latest_message: None,
-            };
+        let participant_responses: Vec<ParticipantResponse> = participant_grouped
+            .into_iter()
+            .flatten()
+            .map(|(participant, user)| ParticipantResponse { participant, user })
+            .collect();
 
-            Ok(meeting_response)
-        } else {
-            Err(MeetingError::MeetingNotFound(meeting_id))
-        }
+        let member_responses: Vec<MemberResponse> = member_grouped
+            .into_iter()
+            .flatten()
+            .map(|(member, user)| MemberResponse { member, user })
+            .collect();
+
+        let meeting = meetings
+            .into_iter()
+            .next()
+            .ok_or(MeetingError::MeetingNotFound(meeting_id))?;
+
+        let response = MeetingResponse {
+            meeting,
+            members: member_responses,
+            participants: participant_responses,
+            latest_message: None,
+        };
+
+        Ok(response)
     }
 
     async fn get_meeting_by_code(
@@ -387,116 +273,55 @@ impl MeetingRepository for MeetingRepositoryImpl {
     ) -> Result<MeetingResponse, MeetingError> {
         let mut conn = self.get_conn()?;
 
-        let (users_for_member, users_for_participant) =
-            diesel::alias!(users as users_for_member, users as users_for_participant);
-
-        let result = meetings::table
+        let meetings = meetings::table
             .filter(meetings::code.eq(meeting_code))
-            .left_join(members::table.on(meetings::id.nullable().eq(members::meeting_id)))
-            .left_join(
-                users_for_member.on(members::user_id
-                    .nullable()
-                    .eq(users_for_member.field(users::id).nullable())),
-            )
-            .left_join(participants::table.on(meetings::id.nullable().eq(participants::meeting_id)))
-            .left_join(
-                users_for_participant.on(participants::user_id
-                    .nullable()
-                    .eq(users_for_participant.field(users::id).nullable())),
-            )
-            .select((
-                Meeting::as_select(),
-                Option::<Member>::as_select(),
-                Option::<Participant>::as_select(),
-                users_for_member
-                    .fields((
-                        users::id,
-                        users::full_name,
-                        users::user_name,
-                        users::bio,
-                        users::google_id,
-                        users::github_id,
-                        users::apple_id,
-                        users::avatar,
-                        users::created_at,
-                        users::updated_at,
-                        users::deleted_at,
-                        users::last_seen_at,
-                    ))
-                    .nullable(),
-                users_for_participant
-                    .fields((
-                        users::id,
-                        users::full_name,
-                        users::user_name,
-                        users::bio,
-                        users::google_id,
-                        users::github_id,
-                        users::apple_id,
-                        users::avatar,
-                        users::created_at,
-                        users::updated_at,
-                        users::deleted_at,
-                        users::last_seen_at,
-                    ))
-                    .nullable(),
-            ))
-            .load::<(
-                Meeting,
-                Option<Member>,
-                Option<Participant>,
-                Option<User>,
-                Option<User>,
-            )>(&mut conn)
+            .select(Meeting::as_select())
+            .load::<Meeting>(&mut conn)
             .map_err(|_| MeetingError::MeetingNotFound(meeting_code))?;
 
-        // Process the query result into a structured response
-        let (meeting, participants, members) = result.into_iter().fold(
-            (None, Vec::new(), Vec::new()),
-            |(mut meeting, mut participants, mut members), (m, mem, p, user1, user2)| {
-                // Assign meeting if it's not already set
-                if meeting.is_none() {
-                    meeting = Some(m);
-                }
+        let participants_with_users = Participant::belonging_to(&meetings)
+            .inner_join(users::table.on(users::id.nullable().eq(participants::user_id)))
+            .select((Participant::as_select(), Option::<User>::as_select()))
+            .load::<(Participant, Option<User>)>(&mut conn)
+            .map_err(|_| MeetingError::UnexpectedError("Failed to get participants".into()))?;
 
-                // Map users to participants and members
-                if let Some(user) = user1 {
-                    // Map user1 (for members) to a Member object
-                    if let Some(mem) = mem {
-                        members.push(MemberResponse {
-                            member: mem,
-                            user: Some(user.clone()),
-                        });
-                    }
-                }
+        let members_with_users = Member::belonging_to(&meetings)
+            .inner_join(users::table.on(users::id.nullable().eq(members::user_id)))
+            .select((Member::as_select(), Option::<User>::as_select()))
+            .load::<(Member, Option<User>)>(&mut conn)
+            .map_err(|_| MeetingError::UnexpectedError("Failed to get members".into()))?;
 
-                if let Some(user) = user2 {
-                    // Map user2 (for participants) to a Participant object
-                    if let Some(p) = p {
-                        participants.push(ParticipantResponse {
-                            user: Some(user.clone()),
-                            participant: p,
-                        });
-                    }
-                }
+        let participant_grouped: Vec<Vec<(Participant, Option<User>)>> =
+            participants_with_users.grouped_by(&meetings);
 
-                (meeting, participants, members)
-            },
-        );
+        let member_grouped: Vec<Vec<(Member, Option<User>)>> =
+            members_with_users.grouped_by(&meetings);
 
-        // Construct and return the MeetingResponse
-        if let Some(meeting) = meeting {
-            let meeting_response = MeetingResponse {
-                meeting,
-                participants,
-                members,
-                latest_message: None,
-            };
+        let participant_responses: Vec<ParticipantResponse> = participant_grouped
+            .into_iter()
+            .flatten()
+            .map(|(participant, user)| ParticipantResponse { participant, user })
+            .collect();
 
-            Ok(meeting_response)
-        } else {
-            Err(MeetingError::MeetingNotFound(meeting_code))
-        }
+        let member_responses: Vec<MemberResponse> = member_grouped
+            .into_iter()
+            .flatten()
+            .map(|(member, user)| MemberResponse { member, user })
+            .collect();
+
+        let meeting = meetings
+            .into_iter()
+            .next()
+            .ok_or(MeetingError::MeetingNotFound(meeting_code))?;
+
+        let response = MeetingResponse {
+            meeting,
+            members: member_responses,
+            participants: participant_responses,
+            latest_message: None,
+        };
+
+        Ok(response)
     }
 
     async fn create_meeting(
@@ -594,6 +419,17 @@ impl MeetingRepository for MeetingRepositoryImpl {
         member
     }
 
+    async fn delete_member_by_id(&self, member_id: i32) -> Result<(), MeetingError> {
+        let mut conn = self.get_conn()?;
+
+        delete(members::table)
+            .filter(members::id.eq(member_id))
+            .execute(&mut conn)
+            .map_err(|err| MeetingError::UnexpectedError("Failed to delete member".to_string()))?;
+
+        Ok(())
+    }
+
     async fn get_participant_by_id(
         &self,
         participant_id: i32,
@@ -633,9 +469,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
 
-        let participant = self
-            .get_participant_by_id(new_participant.id)
-            .await;
+        let participant = self.get_participant_by_id(new_participant.id).await;
 
         participant
     }
@@ -653,10 +487,21 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
 
-        let participant = self
-            .get_participant_by_id(updated_participant.id)
-            .await;
+        let participant = self.get_participant_by_id(updated_participant.id).await;
 
         participant
+    }
+
+    async fn delete_participant_by_id(&self, participant_id: i32) -> Result<(), MeetingError> {
+        let mut conn = self.get_conn()?;
+
+        delete(participants::table)
+            .filter(participants::id.eq(participant_id))
+            .execute(&mut conn)
+            .map_err(|err| {
+                MeetingError::UnexpectedError("Failed to delete participant".to_string())
+            })?;
+
+        Ok(())
     }
 }
