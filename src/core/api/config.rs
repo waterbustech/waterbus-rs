@@ -17,7 +17,8 @@ use salvo::{
 use crate::{
     core::{
         database::db::establish_connection, env::env_config::EnvConfig,
-        socket::socket::get_socket_router, utils::jwt_utils::JwtUtils,
+        socket::socket::get_socket_router, types::app_channel::AppEvent,
+        utils::jwt_utils::JwtUtils,
     },
     features::{
         auth::{repository::AuthRepositoryImpl, router::get_auth_router, service::AuthServiceImpl},
@@ -76,13 +77,16 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
     let max_size = max_size(1024 * 1024 * 10);
 
     let health_router = Router::new().path("/health-check").get(health_check);
-    let socket_router = get_socket_router(&env, jwt_utils.clone())
-        .await
-        .expect("Failed to config socket.io");
     let auth_router = get_auth_router(jwt_utils.clone());
     let user_router = get_user_router(jwt_utils.clone());
     let chat_router = get_chat_router(jwt_utils.clone());
     let meeting_router = get_meeting_router(jwt_utils.clone());
+
+    let (app_channel_tx, app_channel_rx) = async_channel::unbounded::<AppEvent>();
+
+    let socket_router = get_socket_router(&env, jwt_utils.clone(), app_channel_tx, app_channel_rx)
+        .await
+        .expect("Failed to config socket.io");
 
     let cors = Cors::new()
         .allow_origin("*") // Allow all origins

@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use async_channel::{Receiver, Sender};
 use salvo::prelude::*;
 use socketioxide::{
     SocketIo,
@@ -11,7 +12,11 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::warn;
 
-use crate::core::{env::env_config::EnvConfig, utils::jwt_utils::JwtUtils};
+use crate::core::{
+    env::env_config::EnvConfig,
+    types::app_channel::{AppChannel, AppEvent},
+    utils::jwt_utils::JwtUtils,
+};
 
 #[derive(Clone)]
 pub struct UserId(pub String);
@@ -48,14 +53,22 @@ impl RemoteUserCnt {
 pub async fn get_socket_router(
     env: &EnvConfig,
     jwt_utils: JwtUtils,
+    async_channel_tx: Sender<AppEvent>,
+    async_channel_rx: Receiver<AppEvent>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let client = redis::Client::open(env.clone().redis_uri.0)?;
     let adapter = RedisAdapterCtr::new_with_redis(&client).await?;
     let conn = client.get_multiplexed_tokio_connection().await?;
 
+    let app_channel = AppChannel {
+        async_channel_rx,
+        async_channel_tx,
+    };
+
     let (layer, io) = SocketIo::builder()
         .with_state(RemoteUserCnt::new(conn))
         .with_state(jwt_utils.clone())
+        .with_state(app_channel)
         .with_adapter::<RedisAdapter<_>>(adapter)
         .build_layer();
 
