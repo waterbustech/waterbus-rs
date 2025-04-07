@@ -4,7 +4,7 @@ use salvo::prelude::*;
 use socketioxide::{
     SocketIo,
     adapter::Adapter,
-    extract::{SocketRef, State},
+    extract::{Data, SocketRef, State},
     handler::ConnectHandler,
 };
 use socketioxide_redis::{RedisAdapter, RedisAdapterCtr, drivers::redis::redis_client as redis};
@@ -13,8 +13,17 @@ use tower_http::cors::CorsLayer;
 use tracing::warn;
 
 use crate::core::{
+    dtos::socket::socket_dto::{
+        AnswerSubscribeDto, CandidateDto, CleanWhiteBoardDto, JoinRoomDto,
+        PublisherRenegotiationDto, SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto,
+        SetScreenSharingDto, StartWhiteBoardDto, SubscribeDto, SubscriberCandidateDto,
+        UpdateWhiteBoardDto,
+    },
     env::env_config::EnvConfig,
-    types::app_channel::{AppChannel, AppEvent},
+    types::{
+        app_channel::{AppChannel, AppEvent},
+        enums::socket_event::SocketEvent,
+    },
     utils::jwt_utils::JwtUtils,
 };
 
@@ -113,9 +122,142 @@ async fn authenticate_middleware<A: Adapter>(
 }
 
 async fn on_connect<A: Adapter>(socket: SocketRef<A>) {
+    socket.on(SocketEvent::ReconnectCSS.to_str(), on_reconnect);
+    socket.on(SocketEvent::PublishCSS.to_str(), handle_join_room);
+    socket.on(SocketEvent::SubscribeCSS.to_str(), handle_subscribe);
+    socket.on(
+        SocketEvent::AnswerSubscriberCSS.to_str(),
+        handle_answer_subscribe,
+    );
+    socket.on(
+        SocketEvent::PublisherRenegotiationCSS.to_str(),
+        handle_publisher_renegotiation,
+    );
+    socket.on(
+        SocketEvent::PublisherCandidateCSS.to_str(),
+        handle_publisher_candidate,
+    );
+    socket.on(
+        SocketEvent::SubscriberCandidateCSS.to_str(),
+        handle_subscriber_candidate,
+    );
+    socket.on(
+        SocketEvent::SetE2eeEnabledCSS.to_str(),
+        handle_set_e2ee_enabled,
+    );
+    socket.on(
+        SocketEvent::SetCameraTypeCSS.to_str(),
+        handle_set_camera_type,
+    );
+    socket.on(
+        SocketEvent::SetVideoEnabledCSS.to_str(),
+        handle_set_video_enabled,
+    );
+    socket.on(
+        SocketEvent::SetAudioEnabledCSS.to_str(),
+        handle_set_audio_enabled,
+    );
+    socket.on(
+        SocketEvent::SetScreenSharingCSS.to_str(),
+        handle_set_screen_sharing,
+    );
+    socket.on(
+        SocketEvent::HandRaisingCSS.to_str(),
+        handle_set_hand_raising,
+    );
+    socket.on(
+        SocketEvent::StartWhiteBoardCSS.to_str(),
+        handle_start_white_board,
+    );
+    socket.on(
+        SocketEvent::UpdateWhiteBoardCSS.to_str(),
+        handle_update_white_board,
+    );
+    socket.on(
+        SocketEvent::CleanWhiteBoardCSS.to_str(),
+        handle_clean_white_board,
+    );
+    socket.on(
+        SocketEvent::SetSubscribeSubtitleCSS.to_str(),
+        handle_set_subscribe_subtitle,
+    );
+    socket.on(SocketEvent::LeaveRoomCSS.to_str(), handle_leave_room);
+
     socket.on_disconnect(on_disconnect);
 }
 
 async fn on_disconnect<A: Adapter>(_: SocketRef<A>, user_cnt: State<RemoteUserCnt>) {
     let _ = user_cnt.remove_user().await.unwrap_or(0);
 }
+
+async fn on_reconnect<A: Adapter>(_: SocketRef<A>) {}
+
+async fn handle_join_room<A: Adapter>(_: SocketRef<A>, Data(_data): Data<JoinRoomDto>) {}
+
+async fn handle_subscribe<A: Adapter>(_: SocketRef<A>, Data(_data): Data<SubscribeDto>) {}
+
+async fn handle_answer_subscribe<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<AnswerSubscribeDto>,
+) {
+}
+
+async fn handle_publisher_renegotiation<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<PublisherRenegotiationDto>,
+) {
+}
+
+async fn handle_publisher_candidate<A: Adapter>(_: SocketRef<A>, Data(_data): Data<CandidateDto>) {}
+
+async fn handle_subscriber_candidate<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<SubscriberCandidateDto>,
+) {
+}
+
+async fn handle_set_e2ee_enabled<A: Adapter>(_: SocketRef<A>, Data(_data): Data<SetEnabledDto>) {}
+
+async fn handle_set_camera_type<A: Adapter>(_: SocketRef<A>, Data(_data): Data<SetCameraTypeDto>) {}
+
+async fn handle_set_video_enabled<A: Adapter>(_: SocketRef<A>, Data(_data): Data<SetEnabledDto>) {}
+
+async fn handle_set_audio_enabled<A: Adapter>(_: SocketRef<A>, Data(_data): Data<SetEnabledDto>) {}
+
+async fn handle_set_screen_sharing<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<SetScreenSharingDto>,
+) {
+}
+
+async fn handle_set_hand_raising<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<SetHandRaisingDto>,
+) {
+}
+
+async fn handle_start_white_board<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<StartWhiteBoardDto>,
+) {
+}
+
+async fn handle_update_white_board<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<UpdateWhiteBoardDto>,
+) {
+}
+
+async fn handle_clean_white_board<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<CleanWhiteBoardDto>,
+) {
+}
+
+async fn handle_set_subscribe_subtitle<A: Adapter>(
+    _: SocketRef<A>,
+    Data(_data): Data<SetEnabledDto>,
+) {
+}
+
+async fn handle_leave_room<A: Adapter>(_: SocketRef<A>) {}
