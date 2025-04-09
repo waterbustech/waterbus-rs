@@ -12,19 +12,22 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::warn;
 
-use crate::core::{
-    dtos::socket::socket_dto::{
-        AnswerSubscribeDto, CandidateDto, CleanWhiteBoardDto, JoinRoomDto,
-        PublisherRenegotiationDto, SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto,
-        SetScreenSharingDto, StartWhiteBoardDto, SubscribeDto, SubscriberCandidateDto,
-        UpdateWhiteBoardDto,
+use crate::{
+    core::{
+        dtos::socket::socket_dto::{
+            AnswerSubscribeDto, CandidateDto, CleanWhiteBoardDto, JoinRoomDto,
+            PublisherRenegotiationDto, SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto,
+            SetScreenSharingDto, StartWhiteBoardDto, SubscribeDto, SubscriberCandidateDto,
+            UpdateWhiteBoardDto,
+        },
+        env::env_config::EnvConfig,
+        types::{
+            app_channel::{AppChannel, AppEvent},
+            enums::socket_event::SocketEvent,
+        },
+        utils::jwt_utils::JwtUtils,
     },
-    env::env_config::EnvConfig,
-    types::{
-        app_channel::{AppChannel, AppEvent},
-        enums::socket_event::SocketEvent,
-    },
-    utils::jwt_utils::JwtUtils,
+    features::sfu::service::SfuServiceImpl,
 };
 
 #[derive(Clone)]
@@ -62,6 +65,7 @@ impl RemoteUserCnt {
 pub async fn get_socket_router(
     env: &EnvConfig,
     jwt_utils: JwtUtils,
+    sfu_service: SfuServiceImpl,
     async_channel_tx: Sender<AppEvent>,
     async_channel_rx: Receiver<AppEvent>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
@@ -78,6 +82,7 @@ pub async fn get_socket_router(
         .with_state(RemoteUserCnt::new(conn))
         .with_state(jwt_utils.clone())
         .with_state(app_channel)
+        .with_state(sfu_service.clone())
         .with_adapter::<RedisAdapter<_>>(adapter)
         .build_layer();
 

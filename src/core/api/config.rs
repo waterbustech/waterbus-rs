@@ -22,11 +22,13 @@ use crate::{
     },
     features::{
         auth::{repository::AuthRepositoryImpl, router::get_auth_router, service::AuthServiceImpl},
+        ccu::repository::CcuRepositoryImpl,
         chat::{repository::ChatRepositoryImpl, router::get_chat_router, service::ChatServiceImpl},
         meeting::{
             repository::MeetingRepositoryImpl, router::get_meeting_router,
             service::MeetingServiceImpl,
         },
+        sfu::service::SfuServiceImpl,
         user::{repository::UserRepositoryImpl, router::get_user_router, service::UserServiceImpl},
     },
 };
@@ -43,7 +45,7 @@ async fn set_services(depot: &mut Depot) {
     let auth_repository = AuthRepositoryImpl::new(pool.clone().0);
     let user_repository = UserRepositoryImpl::new(pool.clone().0);
     let chat_repository = ChatRepositoryImpl::new(pool.clone().0);
-    let meeting_repository: MeetingRepositoryImpl = MeetingRepositoryImpl::new(pool.clone().0);
+    let meeting_repository = MeetingRepositoryImpl::new(pool.clone().0);
 
     let auth_service = AuthServiceImpl::new(auth_repository.clone());
     let chat_service = ChatServiceImpl::new(
@@ -64,7 +66,7 @@ async fn set_services(depot: &mut Depot) {
 pub async fn get_salvo_service(env: &EnvConfig) -> Service {
     let pool = establish_connection(env.clone());
 
-    let db_pooled_connection = DbConnection(pool);
+    let db_pooled_connection = DbConnection(pool.clone());
     let jwt_utils = JwtUtils::new(env.clone());
 
     let limiter = RateLimiter::new(
@@ -84,9 +86,18 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
 
     let (app_channel_tx, app_channel_rx) = async_channel::unbounded::<AppEvent>();
 
-    let socket_router = get_socket_router(&env, jwt_utils.clone(), app_channel_tx, app_channel_rx)
-        .await
-        .expect("Failed to config socket.io");
+    let meeting_repository = MeetingRepositoryImpl::new(pool.clone());
+    let ccu_repository = CcuRepositoryImpl::new(pool.clone());
+    let sfu_service = SfuServiceImpl::new(ccu_repository, meeting_repository);
+    let socket_router = get_socket_router(
+        &env,
+        jwt_utils.clone(),
+        sfu_service,
+        app_channel_tx,
+        app_channel_rx,
+    )
+    .await
+    .expect("Failed to config socket.io");
 
     let cors = Cors::new()
         .allow_origin("*") // Allow all origins

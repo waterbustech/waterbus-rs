@@ -18,7 +18,9 @@ pub trait CcuRepository {
 
     async fn get_ccu_by_id(&self, ccu_id: i32) -> Result<Ccu, CcuError>;
 
-    async fn delete_ccu_by_id(&self, ccu_id: i32) -> Result<(), CcuError>;
+    async fn get_ccu_by_socket_id(&self, socket_id: &str) -> Result<Ccu, CcuError>;
+
+    async fn delete_ccu_by_id(&self, socket_id: &str) -> Result<(), CcuError>;
 }
 
 #[derive(Debug, Clone)]
@@ -56,18 +58,29 @@ impl CcuRepository for CcuRepositoryImpl {
         let ccu = ccus::table
             .filter(ccus::id.eq(ccu_id))
             .first::<Ccu>(&mut conn)
-            .map_err(|_| CcuError::NotFoundCcu(ccu_id))?;
+            .map_err(|_| CcuError::NotFoundCcu)?;
 
         Ok(ccu)
     }
 
-    async fn delete_ccu_by_id(&self, ccu_id: i32) -> Result<(), CcuError> {
+    async fn get_ccu_by_socket_id(&self, socket_id: &str) -> Result<Ccu, CcuError> {
+        let mut conn = self.get_conn()?;
+
+        let ccu = ccus::table
+            .filter(ccus::socket_id.eq(socket_id))
+            .first::<Ccu>(&mut conn)
+            .map_err(|_| CcuError::NotFoundCcu)?;
+
+        Ok(ccu)
+    }
+
+    async fn delete_ccu_by_id(&self, socket_id: &str) -> Result<(), CcuError> {
         let mut conn = self.get_conn()?;
 
         delete(ccus::table)
-            .filter(ccus::id.eq(ccu_id))
+            .filter(ccus::socket_id.eq(socket_id))
             .execute(&mut conn)
-            .map_err(|_| CcuError::FailedToDeleteCcu(ccu_id))?;
+            .map_err(|_| CcuError::FailedToDeleteCcu(socket_id.to_string()))?;
 
         Ok(())
     }
