@@ -4,13 +4,14 @@ use salvo::prelude::*;
 use socketioxide::{
     SocketIo,
     adapter::Adapter,
-    extract::{Data, SocketRef, State},
+    extract::{Data, Extension, SocketRef, State},
     handler::ConnectHandler,
 };
 use socketioxide_redis::{RedisAdapter, RedisAdapterCtr, drivers::redis::redis_client as redis};
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::warn;
+use webrtc_manager::{errors::WebRTCError, models::WClient, webrtc_manager::WebRTCManager};
 
 use crate::{
     core::{
@@ -24,10 +25,11 @@ use crate::{
         types::{
             app_channel::{AppChannel, AppEvent},
             enums::socket_event::SocketEvent,
+            res::socket_response::ParticipantHasLeftResponse,
         },
         utils::jwt_utils::JwtUtils,
     },
-    features::sfu::service::SfuServiceImpl,
+    features::sfu::service::{SfuService, SfuServiceImpl},
 };
 
 #[derive(Clone)]
@@ -83,6 +85,7 @@ pub async fn get_socket_router(
         .with_state(jwt_utils.clone())
         .with_state(app_channel)
         .with_state(sfu_service.clone())
+        .with_state(WebRTCManager::new())
         .with_adapter::<RedisAdapter<_>>(adapter)
         .build_layer();
 
@@ -126,7 +129,15 @@ async fn authenticate_middleware<A: Adapter>(
     }
 }
 
-async fn on_connect<A: Adapter>(socket: SocketRef<A>) {
+async fn on_connect<A: Adapter>(
+    socket: SocketRef<A>,
+    sfu_service: State<SfuServiceImpl>,
+    user_id: Extension<UserId>,
+) {
+    let socket_id = socket.id.to_string();
+    let user_id = user_id.0;
+    _handle_on_connection(user_id.0.parse().unwrap(), &socket_id, sfu_service.0).await;
+
     socket.on(SocketEvent::ReconnectCSS.to_str(), on_reconnect);
     socket.on(SocketEvent::PublishCSS.to_str(), handle_join_room);
     socket.on(SocketEvent::SubscribeCSS.to_str(), handle_subscribe);
@@ -191,8 +202,15 @@ async fn on_connect<A: Adapter>(socket: SocketRef<A>) {
     socket.on_disconnect(on_disconnect);
 }
 
-async fn on_disconnect<A: Adapter>(_: SocketRef<A>, user_cnt: State<RemoteUserCnt>) {
+async fn on_disconnect<A: Adapter>(
+    socket: SocketRef<A>,
+    user_cnt: State<RemoteUserCnt>,
+    webrtc_manager: State<WebRTCManager>,
+    sfu_service: State<SfuServiceImpl>,
+) {
     let _ = user_cnt.remove_user().await.unwrap_or(0);
+
+    let _ = _handle_leave_room(socket, webrtc_manager.0.clone(), sfu_service.0).await;
 }
 
 async fn on_reconnect<A: Adapter>(_: SocketRef<A>) {}
@@ -266,3 +284,37 @@ async fn handle_set_subscribe_subtitle<A: Adapter>(
 }
 
 async fn handle_leave_room<A: Adapter>(_: SocketRef<A>) {}
+
+async fn _handle_on_connection(user_id: i32, socket_id: &str, sfu_service: SfuServiceImpl) {
+    let _ = sfu_service.create_ccu(socket_id, user_id).await;
+}
+
+async fn _handle_leave_room<A: Adapter>(
+    socket: SocketRef<A>,
+    webrtc_manager: WebRTCManager,
+    sfu_service: SfuServiceImpl,
+) -> Result<WClient, WebRTCError> {
+    let socket_id = socket.id.to_string();
+
+    let info = webrtc_manager.leave_room(&socket_id).await?;
+
+    let info_clone = info.clone();
+    let room_id = info_clone.room_id.clone();
+
+    let _ = socket
+        .broadcast()
+        .to(info_clone.room_id)
+        .emit(
+            SocketEvent::ParticipantHasLeftSSC.to_str(),
+            &ParticipantHasLeftResponse {
+                target_id: info_clone.participant_id,
+            },
+        )
+        .await;
+
+    socket.leave(room_id);
+
+    let _ = sfu_service.delete_ccu(&socket_id).await;
+
+    Ok(info)
+}

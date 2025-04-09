@@ -31,6 +31,7 @@ use crate::{
     models::{IceCandidate, JoinRoomParams, JoinRoomResponse, SubscribeParams, SubscribeResponse},
 };
 
+#[derive(Debug, Clone)]
 pub struct Room {
     participants: HashMap<String, Arc<Participant>>,
     subscribers: HashMap<String, Arc<RTCPeerConnection>>,

@@ -12,6 +12,7 @@ use crate::{
     room::Room,
 };
 
+#[derive(Debug, Clone)]
 pub struct WebRTCManager {
     rooms: HashMap<String, Arc<Mutex<Room>>>,
     clients: HashMap<String, WClient>,
@@ -184,17 +185,18 @@ impl WebRTCManager {
     }
 
     pub async fn leave_room(&self, client_id: &str) -> Result<WClient, WebRTCError> {
-        let client = self._get_client_by_id(client_id)?;
-
-        let client = client.clone();
-
+        let client = self._get_client_by_id(client_id)?.clone();
         let room_id = &client.room_id;
-        let participant_id = &client.participant_id;
+        let participant_id = client.participant_id.clone();
 
         let room = self._get_room_by_id(room_id)?;
-        let mut room = room.lock().unwrap();
 
-        room.leave_room(participant_id).await;
+        let mut room_clone_for_leave = {
+            let room_guard = room.lock().unwrap();
+            room_guard.clone()
+        };
+
+        room_clone_for_leave.leave_room(&participant_id).await;
 
         Ok(client)
     }
