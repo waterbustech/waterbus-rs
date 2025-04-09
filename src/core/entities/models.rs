@@ -358,3 +358,13 @@ pub struct NewParticipant<'a> {
     pub status: i32,
     pub ccu_id: Option<i32>,
 }
+
+#[derive(Insertable)]
+#[diesel(table_name = ccus)]
+pub struct NewCcu<'a> {
+    pub id: &'a i32,
+    pub socket_id: String,
+    pub pod_name: String,
+    pub created_at: NaiveDateTime,
+    pub user_id: Option<i32>,
+}

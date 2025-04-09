@@ -31,4 +31,7 @@ pub enum WebRTCError {
 
     #[error("Participant not found")]
     ParticipantNotFound,
+
+    #[error("Room not found")]
+    RoomNotFound,
 }

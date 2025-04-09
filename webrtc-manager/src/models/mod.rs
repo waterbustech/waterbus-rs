@@ -3,7 +3,15 @@ use std::sync::Arc;
 use serde::Serialize;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidate;
 
-type IceCandidateCallback = Arc<dyn Fn(RTCIceCandidate) + Send + Sync>;
+pub type IceCandidateCallback = Arc<dyn Fn(RTCIceCandidate) + Send + Sync>;
+pub type RenegotiationCallback = Arc<dyn Fn(String) + Send + Sync>;
+pub type JoinedCallback = Arc<dyn Fn() + Send + Sync>;
+
+#[derive(Debug, Clone)]
+pub struct WClient {
+    pub participant_id: String,
+    pub room_id: String,
+}
 
 #[derive(Clone)]
 pub struct JoinRoomParams {
@@ -12,7 +20,7 @@ pub struct JoinRoomParams {
     pub is_video_enabled: bool,
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
-    pub callback: Arc<dyn Fn() + Send + Sync>,
+    pub callback: JoinedCallback,
 }
 
 #[derive(Serialize)]
@@ -26,7 +34,7 @@ pub struct JoinRoomResponse {
 pub struct SubscribeParams {
     pub target_id: String,
     pub participant_id: String,
-    pub on_negotiation_needed: Arc<dyn Fn() + Send + Sync>,
+    pub on_negotiation_needed: RenegotiationCallback,
     pub on_candidate: IceCandidateCallback,
 }
 

@@ -19,7 +19,10 @@ use webrtc::{
         rtp_sender::RTCRtpSender,
         rtp_transceiver_direction::RTCRtpTransceiverDirection,
     },
-    track::track_local::{TrackLocal, track_local_static_rtp::TrackLocalStaticRTP},
+    track::{
+        track_local::{TrackLocal, track_local_static_rtp::TrackLocalStaticRTP},
+        track_remote::TrackRemote,
+    },
 };
 
 use crate::{
@@ -41,7 +44,7 @@ impl Room {
         }
     }
 
-    async fn join_room(
+    pub async fn join_room(
         &mut self,
         params: JoinRoomParams,
         room_id: &str,
@@ -109,21 +112,32 @@ impl Room {
 
         let media = self._get_media(&participant_id)?;
         let room_id_clone = room_id.to_string();
+        let participant_id_clone = participant_id.to_string();
+        let subscribers = Arc::new(self.subscribers.clone());
 
         peer.on_track(Box::new(move |track, _, _| {
             let media = Arc::clone(&media);
+            let subscribers = Arc::clone(&subscribers);
             let room_id = room_id_clone.clone();
+            let participant_id = participant_id_clone.clone();
             let participant = participant.clone();
+            let track2 = Arc::clone(&track);
 
-            Box::pin(async move {
-                // Send a PLI on an interval so that the publisher is pushing a keyframe
-                let media_ssrc = track.ssrc();
-                participant.send_rtcp_pli(media_ssrc);
+            // Send a PLI on an interval so that the publisher is pushing a keyframe
+            let media_ssrc = track.ssrc();
+            participant.send_rtcp_pli(media_ssrc);
 
-                // Lock media inside the async block
-                let mut media_guard = media.lock().unwrap();
-                media_guard.add_track(track, room_id);
-            })
+            // Lock media inside the async block
+            let mut media_guard = media.lock().unwrap();
+            media_guard.add_track(track, room_id);
+
+            tokio::spawn(async move {
+                Self::_add_track_to_subscribers(subscribers, track2, &participant_id)
+                    .await
+                    .unwrap();
+            });
+
+            Box::pin(async move {})
         }));
 
         let sdp = RTCSessionDescription::offer(params.sdp.clone());
@@ -152,13 +166,11 @@ impl Room {
                     is_recording: false,
                 });
             }
-            Err(_) => {}
+            Err(_) => Err(WebRTCError::FailedToCreateOffer),
         }
-
-        todo!()
     }
 
-    async fn subscribe(
+    pub async fn subscribe(
         &mut self,
         params: SubscribeParams,
     ) -> Result<SubscribeResponse, WebRTCError> {
@@ -214,7 +226,7 @@ impl Room {
         for track_wrapper in tracks.iter() {
             let remote_track = &track_wrapper.track;
 
-            self._add_track(
+            Self::_add_track(
                 &peer,
                 &remote_track.codec().capability.mime_type,
                 &remote_track.id(),
@@ -250,7 +262,7 @@ impl Room {
         Ok(subscribe_response)
     }
 
-    async fn set_subscriber_remote_sdp(
+    pub async fn set_subscriber_remote_sdp(
         &self,
         target_id: &str,
         participant_id: &str,
@@ -268,7 +280,7 @@ impl Room {
         Ok(())
     }
 
-    async fn handle_publisher_renegotiation(
+    pub async fn handle_publisher_renegotiation(
         &self,
         participant_id: &str,
         sdp: &str,
@@ -303,7 +315,7 @@ impl Room {
         }
     }
 
-    async fn add_publisher_candidate(
+    pub async fn add_publisher_candidate(
         &self,
         participant_id: &str,
         candidate: IceCandidate,
@@ -328,7 +340,7 @@ impl Room {
         }
     }
 
-    async fn add_subscriber_candidate(
+    pub async fn add_subscriber_candidate(
         &self,
         target_id: &str,
         participant_id: &str,
@@ -350,19 +362,24 @@ impl Room {
         Ok(())
     }
 
-    async fn leave_room(&mut self, participant_id: &str) {
+    pub async fn leave_room(&mut self, participant_id: &str) {
         self._remove_all_subscribers_with_target_id(participant_id);
 
         if let Some(participant) = self.participants.get(participant_id) {
             let media = participant.media.lock().unwrap();
 
             media.stop();
+            participant.peer_connection.close();
         }
 
         self.participants.remove(participant_id);
     }
 
-    fn set_e2ee_enabled(&self, participant_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
+    pub fn set_e2ee_enabled(
+        &self,
+        participant_id: &str,
+        is_enabled: bool,
+    ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
         let mut media = media.lock().unwrap();
@@ -372,7 +389,11 @@ impl Room {
         Ok(())
     }
 
-    fn set_camera_type(&self, participant_id: &str, camera_type: u8) -> Result<(), WebRTCError> {
+    pub fn set_camera_type(
+        &self,
+        participant_id: &str,
+        camera_type: u8,
+    ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
         let mut media = media.lock().unwrap();
@@ -382,7 +403,11 @@ impl Room {
         Ok(())
     }
 
-    fn set_video_enabled(&self, participant_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
+    pub fn set_video_enabled(
+        &self,
+        participant_id: &str,
+        is_enabled: bool,
+    ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
         let mut media = media.lock().unwrap();
@@ -390,7 +415,11 @@ impl Room {
         Ok(())
     }
 
-    fn set_audio_enabled(&self, participant_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
+    pub fn set_audio_enabled(
+        &self,
+        participant_id: &str,
+        is_enabled: bool,
+    ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
         let mut media = media.lock().unwrap();
@@ -398,7 +427,7 @@ impl Room {
         Ok(())
     }
 
-    fn set_screen_sharing(
+    pub fn set_screen_sharing(
         &self,
         participant_id: &str,
         is_enabled: bool,
@@ -412,7 +441,11 @@ impl Room {
         Ok(())
     }
 
-    fn set_hand_raising(&self, participant_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
+    pub fn set_hand_raising(
+        &self,
+        participant_id: &str,
+        is_enabled: bool,
+    ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
         let mut media = media.lock().unwrap();
@@ -477,12 +510,49 @@ impl Room {
             .collect();
 
         for key in keys_to_remove {
+            if let Some(pc) = self.subscribers.remove(&key) {
+                let pc_clone = Arc::clone(&pc);
+                tokio::spawn(async move {
+                    let _ = pc_clone.close().await;
+                });
+            }
+
             self.subscribers.remove(&key);
         }
     }
 
+    async fn _add_track_to_subscribers(
+        subscribers: Arc<HashMap<String, Arc<RTCPeerConnection>>>,
+        track: Arc<TrackRemote>,
+        target_id: &str,
+    ) -> Result<(), WebRTCError> {
+        let prefix_track_id = format!("p_{}_", target_id);
+
+        let peer_ids: Vec<String> = subscribers
+            .keys()
+            .filter(|track_id| track_id.starts_with(&prefix_track_id))
+            .cloned()
+            .collect();
+
+        let mime_type = track.codec().capability.mime_type.clone();
+        let track_id = track.id().to_string();
+
+        for peer_id in peer_ids {
+            if let Some(pc) = subscribers.get(&peer_id) {
+                Self::_add_track(
+                    pc,
+                    &mime_type,
+                    &track_id,
+                    RTCRtpTransceiverDirection::Sendonly,
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn _add_track(
-        &self,
         peer_connection: &Arc<RTCPeerConnection>,
         mime_type: &str,
         track_id: &str,

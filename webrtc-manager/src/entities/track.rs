@@ -9,21 +9,14 @@ use webrtc::track::track_remote::TrackRemote;
 #[derive(Debug, Clone)]
 pub struct Track {
     pub track: Arc<TrackRemote>,
-    pub receiver: Arc<RTCRtpTransceiver>,
     pub room_id: String,
     pub participant_id: String,
 }
 
 impl Track {
-    pub fn new(
-        track: Arc<TrackRemote>,
-        receiver: Arc<RTCRtpTransceiver>,
-        room_id: String,
-        participant_id: String,
-    ) -> Self {
+    pub fn new(track: Arc<TrackRemote>, room_id: String, participant_id: String) -> Self {
         let handler = Track {
             track,
-            receiver,
             room_id,
             participant_id,
         };
@@ -34,7 +27,6 @@ impl Track {
 
     fn initialize_rtp_handler(&self) {
         let track = self.track.clone();
-        let receiver = self.receiver.clone();
 
         // // Handle RTP packets for audio
         // track.on_receive_rtp(Box::new(move |packet| {

@@ -3,10 +3,7 @@ use std::sync::{Arc, Mutex};
 use tracing::info;
 use uuid::Uuid;
 use webrtc::{
-    rtp_transceiver::{
-        RTCRtpTransceiver,
-        rtp_codec::{RTCRtpCodecParameters, RTPCodecType},
-    },
+    rtp_transceiver::rtp_codec::{RTCRtpCodecParameters, RTPCodecType},
     track::track_remote::TrackRemote,
 };
 
@@ -23,7 +20,6 @@ pub struct Media {
     pub media_id: String,
     pub participant_id: String,
     pub tracks: Mutex<Vec<Track>>,
-    pub transceiver: Option<Arc<RTCRtpTransceiver>>,
     pub video_enabled: bool,
     pub audio_enabled: bool,
     pub is_e2ee_enabled: bool,
@@ -44,7 +40,6 @@ impl Media {
             media_id: format!("m_{}", Uuid::new_v4()),
             participant_id: publisher_id,
             tracks: Mutex::new(vec![]),
-            transceiver: None,
             video_enabled: is_video_enabled,
             audio_enabled: is_audio_enabled,
             is_e2ee_enabled,
@@ -53,11 +48,6 @@ impl Media {
             camera_type: 0, // 0: front, 1: rear
             codec: String::new(),
         }
-    }
-
-    pub fn init_av(&mut self, transceiver: Arc<RTCRtpTransceiver>) -> &mut Self {
-        self.transceiver = Some(transceiver);
-        self
     }
 
     pub fn stop(&self) {}
@@ -76,12 +66,7 @@ impl Media {
             return false;
         }
 
-        let track = Track::new(
-            rtp_track.clone(),
-            self.transceiver.clone().unwrap(),
-            room_id,
-            self.participant_id.clone(),
-        );
+        let track = Track::new(rtp_track.clone(), room_id, self.participant_id.clone());
 
         self.tracks.lock().unwrap().push(track);
 
