@@ -1,3 +1,4 @@
 pub mod media;
-pub mod participant;
+pub mod publisher;
+pub mod subscriber;
 pub mod track;

@@ -5,10 +5,9 @@ use diesel::{
 use reqwest::Method;
 use salvo::{
     catcher::Catcher,
-    cors::Cors,
+    cors::{Any, Cors},
     oapi::{
-        Contact, Info, License, SecurityRequirement, SecurityScheme,
-        security::{Http, HttpAuthScheme},
+        security::{Http, HttpAuthScheme}, Contact, Info, License, SecurityRequirement, SecurityScheme
     },
     prelude::*,
     rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
@@ -100,7 +99,7 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
     .expect("Failed to config socket.io");
 
     let cors = Cors::new()
-        .allow_origin("*") // Allow all origins
+        .allow_origin(Any)
         .allow_methods(vec![
             Method::GET,
             Method::POST,
@@ -113,7 +112,6 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
 
     let router = Router::with_path("busapi/v3")
         .hoop(Logger::new())
-        .hoop(cors)
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))
         .hoop(affix_state::inject(env.clone()))
@@ -127,8 +125,9 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .push(chat_router)
         .push(user_router)
         .push(meeting_router)
-        .push(socket_router)
         .push(health_router);
+
+    let router = Router::new().push(router).push(socket_router);
 
     // Config
     let doc_info = Info::new("[v3] Waterbus Service API", "3.0.0")
@@ -148,11 +147,14 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .security([security_requirement])
         .merge_router(&router);
 
-    let router = router
+    let router = Router::new()
         .push(doc.into_router("/api-doc/openapi.json"))
-        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("docs"));
+        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("docs"))
+        .push(router);
 
-    Service::new(router).catcher(Catcher::default().hoop(handle404))
+    Service::new(router)
+        .hoop(cors)
+        .catcher(Catcher::default().hoop(handle404))
 }
 
 #[handler]

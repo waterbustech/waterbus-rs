@@ -28,6 +28,8 @@ pub trait SfuService {
         participant_id: i32,
         socket_id: &str,
     ) -> Result<ParticipantResponse, MeetingError>;
+
+    async fn delete_participant(&self, participant_id: i32) -> Result<(), MeetingError>;
 }
 
 #[derive(Debug, Clone)]
@@ -103,5 +105,14 @@ impl SfuService for SfuServiceImpl {
             .await?;
 
         Ok(participant)
+    }
+
+    async fn delete_participant(&self, participant_id: i32) -> Result<(), MeetingError> {
+        let _ = self
+            .meeting_repository
+            .delete_participant_by_id(participant_id)
+            .await?;
+
+        Ok(())
     }
 }

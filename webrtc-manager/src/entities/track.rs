@@ -27,18 +27,6 @@ impl Track {
 
     fn initialize_rtp_handler(&self) {
         let track = self.track.clone();
-
-        // // Handle RTP packets for audio
-        // track.on_receive_rtp(Box::new(move |packet| {
-        //     if track.kind() == "audio" {
-        //         if let Err(e) = Self::transcribe_audio(&packet.payload) {
-        //             warn!("Error transcribing audio: {}", e);
-        //         }
-        //     }
-        // }));
-
-        // // Start PLI once for RTP
-        // track.on_receive_rtp_once(Box::new(move |rtp| {}));
     }
 
     fn transcribe_audio(payload: &[u8]) -> Result<(), String> {

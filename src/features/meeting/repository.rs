@@ -357,6 +357,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 meetings::password.eq(meeting.password),
                 meetings::latest_message_created_at.eq(meeting.latest_message_created_at),
                 meetings::latest_message_id.eq(meeting.latest_message_id),
+                meetings::status.eq(meeting.status),
             ))
             .returning(Meeting::as_select())
             .get_result(&mut conn)
@@ -482,7 +483,10 @@ impl MeetingRepository for MeetingRepositoryImpl {
 
         let updated_participant = update(participants::table)
             .filter(participants::id.eq(participant.id))
-            .set(participants::status.eq(participant.status))
+            .set((
+                participants::status.eq(participant.status),
+                participants::ccu_id.eq(participant.ccu_id),
+            ))
             .returning(Participant::as_select())
             .get_result(&mut conn)
             .map_err(|err| MeetingError::UnexpectedError(err.to_string()))?;
@@ -495,12 +499,36 @@ impl MeetingRepository for MeetingRepositoryImpl {
     async fn delete_participant_by_id(&self, participant_id: i32) -> Result<(), MeetingError> {
         let mut conn = self.get_conn()?;
 
-        delete(participants::table)
+        println!("Request delete participant id: {}", participant_id);
+
+        // Perform the deletion
+        let deleted_rows = delete(participants::table)
             .filter(participants::id.eq(participant_id))
             .execute(&mut conn)
             .map_err(|err| {
+                println!("err: {:?}", err);
                 MeetingError::UnexpectedError("Failed to delete participant".to_string())
             })?;
+
+        // Check if any rows were actually deleted
+        if deleted_rows == 0 {
+            return Err(MeetingError::UnexpectedError(
+                "No participant found to delete".to_string(),
+            ));
+        }
+
+        let participant = self.get_participant_by_id(participant_id).await;
+
+        match participant {
+            Ok(participant) => {
+                // Successfully found the participant, print or use the participant
+                println!("Participant found: {:?}", participant);
+            }
+            Err(e) => {
+                // Handle the error, such as participant not being found
+                println!("Error retrieving participant: {}", e);
+            }
+        }
 
         Ok(())
     }

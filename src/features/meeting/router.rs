@@ -20,8 +20,8 @@ use super::service::{MeetingService, MeetingServiceImpl};
 
 pub fn get_meeting_router(jwt_utils: JwtUtils) -> Router {
     let conversation_router = Router::with_path("conversations")
-        .push(Router::with_path("/{status}").get(get_meetings_by_status))
-        .push(Router::with_path("archived").get(get_archived_meetings));
+        .push(Router::with_path("archived").get(get_archived_meetings))
+        .push(Router::with_path("/{status}").get(get_meetings_by_status));
 
     let member_router = Router::with_path("members")
         .push(

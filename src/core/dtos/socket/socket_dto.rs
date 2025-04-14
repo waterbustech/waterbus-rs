@@ -37,7 +37,7 @@ pub struct PublisherRenegotiationDto {
 pub struct CandidateDto {
     pub candidate: String,
     pub sdp_mid: Option<String>,
-    pub sdp_m_line_index: Option<i32>,
+    pub sdp_m_line_index: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,4 +137,10 @@ pub struct UpdateWhiteBoardDto {
     pub room_id: String,
     pub action: WhiteBoardAction,
     pub paints: Vec<PaintModel>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MsgDto {
+    pub my_msg: String,
 }

@@ -13,8 +13,8 @@ async fn main() {
         .expect("Failed to install rustls crypto provider");
 
     let env = EnvConfig::new();
-    let http2_addr = format!("127.0.0.1:{}", env.app_port.http2_port);
-    let http3_addr = format!("127.0.0.1:{}", env.app_port.http3_port);
+    let http2_addr = format!("0.0.0.0:{}", env.app_port.http2_port);
+    let http3_addr = format!("0.0.0.0:{}", env.app_port.http3_port);
 
     // Load TLS certificate and key
     let cert = include_bytes!("../certificates/cert.pem").to_vec();

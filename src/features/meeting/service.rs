@@ -215,7 +215,7 @@ impl MeetingService for MeetingServiceImpl {
             .find_all(
                 user_id,
                 member_status,
-                MeetingsStatusEnum::Active,
+                meeting_status,
                 pagination_dto.skip,
                 pagination_dto.limit,
             )

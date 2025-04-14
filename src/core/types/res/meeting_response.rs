@@ -22,7 +22,7 @@ pub struct MemberResponse {
     pub user: Option<User>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ParticipantResponse {
     #[serde(flatten)]

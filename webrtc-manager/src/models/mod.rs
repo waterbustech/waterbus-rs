@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use serde::Serialize;
-use webrtc::ice_transport::ice_candidate::RTCIceCandidate;
 
-pub type IceCandidateCallback = Arc<dyn Fn(RTCIceCandidate) + Send + Sync>;
+pub type IceCandidateCallback =
+    Arc<dyn Fn(IceCandidate) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 pub type RenegotiationCallback = Arc<dyn Fn(String) + Send + Sync>;
-pub type JoinedCallback = Arc<dyn Fn() + Send + Sync>;
+pub type JoinedCallback = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct WClient {
@@ -21,12 +21,13 @@ pub struct JoinRoomParams {
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
     pub callback: JoinedCallback,
+    pub on_candidate: IceCandidateCallback,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JoinRoomResponse {
-    pub offer: String,
+    pub sdp: String,
     pub is_recording: bool,
 }
 
@@ -51,6 +52,8 @@ pub struct SubscribeResponse {
     pub video_codec: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IceCandidate {
     pub candidate: String,
     pub sdp_mid: Option<String>,
