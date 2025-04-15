@@ -22,7 +22,7 @@
 
 The server is written in **Rust**, using the native [WebRTC.rs](https://github.com/webrtc-rs/webrtc) implementation to maximize performance, safety, and control over media flow.
 
----
+![Waterbus SFU Simulcast](./assets/waterbusrs.svg)
 
 ## ✨ Features
 
