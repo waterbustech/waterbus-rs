@@ -2,11 +2,33 @@ use salvo::{
     conn::rustls::{Keycert, RustlsConfig},
     prelude::*,
 };
+use tracing::Metadata;
+use tracing_subscriber::{
+    filter::{EnvFilter, FilterFn},
+    fmt,
+    layer::{Layer, SubscriberExt},
+    registry,
+    util::SubscriberInitExt,
+};
+
 use waterbus_rs::core::{api::config::get_salvo_service, env::env_config::EnvConfig};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt().init();
+    let filter = EnvFilter::new("info")
+        .add_directive("webrtc_srtp::session=info".parse().unwrap())
+        .add_directive("webrtc_ice::agent::agent_internal=off".parse().unwrap());
+
+    let filter_fn = FilterFn::new(|meta: &Metadata<'_>| {
+        let is_webrtc_session = meta.target().contains("webrtc_srtp::session");
+        let is_webrtc_ice = meta.target().contains("webrtc_ice::agent::agent_internal");
+        !(is_webrtc_session || is_webrtc_ice)
+    });
+
+    registry()
+        .with(filter)
+        .with(fmt::layer().with_filter(filter_fn))
+        .init();
 
     rustls::crypto::ring::default_provider()
         .install_default()
