@@ -14,13 +14,6 @@ use webrtc::{
 use super::media::Media;
 
 #[derive(Debug)]
-pub enum PreferredQuality {
-    Low,
-    Medium,
-    High,
-}
-
-#[derive(Debug)]
 pub struct Publisher {
     pub media: Arc<Mutex<Media>>,
     pub peer_connection: Arc<RTCPeerConnection>,
@@ -49,13 +42,21 @@ impl Publisher {
                         info!("[RTCP] Send PLI cancelled");
                         break;
                     }
-                    _ = tokio::time::sleep(Duration::from_secs(3)) => {
+                    _ = tokio::time::sleep(Duration::from_millis(1_500)) => {
                         if let Some(pc) = pc2.upgrade() {
                             if let Err(e) = pc.write_rtcp(&[Box::new(PictureLossIndication {
                                 sender_ssrc: 0,
                                 media_ssrc,
                             })]).await {
                                 warn!("[PLI Sender] Error sending PLI: {:?}", e);
+                            }
+
+                            if let Err(e) = pc.write_rtcp(&[Box::new(ReceiverEstimatedMaximumBitrate {
+                                sender_ssrc: 0,
+                                bitrate: 3_000_000.0,
+                                ssrcs: vec![media_ssrc],
+                            })]).await {
+                                warn!("[REMB Sender] Error sending REMB: {:?}", e);
                             }
                         } else {
                             break;
@@ -73,27 +74,5 @@ impl Publisher {
         // Stop media
         let media = self.media.lock().await;
         media.stop();
-    }
-
-    pub async fn calculate_remb(&self) {
-        let receivers = self.peer_connection.get_receivers().await;
-
-        for receiver in receivers {
-            let result = receiver.read_rtcp().await;
-            if let Ok((packets, _attrs)) = result {
-                for pkt in packets {
-                    if let Some(remb) = pkt
-                        .as_any()
-                        .downcast_ref::<ReceiverEstimatedMaximumBitrate>()
-                    {
-                        println!("📡 Received REMB: bitrate = {}", remb.bitrate);
-                        println!("   SSRCs: {:?}", remb.ssrcs);
-                        println!("   Sender SSRC: {}", remb.sender_ssrc);
-                    }
-                }
-            } else if let Err(err) = result {
-                eprintln!("Failed to read RTCP: {:?}", err);
-            }
-        }
     }
 }

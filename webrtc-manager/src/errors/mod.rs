@@ -5,6 +5,9 @@ pub enum WebRTCError {
     #[error("Failed to add track")]
     FailedToAddTrack,
 
+    #[error("Failed to replace track")]
+    FailedToReplaceTrack,
+
     #[error("Failed to create offer")]
     FailedToCreateOffer,
 
@@ -21,7 +24,7 @@ pub enum WebRTCError {
     FailedToSetSdp,
 
     #[error("Failed to get sdp")]
-    FailedToGetSdp, 
+    FailedToGetSdp,
 
     #[error("Failed to add candidate")]
     FailedToAddCandidate,

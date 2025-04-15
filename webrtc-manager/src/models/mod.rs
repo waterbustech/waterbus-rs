@@ -1,6 +1,9 @@
 use std::{pin::Pin, sync::Arc};
 
 use serde::Serialize;
+use tokio::sync::Mutex;
+
+use crate::entities::track::Track;
 
 pub type IceCandidateCallback =
     Arc<dyn Fn(IceCandidate) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
@@ -59,3 +62,11 @@ pub struct IceCandidate {
     pub sdp_mid: Option<String>,
     pub sdp_m_line_index: Option<u16>,
 }
+
+pub enum AddTrackResponse {
+    AddTrackSuccess(TrackMutexWrapper),
+    AddSimulcastTrackSuccess(TrackMutexWrapper),
+    FailedToAddTrack,
+}
+
+pub type TrackMutexWrapper = Arc<Mutex<Track>>;
