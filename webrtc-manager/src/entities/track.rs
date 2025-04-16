@@ -78,7 +78,6 @@ impl Track {
             .iter()
             .find(|t| t.rid() == Some(preferred_rid))
         {
-            println!("Found rid 00: {:?}", track.rid());
             return Some(Arc::clone(track));
         }
 
@@ -91,7 +90,6 @@ impl Track {
 
         for rid in fallback_order {
             if let Some(track) = self.local_tracks.iter().find(|t| t.rid() == Some(rid)) {
-                println!("Found rid 02: {:?}", track.rid());
                 return Some(Arc::clone(track));
             }
         }
@@ -116,8 +114,6 @@ impl Track {
             ))
         };
 
-        println!("local_track with rid: {:?}", local_track.rid());
-
         self.local_tracks.push(local_track.clone());
 
         Self::_forward_rtp(remote_track, local_track);
@@ -136,7 +132,6 @@ impl Track {
                                 }
                             }
                             Err(err) => {
-                                eprintln!("error reading RTP: {:?}", err);
                                 break;
                             }
                         }

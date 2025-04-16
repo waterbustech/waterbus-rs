@@ -619,7 +619,7 @@ impl Room {
             "urn:ietf:params:rtp-hdrext:sdes:mid",
             "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id",
             "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id",
-            "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
+            // "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
         ] {
             m.register_header_extension(
                 RTCRtpHeaderExtensionCapability {

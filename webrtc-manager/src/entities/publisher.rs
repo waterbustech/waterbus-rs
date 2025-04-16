@@ -5,10 +5,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use webrtc::{
     peer_connection::RTCPeerConnection,
-    rtcp::payload_feedbacks::{
-        picture_loss_indication::PictureLossIndication,
-        receiver_estimated_maximum_bitrate::ReceiverEstimatedMaximumBitrate,
-    },
+    rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication,
 };
 
 use super::media::Media;
@@ -49,14 +46,6 @@ impl Publisher {
                                 media_ssrc,
                             })]).await {
                                 warn!("[PLI Sender] Error sending PLI: {:?}", e);
-                            }
-
-                            if let Err(e) = pc.write_rtcp(&[Box::new(ReceiverEstimatedMaximumBitrate {
-                                sender_ssrc: 0,
-                                bitrate: 3_000_000.0,
-                                ssrcs: vec![media_ssrc],
-                            })]).await {
-                                warn!("[REMB Sender] Error sending REMB: {:?}", e);
                             }
                         } else {
                             break;

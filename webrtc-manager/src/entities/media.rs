@@ -74,12 +74,13 @@ impl Media {
                     }
 
                     info!(
-                        "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}",
+                        "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
                         rtp_track.id(),
                         rtp_track.kind(),
                         rtp_track.codec().capability.mime_type,
                         rtp_track.rid(),
                         rtp_track.stream_id(),
+                        rtp_track.ssrc(),
                     );
 
                     return AddTrackResponse::AddSimulcastTrackSuccess(Arc::clone(track_arc));
@@ -101,12 +102,13 @@ impl Media {
                 tracks.push(track.clone());
 
                 info!(
-                    "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}",
+                    "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
                     rtp_track.id(),
                     rtp_track.kind(),
                     rtp_track.codec().capability.mime_type,
                     rtp_track.rid(),
                     rtp_track.stream_id(),
+                    rtp_track.ssrc(),
                 );
 
                 return AddTrackResponse::AddTrackSuccess(track);
