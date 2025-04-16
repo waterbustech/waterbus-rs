@@ -26,8 +26,7 @@ pub struct RedisUri(pub String);
 
 #[derive(Debug, Clone)]
 pub struct TypesenseConfig {
-    pub host: String,
-    pub port: u16,
+    pub uri: String,
     pub api_key: String,
 }
 
@@ -59,8 +58,7 @@ impl EnvConfig {
             db_uri: DbUri(env::var("DATABASE_URI").expect("DATABASE_URI must be set")),
             redis_uri: RedisUri(env::var("REDIS_URI").expect("REDIS_URI must be set")),
             typesense: TypesenseConfig {
-                host: env::var("TYPESENSE_HOST").expect("TYPESENSE_HOST must be set"),
-                port: Self::get_env("TYPESENSE_PORT", 8108),
+                uri: env::var("TYPESENSE_URI").expect("TYPESENSE_URI must be set"),
                 api_key: env::var("TYPESENSE_API_KEY").expect("TYPESENSE_API_KEY must be set"),
             },
             aws: AwsConfig {

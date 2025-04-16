@@ -1,9 +1,5 @@
-#![allow(unused)]
-
 use std::sync::Arc;
 
-use tracing::info;
-use webrtc::rtp_transceiver::RTCRtpTransceiver;
 use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
 use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 use webrtc::track::track_local::{TrackLocal, TrackLocalWriter};
@@ -39,7 +35,6 @@ impl Track {
         };
 
         handler._create_local_track(track);
-        handler.initialize_rtp_handler();
         handler
     }
 
@@ -48,13 +43,6 @@ impl Track {
         self._create_local_track(track);
 
         self.is_simulcast = true;
-    }
-
-    fn initialize_rtp_handler(&self) {}
-
-    fn transcribe_audio(payload: &[u8]) -> Result<(), String> {
-        info!("Transcribing audio: {:?}", payload);
-        Ok(())
     }
 
     pub async fn get_track_appropriate(
@@ -131,7 +119,7 @@ impl Track {
                                     break;
                                 }
                             }
-                            Err(err) => {
+                            Err(_) => {
                                 break;
                             }
                         }

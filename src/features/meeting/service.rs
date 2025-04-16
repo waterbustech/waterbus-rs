@@ -1,12 +1,9 @@
-#![allow(unused)]
-
-use crate::core::dtos::meeting;
+use crate::core::dtos::common::pagination_dto::PaginationDto;
 use crate::core::dtos::meeting::create_meeting_dto::CreateMeetingDto;
-use crate::core::dtos::meeting::update_meeting_dto::{self, UpdateMeetingDto};
-use crate::core::dtos::pagination_dto::{self, PaginationDto};
+use crate::core::dtos::meeting::update_meeting_dto::UpdateMeetingDto;
 use crate::core::entities::models::{
-    Meeting, MeetingsStatusEnum, MembersRoleEnum, MembersStatusEnum, NewMeeting, NewMember,
-    NewParticipant, ParticipantsStatusEnum,
+    MeetingsStatusEnum, MembersRoleEnum, MembersStatusEnum, NewMeeting, NewMember, NewParticipant,
+    ParticipantsStatusEnum,
 };
 use crate::core::types::errors::meeting_error::MeetingError;
 use crate::core::types::res::meeting_response::MeetingResponse;
@@ -114,7 +111,6 @@ impl MeetingService for MeetingServiceImpl {
         data: CreateMeetingDto,
         user_id: i32,
     ) -> Result<MeetingResponse, MeetingError> {
-        let create_meeting_dto = data.clone();
         let now = Utc::now().naive_utc();
 
         let password_hashed = hash_password(&data.password);
@@ -283,11 +279,11 @@ impl MeetingService for MeetingServiceImpl {
         user_id: i32,
         meeting_code: i32,
     ) -> Result<MeetingResponse, MeetingError> {
-        let user = self
+        let _ = self
             .user_repository
             .get_user_by_id(user_id)
             .await
-            .map_err(|err| MeetingError::UnexpectedError("User not found".into()))?;
+            .map_err(|_| MeetingError::UnexpectedError("User not found".into()))?;
 
         let mut meeting = self
             .meeting_repository
@@ -335,11 +331,11 @@ impl MeetingService for MeetingServiceImpl {
         meeting_code: i32,
         password: &str,
     ) -> Result<MeetingResponse, MeetingError> {
-        let user = self
+        let _ = self
             .user_repository
             .get_user_by_id(user_id)
             .await
-            .map_err(|err| MeetingError::UnexpectedError("User not found".into()))?;
+            .map_err(|_| MeetingError::UnexpectedError("User not found".into()))?;
 
         let mut meeting = self
             .meeting_repository
@@ -404,11 +400,11 @@ impl MeetingService for MeetingServiceImpl {
             return Err(MeetingError::YouDontHavePermissions);
         }
 
-        let user = self
+        let _ = self
             .user_repository
             .get_user_by_id(user_id)
             .await
-            .map_err(|err| MeetingError::UnexpectedError("User not found".to_string()));
+            .map_err(|_| MeetingError::UnexpectedError("User not found".to_string()));
 
         let now = Utc::now().naive_utc();
 
@@ -484,7 +480,7 @@ impl MeetingService for MeetingServiceImpl {
 
         let mut member = meeting.members[index_of_member].member.clone();
 
-        member.status == MembersStatusEnum::Joined as i32;
+        member.status = MembersStatusEnum::Joined as i32;
 
         let member = self.meeting_repository.update_member(member).await?;
 

@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde_json::Value;
 
+#[derive(Debug, Clone)]
 pub struct TypesenseClient {
     host: String,
     api_key: String,
@@ -67,15 +68,39 @@ impl TypesenseClient {
         collection: &str,
         q: &str,
         query_by: &str,
+        page: Option<i64>,
+        per_page: Option<i64>,
     ) -> Result<Value, reqwest::Error> {
-        let url = format!(
+        let mut url = format!(
             "/collections/{}/documents/search?q={}&query_by={}",
             collection, q, query_by
         );
 
+        if let Some(page) = page {
+            url.push_str(&format!("&page={}", page));
+        }
+
+        if let Some(per_page) = per_page {
+            url.push_str(&format!("&per_page={}", per_page));
+        }
+
         let res = self
             .http
             .get(self.url(&url))
+            .header(self.auth_header().0, self.auth_header().1)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        Ok(res)
+    }
+
+    pub async fn delete_collection(&self, name: &str) -> Result<Value, reqwest::Error> {
+        let url = format!("/collections/{}", name);
+        let res = self
+            .http
+            .delete(self.url(&url))
             .header(self.auth_header().0, self.auth_header().1)
             .send()
             .await?

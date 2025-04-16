@@ -5,11 +5,11 @@ use salvo::{
 
 use crate::core::{
     dtos::{
+        common::pagination_dto::PaginationDto,
         meeting::{
             add_member_dto::AddMemberDto, create_meeting_dto::CreateMeetingDto,
             join_meeting_dto::JoinMeetingDto, update_meeting_dto::UpdateMeetingDto,
         },
-        pagination_dto::PaginationDto,
     },
     entities::models::{MeetingsStatusEnum, MembersStatusEnum},
     types::res::failed_response::FailedResponse,

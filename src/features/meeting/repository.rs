@@ -1,11 +1,6 @@
-#![allow(unused)]
-
-use std::collections::HashMap;
-
-use diesel::query_dsl::methods::GroupByDsl;
 use diesel::{
     BelongingToDsl, ExpressionMethods, GroupedBy, JoinOnDsl, NullableExpressionMethods,
-    PgConnection, PgSortExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
+    PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
     dsl::delete,
     insert_into,
     r2d2::{ConnectionManager, Pool, PooledConnection},
@@ -111,7 +106,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
         let meeting_status = meeting_status as i32;
         let member_status = member_status as i32;
 
-        let (users_for_message) = diesel::alias!(users as users_for_message);
+        let users_for_message = diesel::alias!(users as users_for_message);
 
         let meetings_with_latest = meetings::table
             .inner_join(members::table.on(meetings::id.nullable().eq(members::meeting_id)))
@@ -376,7 +371,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .left_join(users::table.on(members::user_id.nullable().eq(users::id.nullable())))
             .select((Member::as_select(), Option::<User>::as_select()))
             .load::<(Member, Option<User>)>(&mut conn)
-            .map_err(|err| MeetingError::UnexpectedError("Member not found".to_string()))?;
+            .map_err(|_| MeetingError::UnexpectedError("Member not found".to_string()))?;
 
         if result.is_empty() {
             return Err(MeetingError::UnexpectedError(
@@ -426,7 +421,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
         delete(members::table)
             .filter(members::id.eq(member_id))
             .execute(&mut conn)
-            .map_err(|err| MeetingError::UnexpectedError("Failed to delete member".to_string()))?;
+            .map_err(|_| MeetingError::UnexpectedError("Failed to delete member".to_string()))?;
 
         Ok(())
     }
@@ -442,7 +437,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .left_join(users::table.on(participants::user_id.nullable().eq(users::id.nullable())))
             .select((Participant::as_select(), Option::<User>::as_select()))
             .load::<(Participant, Option<User>)>(&mut conn)
-            .map_err(|err| MeetingError::UnexpectedError("Participant not found".to_string()))?;
+            .map_err(|_| MeetingError::UnexpectedError("Participant not found".to_string()))?;
 
         if result.is_empty() {
             return Err(MeetingError::UnexpectedError(

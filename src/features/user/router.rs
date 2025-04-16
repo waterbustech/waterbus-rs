@@ -4,7 +4,10 @@ use salvo::{
 };
 
 use crate::core::{
-    dtos::{pagination_dto::PaginationDto, user::update_user_dto::UpdateUserDto},
+    dtos::{
+        common::page_request_dto::PageRequestDto,
+        user::update_user_dto::UpdateUserDto,
+    },
     types::res::failed_response::FailedResponse,
     utils::jwt_utils::JwtUtils,
 };
@@ -112,4 +115,27 @@ async fn update_username(res: &mut Response, user_name: PathParam<String>, depot
 
 /// Search user
 #[endpoint(tags("user"))]
-async fn search_user(_res: &mut Response, _q: QueryParam<String>, _pagination_dto: PaginationDto) {}
+async fn search_user(
+    res: &mut Response,
+    q: QueryParam<String>,
+    page_request_dto: PageRequestDto,
+    depot: &mut Depot,
+) {
+    let user_service = depot.obtain::<UserServiceImpl>().unwrap();
+
+    let query = q.into_inner();
+
+    let result = user_service.search_user(&query, page_request_dto).await;
+
+    match result {
+        Ok(value) => {
+            res.render(Json(value));
+        }
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(FailedResponse {
+                message: err.to_string(),
+            }));
+        }
+    }
+}

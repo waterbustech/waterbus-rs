@@ -7,11 +7,13 @@ use salvo::{
     catcher::Catcher,
     cors::{Any, Cors},
     oapi::{
-        security::{Http, HttpAuthScheme}, Contact, Info, License, SecurityRequirement, SecurityScheme
+        Contact, Info, License, SecurityRequirement, SecurityScheme,
+        security::{Http, HttpAuthScheme},
     },
     prelude::*,
     rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
 };
+use typesense_client::TypesenseClient;
 
 use crate::{
     core::{
@@ -27,6 +29,7 @@ use crate::{
             repository::MeetingRepositoryImpl, router::get_meeting_router,
             service::MeetingServiceImpl,
         },
+        search::SearchService,
         sfu::service::SfuServiceImpl,
         user::{repository::UserRepositoryImpl, router::get_user_router, service::UserServiceImpl},
     },
@@ -40,6 +43,7 @@ async fn health_check(res: &mut Response) {
 #[handler]
 async fn set_services(depot: &mut Depot) {
     let pool = depot.obtain::<DbConnection>().unwrap();
+    let search_service = depot.obtain::<SearchService>().unwrap();
 
     let auth_repository = AuthRepositoryImpl::new(pool.clone().0);
     let user_repository = UserRepositoryImpl::new(pool.clone().0);
@@ -52,7 +56,8 @@ async fn set_services(depot: &mut Depot) {
         meeting_repository.clone(),
         user_repository.clone(),
     );
-    let user_service = UserServiceImpl::new(user_repository.clone());
+
+    let user_service = UserServiceImpl::new(user_repository.clone(), search_service.clone());
     let meeting_service =
         MeetingServiceImpl::new(meeting_repository.clone(), user_repository.clone());
 
@@ -67,6 +72,11 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
 
     let db_pooled_connection = DbConnection(pool.clone());
     let jwt_utils = JwtUtils::new(env.clone());
+
+    let typesense_client =
+        TypesenseClient::new(env.typesense.uri.clone(), env.typesense.api_key.clone());
+    let search_service = SearchService::new(typesense_client, pool.clone());
+    search_service.init().await;
 
     let limiter = RateLimiter::new(
         FixedGuard::new(),
@@ -115,6 +125,7 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))
         .hoop(affix_state::inject(env.clone()))
+        .hoop(affix_state::inject(search_service))
         .hoop(CatchPanic::new())
         .hoop(CachingHeaders::new())
         .hoop(Compression::new().min_length(1024))

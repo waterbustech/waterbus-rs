@@ -1,13 +1,9 @@
-#![allow(unused)]
 use chrono::{NaiveDateTime, Utc};
 use salvo::async_trait;
 
 use crate::{
     core::{
-        database::schema::meetings::latest_message_id,
-        entities::models::{
-            Meeting, Member, MembersStatusEnum, Message, MessagesStatusEnum, NewMessage,
-        },
+        entities::models::{Meeting, MembersStatusEnum, Message, MessagesStatusEnum, NewMessage},
         types::{errors::chat_error::ChatError, res::message_response::MessageResponse},
     },
     features::{
@@ -96,7 +92,7 @@ impl ChatService for ChatServiceImpl {
             .meeting_repository
             .get_meeting_by_id(meeting_id)
             .await
-            .map_err(|err| ChatError::ConversationNotFound(meeting_id))?;
+            .map_err(|_| ChatError::ConversationNotFound(meeting_id))?;
 
         let is_member = meeting.members.iter().any(|member| {
             member.member.user_id == Some(user_id)
@@ -140,13 +136,13 @@ impl ChatService for ChatServiceImpl {
             .user_repository
             .get_user_by_id(user_id)
             .await
-            .map_err(|err| ChatError::MemberNotFound(user_id))?;
+            .map_err(|_| ChatError::MemberNotFound(user_id))?;
 
         let meeting = self
             .meeting_repository
             .get_meeting_by_id(meeting_id)
             .await
-            .map_err(|err| ChatError::ConversationNotFound(meeting_id))?;
+            .map_err(|_| ChatError::ConversationNotFound(meeting_id))?;
 
         let index_of_member = meeting
             .members
@@ -162,7 +158,7 @@ impl ChatService for ChatServiceImpl {
                 ));
             } else if member.status == MembersStatusEnum::Invisible as i32 {
                 member.status = MembersStatusEnum::Joined as i32;
-                self.meeting_repository.update_member(member).await;
+                let _ = self.meeting_repository.update_member(member).await;
             }
         } else {
             return Err(ChatError::MemberNotFound(user_id));
@@ -244,7 +240,6 @@ impl ChatService for ChatServiceImpl {
             ));
         }
 
-        let now = Utc::now().naive_utc();
         let mut message = message.message;
 
         message.status = MessagesStatusEnum::Inactive as i32;
@@ -263,7 +258,7 @@ impl ChatService for ChatServiceImpl {
             .meeting_repository
             .get_meeting_by_id(conversation_id)
             .await
-            .map_err(|err| ChatError::ConversationNotFound(conversation_id))?;
+            .map_err(|_| ChatError::ConversationNotFound(conversation_id))?;
 
         let index_of_member = meeting
             .members
@@ -278,11 +273,11 @@ impl ChatService for ChatServiceImpl {
                 member.soft_deleted_at = Some(now);
                 member.status = MembersStatusEnum::Invisible as i32;
 
-                let member = self
+                let _ = self
                     .meeting_repository
                     .update_member(member)
                     .await
-                    .map_err(|err| ChatError::UnexpectedError("".to_string()))?;
+                    .map_err(|_| ChatError::UnexpectedError("".to_string()))?;
 
                 Ok(meeting.meeting)
             }
@@ -304,6 +299,6 @@ impl ChatService for ChatServiceImpl {
             meeting.latest_message_id = Some(id);
         }
 
-        self.meeting_repository.update_meeting(meeting).await;
+        let _ = self.meeting_repository.update_meeting(meeting).await;
     }
 }
