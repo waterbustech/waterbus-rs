@@ -152,10 +152,8 @@ diesel::table! {
         bio -> Nullable<Varchar>,
         #[sql_name = "googleId"]
         google_id -> Nullable<Varchar>,
-        #[sql_name = "githubId"]
-        github_id -> Nullable<Varchar>,
-        #[sql_name = "appleId"]
-        apple_id -> Nullable<Varchar>,
+        #[sql_name = "customId"]
+        custom_id -> Nullable<Varchar>,
         avatar -> Nullable<Varchar>,
         #[sql_name = "createdAt"]
         created_at -> Timestamp,

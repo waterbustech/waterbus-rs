@@ -12,6 +12,6 @@ pub struct LoginDto {
     #[serde(rename = "googleId")]
     pub google_id: Option<String>,
 
-    #[serde(rename = "githubId")]
-    pub github_id: Option<String>,
+    #[serde(rename = "customId")]
+    pub custom_id: Option<String>,
 }

@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use diesel::{
     ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
     SelectableHelper,
@@ -64,6 +62,7 @@ impl ChatRepository for ChatRepositoryImpl {
 
         let result = messages::table
             .filter(messages::meeting_id.eq(meeting_id))
+            .filter(messages::created_at.gt(deleted_at))
             .left_join(meetings::table.on(messages::meeting_id.eq(meetings::id.nullable())))
             .left_join(users::table.on(messages::created_by_id.eq(users::id.nullable())))
             .select((
@@ -72,6 +71,8 @@ impl ChatRepository for ChatRepositoryImpl {
                 Option::<User>::as_select(),
             ))
             .order(messages::created_at.desc())
+            .offset(skip)
+            .limit(limit)
             .load::<(Message, Option<Meeting>, Option<User>)>(&mut conn)
             .map_err(|_| ChatError::UnexpectedError("Failed to get messages".to_string()))?;
 

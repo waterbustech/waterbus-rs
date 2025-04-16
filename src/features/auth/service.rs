@@ -47,11 +47,11 @@ impl AuthService for AuthServiceImpl {
         let login_dto = data.clone();
 
         let google_id = login_dto.google_id.as_deref();
-        let github_id = login_dto.github_id.as_deref();
+        let custom_id = login_dto.custom_id.as_deref();
 
         let user_exists = self
             .repository
-            .get_user_by_auth_id(google_id, github_id)
+            .get_user_by_auth_id(google_id, custom_id)
             .await;
 
         match user_exists {
@@ -76,12 +76,11 @@ impl AuthService for AuthServiceImpl {
                 let new_user = NewUser {
                     full_name: Some(&login_dto.full_name),
                     google_id: google_id,
-                    github_id: data.github_id.as_ref().map(|s: &String| s.as_str()),
+                    custom_id: data.custom_id.as_ref().map(|s: &String| s.as_str()),
                     user_name: &generate_username(),
                     created_at: now,
                     updated_at: now,
                     bio: None,
-                    apple_id: None,
                     avatar: None,
                 };
 

@@ -64,11 +64,7 @@ cd waterbus-rs
 mv example.env .env
 ```
 
-You can customize the .env file to match your development or production setup. Make sure to review values such as Redis URL, port bindings, DB, AWS,...
-
 - Build & Run the Server
-
-Compile and run the server in release mode:
 
 ```bash
 cargo run --release

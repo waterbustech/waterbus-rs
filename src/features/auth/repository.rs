@@ -20,7 +20,7 @@ pub trait AuthRepository: Send + Sync {
     async fn get_user_by_auth_id(
         &self,
         google_id: Option<&str>,
-        github_id: Option<&str>,
+        custom_id: Option<&str>,
     ) -> Result<User, AuthError>;
 
     async fn get_user_by_user_name(&self, username: String) -> Result<User, AuthError>;
@@ -75,13 +75,13 @@ impl AuthRepository for AuthRepositoryImpl {
     async fn get_user_by_auth_id(
         &self,
         google_id: Option<&str>,
-        github_id: Option<&str>,
+        custom_id: Option<&str>,
     ) -> Result<User, AuthError> {
         let mut conn = self.get_conn()?;
 
         let user = users::table
             .filter(users::google_id.eq(google_id))
-            .or_filter(users::github_id.eq(github_id))
+            .or_filter(users::custom_id.eq(custom_id))
             .first::<User>(&mut conn);
 
         match user {

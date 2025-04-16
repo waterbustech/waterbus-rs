@@ -279,9 +279,7 @@ pub struct User {
     #[serde(skip_serializing)]
     pub google_id: Option<String>,
     #[serde(skip_serializing)]
-    pub github_id: Option<String>,
-    #[serde(skip_serializing)]
-    pub apple_id: Option<String>,
+    pub custom_id: Option<String>,
     pub avatar: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -310,8 +308,7 @@ pub struct NewUser<'a> {
     pub user_name: &'a str,
     pub bio: Option<&'a str>,
     pub google_id: Option<&'a str>,
-    pub github_id: Option<&'a str>,
-    pub apple_id: Option<&'a str>,
+    pub custom_id: Option<&'a str>,
     pub avatar: Option<&'a str>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
