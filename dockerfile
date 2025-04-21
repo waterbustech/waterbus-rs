@@ -22,7 +22,7 @@ COPY . .
 RUN cargo build --release
 
 # ---- Runtime stage ----
-FROM debian:stable-slim
+FROM debian:trixie-slim
 
 # Install PostgreSQL client libraries and runtime dependencies
 RUN apt-get update && \
@@ -33,8 +33,8 @@ RUN apt-get update && \
 COPY --from=builder /usr/src/app/target/release/waterbus-rs /usr/local/bin/waterbus
 
 # Expose ports
-EXPOSE 3000
-EXPOSE 3000/udp
+EXPOSE 5998
+EXPOSE 5998/udp
 
 # Run the binary
 CMD ["/usr/local/bin/waterbus"]

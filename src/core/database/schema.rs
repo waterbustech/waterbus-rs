@@ -131,18 +131,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    sessions (id) {
-        id -> Int4,
-        #[sql_name = "createdAt"]
-        created_at -> Timestamp,
-        #[sql_name = "deletedAt"]
-        deleted_at -> Nullable<Timestamp>,
-        #[sql_name = "userId"]
-        user_id -> Nullable<Int4>,
-    }
-}
-
-diesel::table! {
     users (id) {
         id -> Int4,
         #[sql_name = "fullName"]
@@ -191,7 +179,6 @@ diesel::joinable!(record_tracks -> records (record_id));
 diesel::joinable!(record_tracks -> users (user_id));
 diesel::joinable!(records -> meetings (meeting_id));
 diesel::joinable!(records -> users (created_by_id));
-diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(white_boards -> meetings (meeting_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -202,7 +189,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     participants,
     record_tracks,
     records,
-    sessions,
     users,
     white_boards,
 );

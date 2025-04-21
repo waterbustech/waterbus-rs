@@ -73,15 +73,7 @@ impl Media {
                         self.codec = rtp_track.codec().capability.mime_type;
                     }
 
-                    info!(
-                        "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
-                        rtp_track.id(),
-                        rtp_track.kind(),
-                        rtp_track.codec().capability.mime_type,
-                        rtp_track.rid(),
-                        rtp_track.stream_id(),
-                        rtp_track.ssrc(),
-                    );
+                    self._log_track_added(rtp_track);
 
                     return AddTrackResponse::AddSimulcastTrackSuccess(Arc::clone(track_arc));
                 } else {
@@ -101,15 +93,7 @@ impl Media {
 
                 tracks.push(track.clone());
 
-                info!(
-                    "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
-                    rtp_track.id(),
-                    rtp_track.kind(),
-                    rtp_track.codec().capability.mime_type,
-                    rtp_track.rid(),
-                    rtp_track.stream_id(),
-                    rtp_track.ssrc(),
-                );
+                self._log_track_added(rtp_track);
 
                 return AddTrackResponse::AddTrackSuccess(track);
             }
@@ -167,6 +151,26 @@ impl Media {
         MediaInfo {
             publisher_id: self.participant_id.clone(),
         }
+    }
+
+    fn _log_track_added(&self, rtp_track: Arc<TrackRemote>) {
+        let rid = if rtp_track.kind() == RTPCodecType::Audio {
+            "audio"
+        } else if rtp_track.rid().is_empty() {
+            "none"
+        } else {
+            rtp_track.rid()
+        };
+
+        info!(
+            "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
+            rtp_track.id(),
+            rtp_track.kind(),
+            rtp_track.codec().capability.mime_type,
+            rid,
+            rtp_track.stream_id(),
+            rtp_track.ssrc(),
+        );
     }
 }
 

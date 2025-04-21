@@ -257,17 +257,6 @@ pub struct Record {
 #[derive(
     Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
 )]
-#[serde(rename_all = "camelCase")]
-pub struct Session {
-    pub id: i32,
-    pub created_at: NaiveDateTime,
-    pub deleted_at: Option<NaiveDateTime>,
-    pub user_id: Option<i32>,
-}
-
-#[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
-)]
 #[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]

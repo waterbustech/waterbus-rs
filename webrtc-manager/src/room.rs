@@ -588,7 +588,10 @@ impl Room {
 
     pub async fn _create_pc(&self) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
         let config = RTCConfiguration {
-            ice_servers: self._get_ice_servers(),
+            ice_servers: vec![RTCIceServer {
+                urls: vec!["stun:stun.cloudflare.com:3478".to_owned()],
+                ..Default::default()
+            }],
             bundle_policy: RTCBundlePolicy::MaxBundle,
             rtcp_mux_policy: RTCRtcpMuxPolicy::Require,
             ice_transport_policy: RTCIceTransportPolicy::All,
@@ -619,7 +622,7 @@ impl Room {
             "urn:ietf:params:rtp-hdrext:sdes:mid",
             "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id",
             "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id",
-            // "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
+            "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
         ] {
             m.register_header_extension(
                 RTCRtpHeaderExtensionCapability {
