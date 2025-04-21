@@ -12,7 +12,6 @@ salvo = { version = "*", features = [
     "jwt-auth",
     "logging",
     "rate-limiter",
-    "size-limiter",
     "catch-panic",
     "caching-headers",
     "compression",

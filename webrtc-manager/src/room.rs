@@ -10,7 +10,10 @@ use webrtc::{
         network_type::NetworkType,
         udp_network::{EphemeralUDP, UDPNetwork},
     },
-    ice_transport::{ice_candidate::RTCIceCandidateInit, ice_server::RTCIceServer},
+    ice_transport::{
+        ice_candidate::RTCIceCandidateInit, ice_candidate_type::RTCIceCandidateType,
+        ice_server::RTCIceServer,
+    },
     interceptor::registry::Registry,
     peer_connection::{
         RTCPeerConnection,
@@ -33,7 +36,7 @@ use crate::{
     errors::WebRTCError,
     models::{
         AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse, SubscribeParams,
-        SubscribeResponse, TrackMutexWrapper,
+        SubscribeResponse, TrackMutexWrapper, WebRTCManagerConfigs,
     },
 };
 
@@ -41,13 +44,15 @@ use crate::{
 pub struct Room {
     publishers: Arc<Mutex<HashMap<String, Arc<Publisher>>>>,
     subscribers: Arc<Mutex<HashMap<String, Arc<Subscriber>>>>,
+    configs: WebRTCManagerConfigs,
 }
 
 impl Room {
-    pub fn new() -> Self {
+    pub fn new(configs: WebRTCManagerConfigs) -> Self {
         Self {
             publishers: Arc::new(Mutex::new(HashMap::new())),
             subscribers: Arc::new(Mutex::new(HashMap::new())),
+            configs: configs,
         }
     }
 
@@ -588,10 +593,7 @@ impl Room {
 
     pub async fn _create_pc(&self) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
         let config = RTCConfiguration {
-            ice_servers: vec![RTCIceServer {
-                urls: vec!["stun:stun.cloudflare.com:3478".to_owned()],
-                ..Default::default()
-            }],
+            ice_servers: self._get_ice_servers(),
             bundle_policy: RTCBundlePolicy::MaxBundle,
             rtcp_mux_policy: RTCRtcpMuxPolicy::Require,
             ice_transport_policy: RTCIceTransportPolicy::All,
@@ -637,8 +639,14 @@ impl Room {
         let mut setting_engine = SettingEngine::default();
         setting_engine.set_network_types(vec![NetworkType::Udp4]);
         setting_engine.set_udp_network(UDPNetwork::Ephemeral(
-            EphemeralUDP::new(10000, 60000).unwrap(),
+            EphemeralUDP::new(self.configs.port_min, self.configs.port_max).unwrap(),
         ));
+        if !self.configs.public_ip.is_empty() {
+            setting_engine.set_nat_1to1_ips(
+                vec![self.configs.public_ip.to_owned()],
+                RTCIceCandidateType::Host,
+            );
+        }
 
         let mut registry = Registry::new();
         registry = register_default_interceptors(registry, &mut m)
@@ -693,18 +701,10 @@ impl Room {
     pub fn _get_ice_servers(&self) -> Vec<RTCIceServer> {
         use webrtc::ice_transport::ice_server::RTCIceServer;
 
-        let ice_servers = vec![
-            RTCIceServer {
-                urls: vec!["stun:turn.waterbus.tech:3478".to_string()],
-                ..Default::default()
-            },
-            RTCIceServer {
-                urls: vec!["turn:turn.waterbus.tech:3478?transport=udp".to_string()],
-                username: "waterbus".to_string(),
-                credential: "waterbus".to_string(),
-                ..Default::default()
-            },
-        ];
+        let ice_servers = vec![RTCIceServer {
+            urls: vec!["stun:stun.cloudflare.com:3478".to_owned()],
+            ..Default::default()
+        }];
 
         ice_servers
     }

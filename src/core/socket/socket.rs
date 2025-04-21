@@ -15,7 +15,10 @@ use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 use webrtc_manager::{
     errors::WebRTCError,
-    models::{IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback, WClient},
+    models::{
+        IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback, WClient,
+        WebRTCManagerConfigs,
+    },
     webrtc_manager::{JoinRoomReq, WebRTCManager},
 };
 
@@ -95,7 +98,11 @@ pub async fn get_socket_router(
         .with_state(jwt_utils.clone())
         .with_state(app_channel)
         .with_state(sfu_service.clone())
-        .with_state(WebRTCManager::new())
+        .with_state(WebRTCManager::new(WebRTCManagerConfigs {
+            public_ip: env.public_ip.clone(),
+            port_min: env.udp_port_range.port_min,
+            port_max: env.udp_port_range.port_max,
+        }))
         .with_adapter::<RedisAdapter<_>>(adapter)
         .build_layer();
 

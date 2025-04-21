@@ -11,6 +11,13 @@ pub type RenegotiationCallback = Arc<dyn Fn(String) + Send + Sync>;
 pub type JoinedCallback = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 #[derive(Debug, Clone)]
+pub struct WebRTCManagerConfigs {
+    pub public_ip: String,
+    pub port_min: u16,
+    pub port_max: u16,
+}
+
+#[derive(Debug, Clone)]
 pub struct WClient {
     pub participant_id: String,
     pub room_id: String,

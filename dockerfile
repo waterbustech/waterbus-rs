@@ -1,5 +1,5 @@
 # ---- Build stage with nightly ----
-FROM rustlang/rust:nightly as builder
+FROM rustlang/rust:nightly AS builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y pkg-config libssl-dev cmake clang
@@ -35,6 +35,7 @@ COPY --from=builder /usr/src/app/target/release/waterbus-rs /usr/local/bin/water
 # Expose ports
 EXPOSE 5998
 EXPOSE 5998/udp
+EXPOSE 19200-19250/udp
 
 # Run the binary
 CMD ["/usr/local/bin/waterbus"]

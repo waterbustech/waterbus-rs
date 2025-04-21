@@ -6,7 +6,7 @@ use crate::{
     errors::WebRTCError,
     models::{
         IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
-        RenegotiationCallback, SubscribeParams, SubscribeResponse, WClient,
+        RenegotiationCallback, SubscribeParams, SubscribeResponse, WClient, WebRTCManagerConfigs,
     },
     room::Room,
 };
@@ -24,13 +24,15 @@ pub struct JoinRoomReq {
 pub struct WebRTCManager {
     rooms: Arc<Mutex<HashMap<String, Arc<Mutex<Room>>>>>,
     clients: Arc<Mutex<HashMap<String, WClient>>>,
+    configs: WebRTCManagerConfigs,
 }
 
 impl WebRTCManager {
-    pub fn new() -> Self {
+    pub fn new(configs: WebRTCManagerConfigs) -> Self {
         Self {
             rooms: Arc::new(Mutex::new(HashMap::new())),
             clients: Arc::new(Mutex::new(HashMap::new())),
+            configs: configs,
         }
     }
 
@@ -340,7 +342,7 @@ impl WebRTCManager {
     }
 
     async fn _add_room(&self, room_id: &str) -> Result<Arc<Mutex<Room>>, WebRTCError> {
-        let room_value = Arc::new(Mutex::new(Room::new()));
+        let room_value = Arc::new(Mutex::new(Room::new(self.configs.clone())));
 
         let mut rooms = self.rooms.lock().await;
         rooms.insert(room_id.to_string(), room_value.clone());

@@ -4,12 +4,14 @@ use time::{Duration, OffsetDateTime};
 
 #[derive(Debug, Clone)]
 pub struct EnvConfig {
+    pub public_ip: String,
     pub app_port: u16,
     pub db_uri: DbUri,
     pub redis_uri: RedisUri,
     pub typesense: TypesenseConfig,
     pub aws: AwsConfig,
     pub jwt: JwtConfig,
+    pub udp_port_range: UdpPortRange,
 }
 
 #[derive(Debug, Clone)]
@@ -40,12 +42,23 @@ pub struct AwsConfig {
     pub bucket_name: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct UdpPortRange {
+    pub port_min: u16,
+    pub port_max: u16,
+}
+
 impl EnvConfig {
     pub fn new() -> Self {
         dotenv().ok();
 
         Self {
+            public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
             app_port: Self::get_env("APP_PORT", 3000),
+            udp_port_range: UdpPortRange {
+                port_min: Self::get_env("PORT_MIN_UDP", 19200),
+                port_max: Self::get_env("PORT_MAX_UDP", 19250),
+            },
             db_uri: DbUri(env::var("DATABASE_URI").expect("DATABASE_URI must be set")),
             redis_uri: RedisUri(env::var("REDIS_URI").expect("REDIS_URI must be set")),
             typesense: TypesenseConfig {

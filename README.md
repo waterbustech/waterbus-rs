@@ -46,10 +46,29 @@ The server is written in **Rust**, using the native [WebRTC.rs](https://github.c
 
    Works across browsers, native apps using WebRTC standards.
 
+## 📦 Requirements
+
+This project uses the following technologies:
+
+- [Rust](https://www.rust-lang.org/) `1.82+`
+- [PostgreSQL](https://www.postgresql.org/) `16+`
+- [Redis](https://redis.io/) `7+`
+- [Typesense](https://typesense.org/) `v0.27.1+` 
+
 
 ## ⚡️ Quick Start
 
 Get up and running with Waterbus in just a few steps.
+
+### 🗂️ Create db schema
+
+- Connect to your PostgreSQL database and run the schema file:
+
+```bash
+psql -h <postgres-host> -U <postgres-user> -d <database-name> -f schema.sql
+```
+
+### 🛠 Local Build
 
 - Start by cloning the Waterbus server repository:
 
@@ -68,6 +87,22 @@ mv example.env .env
 
 ```bash
 cargo run --release
+```
+
+### 🐳 Run with Docker
+
+If you prefer to use Docker:
+
+- Build the Docker image:
+
+```bash
+sudo docker build --platform=linux/amd64 -t <image-name> .
+```
+
+- Run the container with necessary ports exposed:
+
+```bash
+sudo docker run --env-file .env -p 5998:5998 -p 5998:5998/udp -p 19200-19250:19200-19250/udp <image-name>
 ```
 
 ## ❓ Why We Migrated from NestJS to Rust

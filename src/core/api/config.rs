@@ -85,8 +85,6 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         BasicQuota::per_second(200),
     );
 
-    let max_size = max_size(1024 * 1024 * 10);
-
     let health_router = Router::new().path("/health-check").get(health_check);
     let auth_router = get_auth_router(jwt_utils.clone());
     let user_router = get_user_router(jwt_utils.clone());
@@ -130,7 +128,6 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .hoop(CachingHeaders::new())
         .hoop(Compression::new().min_length(1024))
         .hoop(limiter)
-        .hoop(max_size)
         .hoop(set_services)
         .push(auth_router)
         .push(chat_router)
