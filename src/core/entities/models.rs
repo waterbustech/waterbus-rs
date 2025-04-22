@@ -309,6 +309,8 @@ pub struct NewMessage<'a> {
     pub data: &'a str,
     pub created_by_id: Option<&'a i32>,
     pub meeting_id: Option<&'a i32>,
+    pub status: &'a i32,
+    pub type_: &'a i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

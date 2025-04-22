@@ -189,13 +189,9 @@ impl Room {
             .await
             .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
 
-        let mut gather_complete = pc.gathering_complete_promise().await;
-
         pc.set_local_description(answer.clone())
             .await
             .map_err(|_| WebRTCError::FailedToSetSdp)?;
-
-        let _ = gather_complete.recv().await;
 
         Ok(JoinRoomResponse {
             sdp: answer.sdp.clone(),

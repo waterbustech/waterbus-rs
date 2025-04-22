@@ -3,7 +3,7 @@ use salvo::async_trait;
 
 use crate::{
     core::{
-        entities::models::{Meeting, MembersStatusEnum, Message, MessagesStatusEnum, NewMessage},
+        entities::models::{Meeting, MembersStatusEnum, Message, MessagesStatusEnum, MessagesTypeEnum, NewMessage},
         types::{errors::chat_error::ChatError, res::message_response::MessageResponse},
     },
     features::{
@@ -170,6 +170,8 @@ impl ChatService for ChatServiceImpl {
             data,
             created_by_id: Some(&user_id),
             meeting_id: Some(&meeting_id),
+            status: &(MessagesStatusEnum::Active as i32),
+            type_: &(MessagesTypeEnum::Default as i32),
             created_at: now,
             updated_at: now,
         };
