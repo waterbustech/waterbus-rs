@@ -2,7 +2,7 @@ use crate::{errors::WebRTCError, models::TrackMutexWrapper};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::warn;
 use webrtc::{
     peer_connection::RTCPeerConnection,
     rtcp::payload_feedbacks::receiver_estimated_maximum_bitrate::ReceiverEstimatedMaximumBitrate,
@@ -13,8 +13,8 @@ use webrtc::{
     track::track_local::{TrackLocal, track_local_static_rtp::TrackLocalStaticRTP},
 };
 
-const BWE_THRESHOLD_H: f32 = 1_000_000.0;
-const BWE_THRESHOLD_F: f32 = 2_000_000.0;
+const BWE_THRESHOLD_H: f32 = 550_000.0;
+const BWE_THRESHOLD_F: f32 = 1_600_000.0;
 
 #[derive(Debug)]
 struct TrackContext {
@@ -114,7 +114,7 @@ impl Subscriber {
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => {
-                        info!("[RTCP] REMB loop cancelled");
+                        // info!("[RTCP] REMB loop cancelled");
                         break;
                     }
                     _ = tokio::time::sleep(std::time::Duration::from_secs(4)) => {
@@ -142,7 +142,6 @@ impl Subscriber {
                             .as_any()
                             .downcast_ref::<ReceiverEstimatedMaximumBitrate>()
                         {
-                            info!("====> Got REMB: {:?}", remb.bitrate);
                             let bitrate = remb.bitrate;
                             let new_quality = if bitrate >= BWE_THRESHOLD_F {
                                 PreferredQuality::High
@@ -157,10 +156,10 @@ impl Subscriber {
                                 != std::mem::discriminant(&new_quality)
                             {
                                 *quality = new_quality;
-                                info!(
-                                    "Bandwidth quality changed, updating tracks to {:?}",
-                                    *quality
-                                );
+                                // info!(
+                                //     "Bandwidth quality changed, updating tracks to {:?}",
+                                //     *quality
+                                // );
                                 let _ = tx.send(());
                             }
                         }
@@ -198,8 +197,6 @@ impl Subscriber {
 
                                 match cur_track {
                                     Some(cur_track) => {
-                                        info!("current track in sender: {:?}", cur_track.rid());
-
                                         if cur_track.rid() != new_encoding.rid() {
                                             let result = sender
                                                 .replace_track(Some(Arc::clone(&new_encoding)
@@ -210,7 +207,7 @@ impl Subscriber {
                                                 Ok(()) => {
                                                     ctx.local_track = Arc::clone(&new_encoding);
 
-                                                    info!("Replaced track with new quality");
+                                                    // info!("Replaced track with new quality");
                                                 }
                                                 Err(err) => {
                                                     warn!("Got err when replace track: {:?}", err);

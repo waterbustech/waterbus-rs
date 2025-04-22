@@ -35,7 +35,7 @@ COPY --from=builder /usr/src/app/target/release/waterbus-rs /usr/local/bin/water
 # Expose ports
 EXPOSE 5998
 EXPOSE 5998/udp
-EXPOSE 19200-19250/udp
+EXPOSE 19000-20000/udp
 
 # Run the binary
 CMD ["/usr/local/bin/waterbus"]

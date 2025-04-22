@@ -493,8 +493,6 @@ impl MeetingRepository for MeetingRepositoryImpl {
     async fn delete_participant_by_id(&self, participant_id: i32) -> Result<(), MeetingError> {
         let mut conn = self.get_conn()?;
 
-        println!("Request delete participant id: {}", participant_id);
-
         // Perform the deletion
         let deleted_rows = delete(participants::table)
             .filter(participants::id.eq(participant_id))
@@ -518,10 +516,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
                 // Successfully found the participant, print or use the participant
                 println!("Participant found: {:?}", participant);
             }
-            Err(e) => {
-                // Handle the error, such as participant not being found
-                println!("Error retrieving participant: {}", e);
-            }
+            Err(_) => {}
         }
 
         Ok(())

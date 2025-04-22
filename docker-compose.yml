@@ -1,0 +1,11 @@
+services:
+  waterbus:
+    image: lambiengcode/waterbus-rs
+    container_name: waterbus
+    env_file:
+      - .env
+    ports:
+      - "5998:5998/tcp"
+      - "5998:5998/udp"
+      - "19000-20000:19000-20000/udp"
+    restart: unless-stopped

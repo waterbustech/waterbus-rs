@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::warn;
 use webrtc::{
     peer_connection::RTCPeerConnection,
     rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication,
@@ -36,7 +36,7 @@ impl Publisher {
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => {
-                        info!("[RTCP] Send PLI cancelled");
+                        // info!("[RTCP] Send PLI cancelled");
                         break;
                     }
                     _ = tokio::time::sleep(Duration::from_millis(1_500)) => {

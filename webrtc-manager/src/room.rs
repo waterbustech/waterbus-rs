@@ -10,10 +10,7 @@ use webrtc::{
         network_type::NetworkType,
         udp_network::{EphemeralUDP, UDPNetwork},
     },
-    ice_transport::{
-        ice_candidate::RTCIceCandidateInit, ice_candidate_type::RTCIceCandidateType,
-        ice_server::RTCIceServer,
-    },
+    ice_transport::{ice_candidate::RTCIceCandidateInit, ice_candidate_type::RTCIceCandidateType},
     interceptor::registry::Registry,
     peer_connection::{
         RTCPeerConnection,
@@ -194,19 +191,14 @@ impl Room {
 
         let mut gather_complete = pc.gathering_complete_promise().await;
 
-        pc.set_local_description(answer)
+        pc.set_local_description(answer.clone())
             .await
             .map_err(|_| WebRTCError::FailedToSetSdp)?;
 
         let _ = gather_complete.recv().await;
 
-        let local_desc = pc
-            .local_description()
-            .await
-            .ok_or(WebRTCError::FailedToGetSdp)?;
-
         Ok(JoinRoomResponse {
-            sdp: local_desc.sdp.clone(),
+            sdp: answer.sdp.clone(),
             is_recording: false,
         })
     }
@@ -593,7 +585,7 @@ impl Room {
 
     pub async fn _create_pc(&self) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
         let config = RTCConfiguration {
-            ice_servers: self._get_ice_servers(),
+            ice_servers: vec![],
             bundle_policy: RTCBundlePolicy::MaxBundle,
             rtcp_mux_policy: RTCRtcpMuxPolicy::Require,
             ice_transport_policy: RTCIceTransportPolicy::All,
@@ -637,6 +629,7 @@ impl Room {
         }
 
         let mut setting_engine = SettingEngine::default();
+        setting_engine.set_lite(true);
         setting_engine.set_network_types(vec![NetworkType::Udp4]);
         setting_engine.set_udp_network(UDPNetwork::Ephemeral(
             EphemeralUDP::new(self.configs.port_min, self.configs.port_max).unwrap(),
@@ -696,16 +689,5 @@ impl Room {
             let _ = subscriber.add_track(Arc::clone(track_wrapper)).await?;
         }
         Ok(())
-    }
-
-    pub fn _get_ice_servers(&self) -> Vec<RTCIceServer> {
-        use webrtc::ice_transport::ice_server::RTCIceServer;
-
-        let ice_servers = vec![RTCIceServer {
-            urls: vec!["stun:stun.cloudflare.com:3478".to_owned()],
-            ..Default::default()
-        }];
-
-        ice_servers
     }
 }
