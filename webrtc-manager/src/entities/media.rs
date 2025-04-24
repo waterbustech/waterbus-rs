@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use dashmap::DashMap;
+use parking_lot::RwLock;
 use tokio::sync::Mutex;
 use tracing::info;
 use uuid::Uuid;
@@ -13,7 +15,12 @@ use super::track::Track;
 pub struct Media {
     pub media_id: String,
     pub participant_id: String,
-    pub tracks: Arc<Mutex<Vec<TrackMutexWrapper>>>,
+    pub tracks: Arc<DashMap<String, TrackMutexWrapper>>,
+    pub state: Arc<RwLock<MediaState>>,
+}
+
+#[derive(Debug)]
+pub struct MediaState {
     pub video_enabled: bool,
     pub audio_enabled: bool,
     pub is_e2ee_enabled: bool,
@@ -21,6 +28,7 @@ pub struct Media {
     pub is_hand_raising: bool,
     pub camera_type: u8,
     pub codec: String,
+    pub screen_track_id: Option<String>,
 }
 
 impl Media {
@@ -30,126 +38,144 @@ impl Media {
         is_audio_enabled: bool,
         is_e2ee_enabled: bool,
     ) -> Self {
-        Media {
+        Self {
             media_id: format!("m_{}", Uuid::new_v4()),
             participant_id: publisher_id,
-            tracks: Arc::new(Mutex::new(vec![])),
-            video_enabled: is_video_enabled,
-            audio_enabled: is_audio_enabled,
-            is_e2ee_enabled,
-            is_screen_sharing: false,
-            is_hand_raising: false,
-            camera_type: 0, // 0: front, 1: rear
-            codec: String::new(),
+            tracks: Arc::new(DashMap::new()),
+            state: Arc::new(RwLock::new(MediaState {
+                video_enabled: is_video_enabled,
+                audio_enabled: is_audio_enabled,
+                is_e2ee_enabled,
+                is_screen_sharing: false,
+                is_hand_raising: false,
+                camera_type: 0,
+                codec: String::new(),
+                screen_track_id: None,
+            })),
         }
     }
 
-    pub fn stop(&self) {}
-
     pub async fn add_track(
-        &mut self,
+        &self,
         rtp_track: Arc<TrackRemote>,
         room_id: String,
     ) -> AddTrackResponse {
-        let mut tracks = self.tracks.lock().await;
+        if let Some(existing_track_arc) = self.tracks.get(&rtp_track.id()) {
+            let mut track_guard = existing_track_arc.lock().await;
+            track_guard.add_track(rtp_track.clone());
 
-        let mut found_index = None;
-
-        for (index, track_arc) in tracks.iter().enumerate() {
-            let track_guard = track_arc.lock().await;
-            if track_guard.id == rtp_track.id() {
-                found_index = Some(index);
-                break;
+            if rtp_track.kind() == RTPCodecType::Video {
+                let mut state = self.state.write();
+                state.codec = rtp_track.codec().capability.mime_type;
             }
+
+            self._log_track_added(rtp_track);
+            return AddTrackResponse::AddSimulcastTrackSuccess(existing_track_arc.clone());
         }
 
-        match found_index {
-            Some(index) => {
-                if let Some(track_arc) = tracks.get(index) {
-                    let mut track_guard = track_arc.lock().await;
-                    track_guard.add_track(rtp_track.clone());
+        let new_track = Arc::new(Mutex::new(Track::new(
+            rtp_track.clone(),
+            room_id,
+            self.participant_id.clone(),
+        )));
 
-                    if rtp_track.kind() == RTPCodecType::Video {
-                        self.codec = rtp_track.codec().capability.mime_type;
-                    }
+        if rtp_track.kind() == RTPCodecType::Video {
+            let mut state = self.state.write();
+            state.codec = rtp_track.codec().capability.mime_type;
+        }
 
-                    self._log_track_added(rtp_track);
+        self.tracks.insert(rtp_track.id(), new_track.clone());
 
-                    return AddTrackResponse::AddSimulcastTrackSuccess(Arc::clone(track_arc));
-                } else {
-                    return AddTrackResponse::FailedToAddTrack;
-                }
-            }
-            None => {
-                let track = Arc::new(Mutex::new(Track::new(
-                    rtp_track.clone(),
-                    room_id,
-                    self.participant_id.clone(),
-                )));
+        self._log_track_added(rtp_track);
 
-                if rtp_track.kind() == RTPCodecType::Video {
-                    self.codec = rtp_track.codec().capability.mime_type;
-                }
+        AddTrackResponse::AddTrackSuccess(new_track)
+    }
 
-                tracks.push(track.clone());
+    pub fn set_screen_sharing(&self, is_enabled: bool, screen_track_id: Option<String>) {
+        let mut state = self.state.write();
+        if state.is_screen_sharing != is_enabled {
+            state.is_screen_sharing = is_enabled;
 
-                self._log_track_added(rtp_track);
+            if !is_enabled {
+                drop(state); // Unlock before async task
 
-                return AddTrackResponse::AddTrackSuccess(track);
+                self.remove_screen_track();
+            } else {
+                state.screen_track_id = screen_track_id;
             }
         }
     }
 
-    pub async fn set_screen_sharing(&mut self, is_enabled: bool) {
-        if self.is_screen_sharing == is_enabled {
-            return;
+    pub fn set_hand_rasing(&self, is_enabled: bool) {
+        let mut state = self.state.write();
+        state.is_hand_raising = is_enabled;
+    }
+
+    fn remove_screen_track(&self) {
+        let screen_track_id_opt = {
+            let state = self.state.read();
+            state.screen_track_id.clone()
+        };
+
+        if let Some(screen_track_id) = screen_track_id_opt {
+            let removed = self.tracks.remove(&screen_track_id);
+            if removed.is_some() {
+                info!("[screen_track_removed]: id: {}", screen_track_id);
+            } else {
+                info!(
+                    "[screen_track_remove_failed]: id not found: {}",
+                    screen_track_id
+                );
+            }
+
+            // Clear the screen_track_id
+            let mut state = self.state.write();
+            state.screen_track_id = None;
+        }
+    }
+
+    pub fn remove_all_tracks(&self) {
+        self.tracks.clear();
+    }
+
+    pub fn set_camera_type(&self, camera_type: u8) {
+        self.state.write().camera_type = camera_type;
+    }
+
+    pub fn set_video_enabled(&self, is_enabled: bool) {
+        self.state.write().video_enabled = is_enabled;
+    }
+
+    pub fn set_audio_enabled(&self, is_enabled: bool) {
+        self.state.write().audio_enabled = is_enabled;
+    }
+
+    pub fn set_e2ee_enabled(&self, is_enabled: bool) {
+        self.state.write().is_e2ee_enabled = is_enabled;
+    }
+
+    pub fn stop(&self) {
+        for entry in self.tracks.iter() {
+            let track_mutex = entry.value().clone();
+
+            // We can spawn or block here if needed
+            tokio::spawn(async move {
+                let mut track = track_mutex.lock().await;
+                track.stop();
+            });
         }
 
-        self.is_screen_sharing = is_enabled;
+        self.remove_all_tracks();
 
-        if !is_enabled {
-            self.remove_last_track().await;
-        }
-    }
-
-    pub fn set_hand_rasing(&mut self, is_enabled: bool) {
-        if self.is_hand_raising == is_enabled {
-            return;
-        }
-
-        self.is_hand_raising = is_enabled;
-    }
-
-    async fn remove_last_track(&mut self) {
-        let mut tracks = self.tracks.lock().await;
-        tracks.pop().unwrap();
-    }
-
-    pub async fn remove_all_tracks(&mut self) {
-        let mut tracks = self.tracks.lock().await;
-
-        tracks.clear();
-    }
-
-    pub fn set_camera_type(&mut self, camera_type: u8) {
-        self.camera_type = camera_type;
-    }
-
-    pub fn set_video_enabled(&mut self, is_enabled: bool) {
-        self.video_enabled = is_enabled;
-    }
-
-    pub fn set_audio_enabled(&mut self, is_enabled: bool) {
-        self.audio_enabled = is_enabled;
-    }
-
-    pub fn set_e2ee_enabled(&mut self, is_enabled: bool) {
-        self.is_e2ee_enabled = is_enabled;
-    }
-
-    pub fn info(&self) -> MediaInfo {
-        MediaInfo {
-            publisher_id: self.participant_id.clone(),
+        {
+            let mut state = self.state.write();
+            state.screen_track_id = None;
+            state.video_enabled = false;
+            state.audio_enabled = false;
+            state.is_screen_sharing = false;
+            state.is_hand_raising = false;
+            state.camera_type = 0;
+            state.codec.clear();
         }
     }
 
@@ -172,8 +198,4 @@ impl Media {
             rtp_track.ssrc(),
         );
     }
-}
-
-pub struct MediaInfo {
-    pub publisher_id: String,
 }

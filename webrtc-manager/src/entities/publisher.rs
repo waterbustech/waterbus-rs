@@ -2,7 +2,6 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 use webrtc::{
     peer_connection::RTCPeerConnection,
     rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication,
@@ -33,35 +32,44 @@ impl Publisher {
         let cancel = self.cancel_token.clone();
 
         tokio::spawn(async move {
-            loop {
+            let mut result = Result::<usize, anyhow::Error>::Ok(0);
+            while result.is_ok() {
+                let timeout = tokio::time::sleep(Duration::from_secs(3));
+                tokio::pin!(timeout);
+
                 tokio::select! {
                     _ = cancel.cancelled() => {
-                        // info!("[RTCP] Send PLI cancelled");
+                        drop(pc2);
                         break;
                     }
-                    _ = tokio::time::sleep(Duration::from_millis(1_500)) => {
-                        if let Some(pc) = pc2.upgrade() {
-                            if let Err(e) = pc.write_rtcp(&[Box::new(PictureLossIndication {
+                    _ = timeout.as_mut() =>{
+                        if let Some(pc) = pc2.upgrade(){
+                            result = pc.write_rtcp(&[Box::new(PictureLossIndication{
                                 sender_ssrc: 0,
                                 media_ssrc,
-                            })]).await {
-                                warn!("[PLI Sender] Error sending PLI: {:?}", e);
-                            }
-                        } else {
+                            })]).await.map_err(Into::into);
+                        }else{
                             break;
                         }
                     }
-                }
+                };
             }
         });
     }
 
-    pub async fn close(&self) {
+    pub fn close(&self) {
+        let pc = self.peer_connection.clone();
+        let media = self.media.clone();
         self.cancel_token.cancel();
-        let _ = self.peer_connection.close().await;
 
-        // Stop media
-        let media = self.media.lock().await;
-        media.stop();
+        tokio::spawn(async move {
+            let _ = pc.close().await;
+
+            drop(pc);
+
+            // Stop media
+            let media = media.lock().await;
+            media.stop();
+        });
     }
 }

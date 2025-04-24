@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.97"
+dashmap = "6.1.0"
+parking_lot = "0.12.3"
 rand = "0.9.0"
 serde = "1.0.219"
 thiserror = "2.0.12"

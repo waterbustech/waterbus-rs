@@ -9,6 +9,7 @@ pub struct JoinRoomDto {
     pub is_video_enabled: bool,
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
+    pub total_tracks: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +58,7 @@ pub struct SetEnabledDto {
 #[serde(rename_all = "camelCase")]
 pub struct SetScreenSharingDto {
     pub is_sharing: bool,
+    pub screen_track_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

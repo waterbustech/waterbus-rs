@@ -1,5 +1,13 @@
 use crate::{errors::WebRTCError, models::TrackMutexWrapper};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use dashmap::DashMap;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
+    time::Duration,
+};
 use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -24,20 +32,36 @@ struct TrackContext {
 
 type TrackMap = Arc<Mutex<HashMap<String, TrackContext>>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[repr(u8)]
 pub enum PreferredQuality {
-    Low,
-    Medium,
-    High,
+    Low = 0,
+    Medium = 1,
+    High = 2,
+}
+
+impl PreferredQuality {
+    pub fn from_u8(value: u8) -> PreferredQuality {
+        match value {
+            0 => PreferredQuality::Low,
+            2 => PreferredQuality::High,
+            _ => PreferredQuality::Medium,
+        }
+    }
+
+    pub fn as_u8(&self) -> u8 {
+        self.clone() as u8
+    }
 }
 
 #[derive(Debug)]
 pub struct Subscriber {
     pub peer_connection: Arc<RTCPeerConnection>,
     cancel_token: CancellationToken,
-    preferred_quality: Arc<Mutex<PreferredQuality>>,
-    tracks: Arc<Mutex<HashMap<String, TrackMutexWrapper>>>,
+    preferred_quality: Arc<AtomicU8>,
+    tracks: Arc<DashMap<String, TrackMutexWrapper>>,
     track_map: TrackMap,
+    quality_change_counter: Arc<DashMap<PreferredQuality, u32>>,
 }
 
 impl Subscriber {
@@ -48,9 +72,10 @@ impl Subscriber {
         let this = Self {
             peer_connection,
             cancel_token: cancel_token.clone(),
-            preferred_quality: Arc::new(Mutex::new(PreferredQuality::Medium)),
-            tracks: Arc::new(Mutex::new(HashMap::new())),
+            preferred_quality: Arc::new(AtomicU8::new(PreferredQuality::Medium.as_u8())),
+            tracks: Arc::new(DashMap::new()),
             track_map: Arc::new(Mutex::new(HashMap::new())),
+            quality_change_counter: Arc::new(DashMap::new()),
         };
 
         this._spawn_remb_loop(cancel_token, tx.clone());
@@ -60,16 +85,16 @@ impl Subscriber {
     }
 
     pub async fn add_track(&self, remote_track: TrackMutexWrapper) -> Result<(), WebRTCError> {
-        let mut tracks = self.tracks.lock().await;
         let track_id = {
             let track_guard = remote_track.lock().await;
             track_guard.id.clone()
         };
 
-        if let Some(existing) = tracks.get_mut(&track_id) {
+        if let Some(mut existing) = self.tracks.get_mut(&track_id) {
             *existing = remote_track;
         } else {
-            tracks.insert(track_id.to_string(), remote_track.clone());
+            self.tracks
+                .insert(track_id.to_string(), remote_track.clone());
             self._add_transceiver(remote_track, &track_id).await?;
         }
 
@@ -96,6 +121,8 @@ impl Subscriber {
             .await
             .map_err(|_| WebRTCError::FailedToAddTrack)?;
 
+        self._read_rtcp(&transceiver).await;
+
         self.track_map.lock().await.insert(
             track_id.to_owned(),
             TrackContext {
@@ -107,9 +134,35 @@ impl Subscriber {
         Ok(())
     }
 
+    async fn _read_rtcp(&self, transceiver: &Arc<RTCRtpTransceiver>) {
+        let rtp_sender = transceiver.sender().await;
+        let cancel_token = self.cancel_token.clone();
+
+        // Read incoming RTCP packets
+        // Before these packets are returned they are processed by interceptors. For things
+        // like NACK this needs to be called.
+        tokio::spawn(async move {
+            let mut rtcp_buf = vec![0u8; 1500];
+            loop {
+                tokio::select! {
+                    _ = cancel_token.cancelled() => {
+                        break;
+                    }
+                    result = rtp_sender.read(&mut rtcp_buf) => {
+                        if result.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     fn _spawn_remb_loop(&self, cancel_token: CancellationToken, tx: watch::Sender<()>) {
         let pc2 = Arc::downgrade(&self.peer_connection);
         let preferred_quality = Arc::clone(&self.preferred_quality);
+        let quality_change_counter = Arc::clone(&self.quality_change_counter);
+
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -119,7 +172,8 @@ impl Subscriber {
                     }
                     _ = tokio::time::sleep(std::time::Duration::from_secs(4)) => {
                         if let Some(pc) = pc2.upgrade() {
-                            Self::_monitor_remb(pc, Arc::clone(&preferred_quality), tx.clone()).await;
+                            // Passing the cloned `subscriber` instead of `self`
+                            Self::_monitor_remb(quality_change_counter.clone(), pc, preferred_quality.clone(), tx.clone()).await;
                         }
                     }
                 }
@@ -128,9 +182,10 @@ impl Subscriber {
     }
 
     async fn _monitor_remb(
+        quality_change_counter: Arc<DashMap<PreferredQuality, u32>>,
         peer_connection: Arc<RTCPeerConnection>,
-        preferred_quality: Arc<Mutex<PreferredQuality>>,
-        tx: watch::Sender<()>,
+        preferred_quality: Arc<AtomicU8>,
+        _tx: watch::Sender<()>,
     ) {
         let senders = peer_connection.get_senders().await;
         for sender in senders {
@@ -151,16 +206,32 @@ impl Subscriber {
                                 PreferredQuality::Low
                             };
 
-                            let mut quality = preferred_quality.lock().await;
-                            if std::mem::discriminant(&*quality)
+                            let current_u8 =
+                                preferred_quality.load(std::sync::atomic::Ordering::Relaxed);
+                            let current_quality = PreferredQuality::from_u8(current_u8);
+
+                            if std::mem::discriminant(&current_quality)
                                 != std::mem::discriminant(&new_quality)
                             {
-                                *quality = new_quality;
-                                // info!(
-                                //     "Bandwidth quality changed, updating tracks to {:?}",
-                                //     *quality
-                                // );
-                                let _ = tx.send(());
+                                let mut counter = quality_change_counter
+                                    .entry(new_quality.clone())
+                                    .or_insert(0);
+                                *counter += 1;
+
+                                if *counter >= 3 {
+                                    preferred_quality.store(
+                                        new_quality.as_u8(),
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
+                                    *counter = 0;
+                                    // let _ = tx.send(());
+                                }
+                            } else {
+                                if let Some(mut counter) =
+                                    quality_change_counter.get_mut(&new_quality)
+                                {
+                                    *counter = 0;
+                                }
                             }
                         }
                     }
@@ -180,11 +251,13 @@ impl Subscriber {
 
         tokio::spawn(async move {
             while rx.changed().await.is_ok() {
-                let preferred = preferred_quality.lock().await.clone();
-                let tracks = tracks.lock().await;
+                let preferred = PreferredQuality::from_u8(preferred_quality.load(Ordering::SeqCst));
                 let mut track_map = track_map.lock().await;
 
-                for (track_id, track) in tracks.iter() {
+                for entry in tracks.iter() {
+                    let track_id = entry.key();
+                    let track = entry.value();
+
                     let track_guard = track.lock().await;
 
                     if track_guard.is_simulcast {
@@ -229,7 +302,8 @@ impl Subscriber {
         &self,
         remote_track: &TrackMutexWrapper,
     ) -> Result<Arc<TrackLocalStaticRTP>, WebRTCError> {
-        let preferred_quality = self.preferred_quality.lock().await;
+        let preferred_quality =
+            PreferredQuality::from_u8(self.preferred_quality.load(Ordering::SeqCst));
 
         let track = remote_track.lock().await;
 
@@ -239,8 +313,18 @@ impl Subscriber {
             .ok_or(WebRTCError::FailedToAddTrack)
     }
 
-    pub async fn close(&self) {
+    pub fn close(&self) {
         self.cancel_token.cancel();
-        let _ = self.peer_connection.close().await;
+
+        self.tracks.clear();
+        self.quality_change_counter.clear();
+
+        let pc = Arc::clone(&self.peer_connection);
+        let track_map = Arc::clone(&self.track_map);
+
+        tokio::spawn(async move {
+            track_map.lock().await.clear();
+            let _ = pc.close().await;
+        });
     }
 }

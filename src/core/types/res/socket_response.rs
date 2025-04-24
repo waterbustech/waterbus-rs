@@ -20,6 +20,7 @@ pub struct HandleRaisingResponse {
 pub struct ScreenSharingResponse {
     pub participant_id: String,
     pub is_sharing: bool,
+    pub screen_track_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

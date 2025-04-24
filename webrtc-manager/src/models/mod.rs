@@ -30,6 +30,7 @@ pub struct JoinRoomParams {
     pub is_video_enabled: bool,
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
+    pub total_tracks: u8,
     pub callback: JoinedCallback,
     pub on_candidate: IceCandidateCallback,
 }
@@ -60,6 +61,7 @@ pub struct SubscribeResponse {
     pub is_hand_raising: bool,
     pub is_e2ee_enabled: bool,
     pub video_codec: String,
+    pub screen_track_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

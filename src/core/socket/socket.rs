@@ -154,8 +154,17 @@ async fn on_connect<A: Adapter>(
     info!("user {:?} connected", user_id.0.0);
 
     let socket_id = socket.id.to_string();
-    let user_id = user_id.0;
-    _handle_on_connection(user_id.0.parse().unwrap(), &socket_id, sfu_service.0).await;
+    let user_id = user_id.0.0;
+
+    let user_id_parsed = match user_id.parse::<i32>() {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("Failed to parse user_id as i32: {:?}", e);
+            return;
+        }
+    };
+
+    _handle_on_connection(user_id_parsed, &socket_id, sfu_service.0).await;
 
     socket.on("message", handle_msg);
 
@@ -257,19 +266,24 @@ async fn handle_join_room<A: Adapter>(
     let participant_id = &data.participant_id;
     let room_id = data.room_id.clone();
 
-    webrtc_manager
-        .clone()
-        .add_client(
-            &client_id,
-            WClient {
-                participant_id: participant_id.clone(),
-                room_id: room_id.clone(),
-            },
-        )
-        .await;
+    webrtc_manager.clone().add_client(
+        &client_id,
+        WClient {
+            participant_id: participant_id.clone(),
+            room_id: room_id.clone(),
+        },
+    );
+
+    let participant_id_parsed = match participant_id.parse::<i32>() {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("Failed to parse participant_id as i32: {:?}", e);
+            return;
+        }
+    };
 
     let participant = sfu_service
-        .update_participant(participant_id.parse().unwrap(), &client_id)
+        .update_participant(participant_id_parsed, &client_id)
         .await;
 
     if let Ok(participant) = participant {
@@ -309,6 +323,7 @@ async fn handle_join_room<A: Adapter>(
             is_audio_enabled: data.is_audio_enabled,
             is_video_enabled: data.is_video_enabled,
             is_e2ee_enabled: data.is_e2ee_enabled,
+            total_tracks: data.total_tracks,
             callback: joined_callback,
             ice_candidate_callback,
         };
@@ -416,15 +431,19 @@ async fn handle_publisher_renegotiation<A: Adapter>(
 
     let sdp = webrtc_manager
         .handle_publisher_renegotiation(&client_id, &sdp)
-        .await
-        .unwrap();
+        .await;
 
-    let _ = socket
-        .emit(
-            SocketEvent::PublisherRenegotiationSSC.to_str(),
-            &PublisherRenegotiationDto { sdp: sdp },
-        )
-        .ok();
+    match sdp {
+        Ok(sdp) => {
+            let _ = socket
+                .emit(
+                    SocketEvent::PublisherRenegotiationSSC.to_str(),
+                    &PublisherRenegotiationDto { sdp: sdp },
+                )
+                .ok();
+        }
+        Err(_) => {}
+    }
 }
 
 async fn handle_publisher_candidate<A: Adapter>(
@@ -474,7 +493,12 @@ async fn handle_set_e2ee_enabled<A: Adapter>(
     let client_id = socket.id.to_string();
     let is_enabled = data.is_enabled;
 
-    let client = webrtc_manager.get_client_by_id(&client_id).await.expect("");
+    let client = {
+        match webrtc_manager.get_client_by_id(&client_id) {
+            Ok(client) => client,
+            Err(_) => return,
+        }
+    };
     let client = client.clone();
 
     let room_id = client.room_id;
@@ -506,28 +530,42 @@ async fn handle_set_camera_type<A: Adapter>(
     let client_id = socket.id.to_string();
     let camera_type = data.type_;
 
-    let client = webrtc_manager.get_client_by_id(&client_id).await.expect("");
+    let client = {
+        match webrtc_manager.get_client_by_id(&client_id) {
+            Ok(client) => client,
+            Err(_) => return,
+        }
+    };
     let client = client.clone();
 
     let room_id = client.room_id;
     let participant_id = client.participant_id;
 
-    let _ = webrtc_manager
-        .set_camera_type(&client_id, camera_type.try_into().unwrap())
-        .await;
+    let camera_type_parsed: Result<u8, _> = camera_type.try_into();
 
-    let _ = socket
-        .broadcast()
-        .to(room_id)
-        .emit(
-            SocketEvent::SetCameraTypeSSC.to_str(),
-            &CameraTypeResponse {
-                participant_id: participant_id,
-                type_: camera_type,
-            },
-        )
-        .await
-        .ok();
+    match camera_type_parsed {
+        Ok(parsed_type) => {
+            let _ = webrtc_manager
+                .set_camera_type(&client_id, parsed_type)
+                .await;
+
+            let _ = socket
+                .broadcast()
+                .to(room_id)
+                .emit(
+                    SocketEvent::SetCameraTypeSSC.to_str(),
+                    &CameraTypeResponse {
+                        participant_id: participant_id,
+                        type_: camera_type,
+                    },
+                )
+                .await
+                .ok();
+        }
+        Err(e) => {
+            warn!("Failed to convert camera type to u8: {:?}", e);
+        }
+    }
 }
 
 async fn handle_set_video_enabled<A: Adapter>(
@@ -538,7 +576,12 @@ async fn handle_set_video_enabled<A: Adapter>(
     let client_id = socket.id.to_string();
     let is_enabled = data.is_enabled;
 
-    let client = webrtc_manager.get_client_by_id(&client_id).await.expect("");
+    let client = {
+        match webrtc_manager.get_client_by_id(&client_id) {
+            Ok(client) => client,
+            Err(_) => return,
+        }
+    };
     let client = client.clone();
 
     let room_id = client.room_id;
@@ -570,7 +613,12 @@ async fn handle_set_audio_enabled<A: Adapter>(
     let client_id = socket.id.to_string();
     let is_enabled = data.is_enabled;
 
-    let client = webrtc_manager.get_client_by_id(&client_id).await.expect("");
+    let client = {
+        match webrtc_manager.get_client_by_id(&client_id) {
+            Ok(client) => client,
+            Err(_) => return,
+        }
+    };
     let client = client.clone();
 
     let room_id = client.room_id;
@@ -601,15 +649,21 @@ async fn handle_set_screen_sharing<A: Adapter>(
 ) {
     let client_id = socket.id.to_string();
     let is_enabled = data.is_sharing;
+    let screen_track_id = data.screen_track_id;
 
-    let client = webrtc_manager.get_client_by_id(&client_id).await.expect("");
+    let client = {
+        match webrtc_manager.get_client_by_id(&client_id) {
+            Ok(client) => client,
+            Err(_) => return,
+        }
+    };
     let client = client.clone();
 
     let room_id = client.room_id;
     let participant_id = client.participant_id;
 
     let _ = webrtc_manager
-        .set_screen_sharing(&client_id, is_enabled)
+        .set_screen_sharing(&client_id, is_enabled, screen_track_id.clone())
         .await;
 
     let _ = socket
@@ -620,6 +674,7 @@ async fn handle_set_screen_sharing<A: Adapter>(
             &ScreenSharingResponse {
                 participant_id: participant_id,
                 is_sharing: is_enabled,
+                screen_track_id: screen_track_id,
             },
         )
         .await
@@ -634,7 +689,12 @@ async fn handle_set_hand_raising<A: Adapter>(
     let client_id = socket.id.to_string();
     let is_enabled = data.is_raising;
 
-    let client = webrtc_manager.get_client_by_id(&client_id).await.expect("");
+    let client = {
+        match webrtc_manager.get_client_by_id(&client_id) {
+            Ok(client) => client,
+            Err(_) => return,
+        }
+    };
     let client = client.clone();
 
     let room_id = client.room_id;
@@ -722,17 +782,19 @@ async fn _handle_leave_room<A: Adapter>(
 
     socket.leave(room_id);
 
-    match sfu_service
-        .delete_participant(participant_id.parse().unwrap())
-        .await
-    {
-        Ok(()) => {
-            info!("Participant with ID {} deleted", participant_id);
+    match participant_id.parse::<i32>() {
+        Ok(id) => match sfu_service.delete_participant(id).await {
+            Ok(()) => {
+                info!("Participant with ID {} deleted", participant_id);
+            }
+            Err(err) => {
+                warn!("Failed to delete participant: {:?}", err);
+            }
+        },
+        Err(e) => {
+            warn!("Failed to parse participant_id as i32: {:?}", e);
         }
-        Err(err) => {
-            warn!("Failed to delete participant: {:?}", err);
-        }
-    }
+    };
 
     if is_remove_ccu {
         let _ = sfu_service.delete_ccu(&socket_id).await;

@@ -17,12 +17,21 @@ use waterbus_rs::core::{api::config::get_salvo_service, env::env_config::EnvConf
 async fn main() {
     let filter = EnvFilter::new("info")
         .add_directive("webrtc_srtp::session=info".parse().unwrap())
-        .add_directive("webrtc_ice::agent::agent_internal=off".parse().unwrap());
+        .add_directive("webrtc_ice::agent::agent_internal=off".parse().unwrap())
+        .add_directive(
+            "webrtc::peer_connection::peer_connection_internal=off"
+                .parse()
+                .unwrap(),
+        );
 
     let filter_fn = FilterFn::new(|meta: &Metadata<'_>| {
         let is_webrtc_session = meta.target().contains("webrtc_srtp::session");
         let is_webrtc_ice = meta.target().contains("webrtc_ice::agent::agent_internal");
-        !(is_webrtc_session || is_webrtc_ice)
+        let is_webrtc_pc_internal = meta
+            .target()
+            .contains("webrtc::peer_connection::peer_connection_internal");
+
+        !(is_webrtc_session || is_webrtc_ice || is_webrtc_pc_internal)
     });
 
     registry()
@@ -42,7 +51,7 @@ async fn main() {
     let key = include_bytes!("../certificates/key.pem").to_vec();
     let config = RustlsConfig::new(Keycert::new().cert(cert.as_slice()).key(key.as_slice()));
 
-    let listener = TcpListener::new(http_addr.clone()).rustls(config.clone());
+    let listener = TcpListener::new(http_addr.clone());
 
     let acceptor = QuinnListener::new(config.build_quinn_config().unwrap(), http_addr)
         .join(listener)

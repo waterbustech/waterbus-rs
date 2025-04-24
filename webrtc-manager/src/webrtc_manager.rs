@@ -1,5 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
+use dashmap::DashMap;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -16,22 +17,23 @@ pub struct JoinRoomReq {
     pub is_video_enabled: bool,
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
+    pub total_tracks: u8,
     pub callback: JoinedCallback,
     pub ice_candidate_callback: IceCandidateCallback,
 }
 
 #[derive(Debug, Clone)]
 pub struct WebRTCManager {
-    rooms: Arc<Mutex<HashMap<String, Arc<Mutex<Room>>>>>,
-    clients: Arc<Mutex<HashMap<String, WClient>>>,
+    rooms: Arc<DashMap<String, Arc<Mutex<Room>>>>,
+    clients: Arc<DashMap<String, WClient>>,
     configs: WebRTCManagerConfigs,
 }
 
 impl WebRTCManager {
     pub fn new(configs: WebRTCManagerConfigs) -> Self {
         Self {
-            rooms: Arc::new(Mutex::new(HashMap::new())),
-            clients: Arc::new(Mutex::new(HashMap::new())),
+            rooms: Arc::new(DashMap::new()),
+            clients: Arc::new(DashMap::new()),
             configs: configs,
         }
     }
@@ -41,7 +43,7 @@ impl WebRTCManager {
         client_id: &str,
         req: JoinRoomReq,
     ) -> Result<JoinRoomResponse, WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
@@ -49,10 +51,10 @@ impl WebRTCManager {
         let participant_id = &client.participant_id;
 
         let room = {
-            let room_result = self._get_room_by_id(room_id).await;
+            let room_result = self._get_room_by_id(room_id);
             match room_result {
                 Ok(room) => room,
-                Err(_) => self._add_room(room_id).await?,
+                Err(_) => self._add_room(room_id)?,
             }
         };
 
@@ -62,6 +64,7 @@ impl WebRTCManager {
             is_audio_enabled: req.is_audio_enabled,
             is_video_enabled: req.is_video_enabled,
             is_e2ee_enabled: req.is_e2ee_enabled,
+            total_tracks: req.total_tracks,
             callback: req.callback,
             on_candidate: req.ice_candidate_callback,
         };
@@ -79,14 +82,14 @@ impl WebRTCManager {
         renegotiation_callback: RenegotiationCallback,
         ice_candidate_callback: IceCandidateCallback,
     ) -> Result<SubscribeResponse, WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = &client.room_id;
         let participant_id = &client.participant_id;
 
-        let room = self._get_room_by_id(room_id).await?;
+        let room = self._get_room_by_id(room_id)?;
         let mut room = room.lock().await;
 
         let params = SubscribeParams {
@@ -107,14 +110,14 @@ impl WebRTCManager {
         target_id: &str,
         sdp: &str,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = &client.room_id;
         let participant_id = &client.participant_id;
 
-        let room = self._get_room_by_id(room_id).await?;
+        let room = self._get_room_by_id(room_id)?;
         let room = room.lock().await;
 
         room.set_subscriber_remote_sdp(target_id, participant_id, sdp)
@@ -128,14 +131,14 @@ impl WebRTCManager {
         client_id: &str,
         sdp: &str,
     ) -> Result<String, WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = &client.room_id;
         let participant_id = &client.participant_id;
 
-        let room = self._get_room_by_id(room_id).await?;
+        let room = self._get_room_by_id(room_id)?;
         let room = room.lock().await;
 
         let sdp = room
@@ -150,14 +153,14 @@ impl WebRTCManager {
         client_id: &str,
         candidate: IceCandidate,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = &client.room_id;
         let participant_id = &client.participant_id;
 
-        let room = self._get_room_by_id(room_id).await?;
+        let room = self._get_room_by_id(room_id)?;
         let room = room.lock().await;
 
         room.add_publisher_candidate(participant_id, candidate)
@@ -172,14 +175,14 @@ impl WebRTCManager {
         target_id: &str,
         candidate: IceCandidate,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = &client.room_id;
         let participant_id = &client.participant_id;
 
-        let room = self._get_room_by_id(room_id).await?;
+        let room = self._get_room_by_id(room_id)?;
         let room = room.lock().await;
 
         room.add_subscriber_candidate(target_id, participant_id, candidate)
@@ -189,20 +192,20 @@ impl WebRTCManager {
     }
 
     pub async fn leave_room(self, client_id: &str) -> Result<WClient, WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?.clone();
+        let client = self.get_client_by_id(client_id)?.clone();
         let room_id = &client.room_id;
         let participant_id = client.participant_id.clone();
 
-        let room = self._get_room_by_id(room_id).await?;
+        let room = self._get_room_by_id(room_id)?;
 
         let mut room_clone_for_leave = {
             let room_guard = room.lock().await;
             room_guard.clone()
         };
 
-        room_clone_for_leave.leave_room(&participant_id).await;
+        room_clone_for_leave.leave_room(&participant_id);
 
-        self.remove_client(client_id).await;
+        self.remove_client(client_id);
 
         Ok(client)
     }
@@ -212,14 +215,14 @@ impl WebRTCManager {
         client_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = client.room_id;
         let participant_id = client.participant_id;
 
-        let room = self._get_room_by_id(&room_id).await?;
+        let room = self._get_room_by_id(&room_id)?;
         let room = room.lock().await;
 
         room.set_audio_enabled(&participant_id, is_enabled).await?;
@@ -232,14 +235,14 @@ impl WebRTCManager {
         client_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = client.room_id;
         let participant_id = client.participant_id;
 
-        let room = self._get_room_by_id(&room_id).await?;
+        let room = self._get_room_by_id(&room_id)?;
         let room = room.lock().await;
 
         room.set_video_enabled(&participant_id, is_enabled).await?;
@@ -252,14 +255,14 @@ impl WebRTCManager {
         client_id: &str,
         camera_type: u8,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = client.room_id;
         let participant_id = client.participant_id;
 
-        let room = self._get_room_by_id(&room_id).await?;
+        let room = self._get_room_by_id(&room_id)?;
         let room = room.lock().await;
 
         room.set_camera_type(&participant_id, camera_type).await?;
@@ -272,14 +275,14 @@ impl WebRTCManager {
         client_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = client.room_id;
         let participant_id = client.participant_id;
 
-        let room = self._get_room_by_id(&room_id).await?;
+        let room = self._get_room_by_id(&room_id)?;
         let room = room.lock().await;
 
         room.set_e2ee_enabled(&participant_id, is_enabled).await?;
@@ -291,18 +294,20 @@ impl WebRTCManager {
         &self,
         client_id: &str,
         is_enabled: bool,
+        screen_track_id: Option<String>,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = client.room_id;
         let participant_id = client.participant_id;
 
-        let room = self._get_room_by_id(&room_id).await?;
+        let room = self._get_room_by_id(&room_id)?;
         let room = room.lock().await;
 
-        room.set_screen_sharing(&participant_id, is_enabled).await?;
+        room.set_screen_sharing(&participant_id, is_enabled, screen_track_id)
+            .await?;
 
         Ok(())
     }
@@ -312,14 +317,14 @@ impl WebRTCManager {
         client_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let client = self.get_client_by_id(client_id).await?;
+        let client = self.get_client_by_id(client_id)?;
 
         let client = client.clone();
 
         let room_id = client.room_id;
         let participant_id = client.participant_id;
 
-        let room = self._get_room_by_id(&room_id).await?;
+        let room = self._get_room_by_id(&room_id)?;
         let room = room.lock().await;
 
         room.set_hand_raising(&participant_id, is_enabled).await?;
@@ -327,41 +332,35 @@ impl WebRTCManager {
         Ok(())
     }
 
-    pub async fn add_client(self, client_id: &str, info: WClient) {
-        let mut clients = self.clients.lock().await;
-
-        if !clients.contains_key(client_id) {
-            clients.insert(client_id.to_string(), info.clone());
+    pub fn add_client(&self, client_id: &str, info: WClient) {
+        if !self.clients.contains_key(client_id) {
+            self.clients.insert(client_id.to_string(), info);
         }
     }
 
-    pub async fn remove_client(self, client_id: &str) {
-        let mut clients = self.clients.lock().await;
-
-        clients.remove(client_id);
+    pub fn remove_client(self, client_id: &str) {
+        self.clients.remove(client_id);
     }
 
-    async fn _add_room(&self, room_id: &str) -> Result<Arc<Mutex<Room>>, WebRTCError> {
+    fn _add_room(&self, room_id: &str) -> Result<Arc<Mutex<Room>>, WebRTCError> {
         let room_value = Arc::new(Mutex::new(Room::new(self.configs.clone())));
 
-        let mut rooms = self.rooms.lock().await;
-        rooms.insert(room_id.to_string(), room_value.clone());
+        self.rooms
+            .insert(room_id.to_string(), Arc::clone(&room_value));
 
         Ok(room_value)
     }
 
-    pub async fn get_client_by_id(&self, client_id: &str) -> Result<WClient, WebRTCError> {
-        let clients = self.clients.lock().await;
-        if let Some(client) = clients.get(client_id) {
+    pub fn get_client_by_id(&self, client_id: &str) -> Result<WClient, WebRTCError> {
+        if let Some(client) = self.clients.get(client_id) {
             Ok(client.clone())
         } else {
             Err(WebRTCError::ParticipantNotFound)
         }
     }
 
-    pub async fn _get_room_by_id(&self, room_id: &str) -> Result<Arc<Mutex<Room>>, WebRTCError> {
-        let rooms = self.rooms.lock().await;
-        if let Some(room) = rooms.get(room_id) {
+    pub fn _get_room_by_id(&self, room_id: &str) -> Result<Arc<Mutex<Room>>, WebRTCError> {
+        if let Some(room) = self.rooms.get(room_id) {
             Ok(room.clone())
         } else {
             Err(WebRTCError::RoomNotFound)
