@@ -1,14 +1,13 @@
 use crate::{errors::WebRTCError, models::TrackMutexWrapper};
 use dashmap::DashMap;
 use std::{
-    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
-use tokio::sync::{Mutex, watch};
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use webrtc::{
@@ -30,7 +29,7 @@ struct TrackContext {
     local_track: Arc<TrackLocalStaticRTP>,
 }
 
-type TrackMap = Arc<Mutex<HashMap<String, TrackContext>>>;
+type TrackMap = Arc<DashMap<String, TrackContext>>;
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 #[repr(u8)]
@@ -74,7 +73,7 @@ impl Subscriber {
             cancel_token: cancel_token.clone(),
             preferred_quality: Arc::new(AtomicU8::new(PreferredQuality::Medium.as_u8())),
             tracks: Arc::new(DashMap::new()),
-            track_map: Arc::new(Mutex::new(HashMap::new())),
+            track_map: Arc::new(DashMap::new()),
             quality_change_counter: Arc::new(DashMap::new()),
         };
 
@@ -86,7 +85,7 @@ impl Subscriber {
 
     pub async fn add_track(&self, remote_track: TrackMutexWrapper) -> Result<(), WebRTCError> {
         let track_id = {
-            let track_guard = remote_track.lock().await;
+            let track_guard = remote_track.read().await;
             track_guard.id.clone()
         };
 
@@ -123,7 +122,7 @@ impl Subscriber {
 
         self._read_rtcp(&transceiver).await;
 
-        self.track_map.lock().await.insert(
+        self.track_map.insert(
             track_id.to_owned(),
             TrackContext {
                 transceiver: Arc::clone(&transceiver),
@@ -246,25 +245,24 @@ impl Subscriber {
         let tracks = Arc::clone(&self.tracks);
         let preferred_quality = Arc::clone(&self.preferred_quality);
         let track_map = Arc::clone(&self.track_map);
-        // let peer_connection = Arc::clone(&self.peer_connection);
         let mut rx = tx.subscribe();
 
         tokio::spawn(async move {
             while rx.changed().await.is_ok() {
                 let preferred = PreferredQuality::from_u8(preferred_quality.load(Ordering::SeqCst));
-                let mut track_map = track_map.lock().await;
 
                 for entry in tracks.iter() {
                     let track_id = entry.key();
                     let track = entry.value();
 
-                    let track_guard = track.lock().await;
+                    let track_guard = track.read().await;
 
                     if track_guard.is_simulcast {
                         if let Some(new_encoding) =
                             track_guard.get_track_appropriate(&preferred).await
                         {
-                            if let Some(ctx) = track_map.get_mut(track_id) {
+                            if let Some(mut ctx) = track_map.get_mut(track_id) {
+                                // Declare ctx as mutable here
                                 let sender = ctx.transceiver.sender().await;
                                 let cur_track = sender.track().await;
 
@@ -279,8 +277,6 @@ impl Subscriber {
                                             match result {
                                                 Ok(()) => {
                                                     ctx.local_track = Arc::clone(&new_encoding);
-
-                                                    // info!("Replaced track with new quality");
                                                 }
                                                 Err(err) => {
                                                     warn!("Got err when replace track: {:?}", err);
@@ -305,7 +301,7 @@ impl Subscriber {
         let preferred_quality =
             PreferredQuality::from_u8(self.preferred_quality.load(Ordering::SeqCst));
 
-        let track = remote_track.lock().await;
+        let track = remote_track.read().await;
 
         track
             .get_track_appropriate(&preferred_quality)
@@ -317,13 +313,12 @@ impl Subscriber {
         self.cancel_token.cancel();
 
         self.tracks.clear();
+        self.track_map.clear();
         self.quality_change_counter.clear();
 
         let pc = Arc::clone(&self.peer_connection);
-        let track_map = Arc::clone(&self.track_map);
 
         tokio::spawn(async move {
-            track_map.lock().await.clear();
             let _ = pc.close().await;
         });
     }

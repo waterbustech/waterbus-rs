@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use tokio::sync::Mutex;
 use tracing::info;
 use uuid::Uuid;
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
@@ -61,7 +60,7 @@ impl Media {
         room_id: String,
     ) -> AddTrackResponse {
         if let Some(existing_track_arc) = self.tracks.get(&rtp_track.id()) {
-            let mut track_guard = existing_track_arc.lock().await;
+            let mut track_guard = existing_track_arc.write().await;
             track_guard.add_track(rtp_track.clone());
 
             if rtp_track.kind() == RTPCodecType::Video {
@@ -73,7 +72,7 @@ impl Media {
             return AddTrackResponse::AddSimulcastTrackSuccess(existing_track_arc.clone());
         }
 
-        let new_track = Arc::new(Mutex::new(Track::new(
+        let new_track = Arc::new(tokio::sync::RwLock::new(Track::new(
             rtp_track.clone(),
             room_id,
             self.participant_id.clone(),
@@ -158,9 +157,8 @@ impl Media {
         for entry in self.tracks.iter() {
             let track_mutex = entry.value().clone();
 
-            // We can spawn or block here if needed
             tokio::spawn(async move {
-                let mut track = track_mutex.lock().await;
+                let mut track = track_mutex.write().await;
                 track.stop();
             });
         }

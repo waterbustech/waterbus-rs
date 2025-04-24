@@ -131,11 +131,13 @@ This provides a **responsive, bandwidth-efficient experience**, especially in gr
 ## 💙 Show Your Support
 
 If you like what we're building, consider showing your love by giving us a ⭐ on [Github](https://github.com/waterbustech/waterbus-rs/stargazers)!
+
 Also, follow [maintainers](https://github.com/lambiengcode) on GitHub for our next creations!
 
 ## 🤝  Contribute to Waterbus
 
 We welcome all contributions — big or small!
+
 Whether it’s fixing a bug, suggesting a feature, or improving documentation, your input helps `Waterbus` grow.
 
 - Fork the repo, make your changes, and open a [pull request](https://github.com/waterbustech/waterbus-rs/pulls)
@@ -156,7 +158,6 @@ Use it freely, fork it, build amazing things.
 
 ## 📬 Get in Touch
 
-Got questions, feedback, or ideas?
-Reach out anytime at lambiengcode@gmail.com
+Got questions, feedback, or ideas? Reach out anytime at lambiengcode@gmail.com
 
 Made with 💙 by the Waterbus Team.

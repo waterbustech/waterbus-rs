@@ -51,7 +51,7 @@ async fn main() {
     let key = include_bytes!("../certificates/key.pem").to_vec();
     let config = RustlsConfig::new(Keycert::new().cert(cert.as_slice()).key(key.as_slice()));
 
-    let listener = TcpListener::new(http_addr.clone());
+    let listener = TcpListener::new(http_addr.clone()).rustls(config.clone());
 
     let acceptor = QuinnListener::new(config.build_quinn_config().unwrap(), http_addr)
         .join(listener)

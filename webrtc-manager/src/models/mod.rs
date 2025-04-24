@@ -1,7 +1,7 @@
 use std::{pin::Pin, sync::Arc};
 
 use serde::Serialize;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::entities::track::Track;
 
@@ -78,4 +78,4 @@ pub enum AddTrackResponse {
     FailedToAddTrack,
 }
 
-pub type TrackMutexWrapper = Arc<Mutex<Track>>;
+pub type TrackMutexWrapper = Arc<RwLock<Track>>;
