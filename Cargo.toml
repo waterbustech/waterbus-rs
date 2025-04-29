@@ -23,7 +23,11 @@ salvo = { version = "0.78.0", features = [
     "serve-static",
 ] }
 serde = "1.0.219"
-socketioxide = { version = "0.16.2", features = ["extensions", "state"] }
+socketioxide = { version = "0.16.2", features = [
+    "extensions",
+    "state",
+    "msgpack",
+] }
 socketioxide-redis = "0.2.1"
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-util = "0.7.14"

@@ -4,10 +4,7 @@ use anyhow::anyhow;
 use async_channel::{Receiver, Sender};
 use salvo::prelude::*;
 use socketioxide::{
-    SocketIo,
-    adapter::Adapter,
-    extract::{Data, Extension, SocketRef, State},
-    handler::ConnectHandler,
+    adapter::Adapter, extract::{Data, Extension, SocketRef, State}, handler::ConnectHandler, ParserConfig, SocketIo
 };
 use socketioxide_redis::{RedisAdapter, RedisAdapterCtr, drivers::redis::redis_client as redis};
 use tower::ServiceBuilder;
@@ -104,6 +101,7 @@ pub async fn get_socket_router(
             port_max: env.udp_port_range.port_max,
         }))
         .with_adapter::<RedisAdapter<_>>(adapter)
+        .with_parser(ParserConfig::msgpack())
         .build_layer();
 
     let layer = ServiceBuilder::new()
