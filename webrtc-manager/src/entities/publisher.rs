@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use webrtc::{
     peer_connection::RTCPeerConnection,
@@ -11,13 +11,13 @@ use super::media::Media;
 
 #[derive(Debug)]
 pub struct Publisher {
-    pub media: Arc<Mutex<Media>>,
+    pub media: Arc<RwLock<Media>>,
     pub peer_connection: Arc<RTCPeerConnection>,
     cancel_token: CancellationToken,
 }
 
 impl Publisher {
-    pub fn new(media: Arc<Mutex<Media>>, peer_connection: Arc<RTCPeerConnection>) -> Self {
+    pub fn new(media: Arc<RwLock<Media>>, peer_connection: Arc<RTCPeerConnection>) -> Self {
         let this = Self {
             media,
             peer_connection,
@@ -34,7 +34,7 @@ impl Publisher {
         tokio::spawn(async move {
             let mut result = Result::<usize, anyhow::Error>::Ok(0);
             while result.is_ok() {
-                let timeout = tokio::time::sleep(Duration::from_secs(3));
+                let timeout = tokio::time::sleep(Duration::from_secs(1));
                 tokio::pin!(timeout);
 
                 tokio::select! {
@@ -68,7 +68,7 @@ impl Publisher {
             drop(pc);
 
             // Stop media
-            let media = media.lock().await;
+            let media = media.write().await;
             media.stop();
         });
     }

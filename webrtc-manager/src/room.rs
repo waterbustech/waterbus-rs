@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use webrtc::{
     api::{
         APIBuilder, interceptor_registry::register_default_interceptors, media_engine::MediaEngine,
@@ -70,7 +70,7 @@ impl Room {
             params.is_e2ee_enabled,
         );
 
-        let publisher = Arc::new(Publisher::new(Arc::new(Mutex::new(media)), pc.clone()));
+        let publisher = Arc::new(Publisher::new(Arc::new(RwLock::new(media)), pc.clone()));
         self._add_publisher(&participant_id, &publisher);
 
         // === Peer Connection Callbacks ===
@@ -131,7 +131,7 @@ impl Room {
 
                 Box::pin(async move {
                     tokio::spawn(async move {
-                        let media = media.lock().await;
+                        let media = media.write().await;
                         let add_track_response = media.add_track(track, room_id).await;
 
                         let (maybe_track, should_count) = match add_track_response {
@@ -243,7 +243,7 @@ impl Room {
             let media = media_clone.clone();
             let callback = renegotiation_callback.clone();
             Box::pin(async move {
-                let media = media.lock().await;
+                let media = media.read().await;
                 if media.tracks.len() < 3 {
                     println!("Not enough tracks, skipping renegotiation");
                     return;
@@ -404,7 +404,7 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.lock().await;
+        let media = media.write().await;
 
         media.set_e2ee_enabled(is_enabled);
 
@@ -418,7 +418,7 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.lock().await;
+        let media = media.write().await;
 
         media.set_camera_type(camera_type);
 
@@ -432,7 +432,7 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.lock().await;
+        let media = media.write().await;
 
         let _ = media.set_video_enabled(is_enabled);
 
@@ -446,7 +446,7 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.lock().await;
+        let media = media.write().await;
 
         let _ = media.set_audio_enabled(is_enabled);
 
@@ -461,7 +461,7 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.lock().await;
+        let media = media.write().await;
 
         let _ = media.set_screen_sharing(is_enabled, screen_track_id);
 
@@ -475,7 +475,7 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.lock().await;
+        let media = media.write().await;
 
         let _ = media.set_hand_rasing(is_enabled);
 
@@ -543,7 +543,7 @@ impl Room {
         key
     }
 
-    fn _get_media(&self, participant_id: &str) -> Result<Arc<Mutex<Media>>, WebRTCError> {
+    fn _get_media(&self, participant_id: &str) -> Result<Arc<RwLock<Media>>, WebRTCError> {
         let participant = self._get_publisher(participant_id)?;
         Ok(Arc::clone(&participant.media))
     }
@@ -669,9 +669,9 @@ impl Room {
 
     async fn _extract_subscribe_response(
         &self,
-        media_arc: &Arc<Mutex<Media>>,
+        media_arc: &Arc<RwLock<Media>>,
     ) -> SubscribeResponse {
-        let media = media_arc.lock().await;
+        let media = media_arc.read().await;
         let media_state = media.state.read();
 
         SubscribeResponse {
@@ -690,9 +690,9 @@ impl Room {
     async fn _forward_all_tracks(
         &self,
         subscriber: Arc<Subscriber>,
-        media_arc: &Arc<Mutex<Media>>,
+        media_arc: &Arc<RwLock<Media>>,
     ) -> Result<(), WebRTCError> {
-        let media = media_arc.lock().await;
+        let media = media_arc.read().await;
         let tracks = media.tracks.clone();
 
         for entry in tracks.iter() {

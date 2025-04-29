@@ -3,6 +3,7 @@ use diesel::{
     r2d2::{ConnectionManager, Pool},
 };
 use reqwest::Method;
+use rust_embed::RustEmbed;
 use salvo::{
     catcher::Catcher,
     cors::{Any, Cors},
@@ -12,6 +13,7 @@ use salvo::{
     },
     prelude::*,
     rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
+    serve_static::static_embed,
 };
 use typesense_client::TypesenseClient;
 
@@ -34,6 +36,10 @@ use crate::{
         user::{repository::UserRepositoryImpl, router::get_user_router, service::UserServiceImpl},
     },
 };
+
+#[derive(RustEmbed)]
+#[folder = "hls"]
+struct Assets;
 
 #[endpoint(tags("system"))]
 async fn health_check(res: &mut Response) {
@@ -135,7 +141,13 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .push(meeting_router)
         .push(health_router);
 
-    let router = Router::new().push(router).push(socket_router);
+    let static_router =
+        Router::with_path("{*path}").get(static_embed::<Assets>().fallback("index.html"));
+
+    let router = Router::new()
+        .push(router)
+        .push(socket_router)
+        .push(static_router);
 
     // Config
     let doc_info = Info::new("[v3] Waterbus Service API", "3.0.0")

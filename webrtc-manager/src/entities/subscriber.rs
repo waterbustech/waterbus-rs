@@ -12,7 +12,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use webrtc::{
     peer_connection::RTCPeerConnection,
-    rtcp::payload_feedbacks::receiver_estimated_maximum_bitrate::ReceiverEstimatedMaximumBitrate,
+    rtcp::{
+        payload_feedbacks::receiver_estimated_maximum_bitrate::ReceiverEstimatedMaximumBitrate,
+        transport_feedbacks::transport_layer_cc::TransportLayerCc,
+    },
     rtp_transceiver::{
         RTCRtpTransceiver, RTCRtpTransceiverInit,
         rtp_transceiver_direction::RTCRtpTransceiverDirection,
@@ -231,6 +234,23 @@ impl Subscriber {
                                 {
                                     *counter = 0;
                                 }
+                            }
+                        }
+
+                        // 🚀 Logging TransportCC packets
+                        if let Some(tcc) = packet.as_any().downcast_ref::<TransportLayerCc>() {
+                            println!(
+                                "[TransportCC] Media SSRC: {}, Base Sequence: {}, Packet Status Count: {}",
+                                tcc.media_ssrc, tcc.base_sequence_number, tcc.packet_status_count
+                            );
+                            for (i, status) in tcc.packet_chunks.iter().enumerate() {
+                                println!("[TransportCC] Chunk #{}: {:?}", i, status);
+                            }
+                            for recv_delta in &tcc.recv_deltas {
+                                println!(
+                                    "[TransportCC] Received delta: {:?}, Type: {:?}",
+                                    recv_delta.delta, recv_delta.type_tcc_packet
+                                );
                             }
                         }
                     }

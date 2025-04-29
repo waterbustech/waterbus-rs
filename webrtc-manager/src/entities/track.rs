@@ -1,4 +1,6 @@
 use dashmap::DashMap;
+use egress_manager::egress::hls_writer::HlsWriter;
+use egress_manager::egress::moq_writer::MoQWriter;
 use std::sync::Arc;
 use tracing::info;
 use webrtc::Error;
@@ -6,6 +8,7 @@ use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
 use webrtc::track::track_local::TrackLocalWriter;
 use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 use webrtc::track::track_remote::TrackRemote;
+use webrtc::util::Marshal;
 
 use super::subscriber::PreferredQuality;
 
@@ -20,10 +23,18 @@ pub struct Track {
     pub kind: RTPCodecType,
     remote_tracks: Vec<Arc<TrackRemote>>,
     pub local_tracks: DashMap<String, Arc<TrackLocalStaticRTP>>,
+    hls_writer: Option<Arc<HlsWriter>>,
+    moq_writer: Option<Arc<MoQWriter>>,
 }
 
 impl Track {
-    pub fn new(track: Arc<TrackRemote>, room_id: String, participant_id: String) -> Self {
+    pub fn new(
+        track: Arc<TrackRemote>,
+        room_id: String,
+        participant_id: String,
+        hls_writer: Option<Arc<HlsWriter>>,
+        moq_writer: Option<Arc<MoQWriter>>,
+    ) -> Self {
         let mut handler = Track {
             id: track.id(),
             room_id,
@@ -33,7 +44,9 @@ impl Track {
             capability: track.codec().capability,
             kind: track.kind(),
             remote_tracks: vec![track.clone()],
-            local_tracks: DashMap::new(), // Initialize the DashMap
+            local_tracks: DashMap::new(),
+            hls_writer,
+            moq_writer,
         };
 
         handler._create_local_track(track);
@@ -115,14 +128,27 @@ impl Track {
 
         self.local_tracks.insert(rid, local_track.clone());
 
-        Self::_forward_rtp(remote_track, local_track);
+        Self::_forward_rtp(
+            remote_track,
+            local_track,
+            self.hls_writer.clone(),
+            self.moq_writer.clone(),
+            self.kind,
+        );
     }
 
-    pub fn _forward_rtp(remote_track: Arc<TrackRemote>, local_track: Arc<TrackLocalStaticRTP>) {
+    pub fn _forward_rtp(
+        remote_track: Arc<TrackRemote>,
+        local_track: Arc<TrackLocalStaticRTP>,
+        hls_writer: Option<Arc<HlsWriter>>,
+        moq_writer: Option<Arc<MoQWriter>>,
+        kind: RTPCodecType,
+    ) {
         tokio::spawn(async move {
-            // Read RTP packets being sent to webrtc-rs
-            info!("[track] enter track loop {}", remote_track.rid());
+            let is_video = kind == RTPCodecType::Video;
+
             while let Ok((rtp, _)) = remote_track.read_rtp().await {
+                // Write RTP to local track
                 if let Err(err) = local_track.write_rtp(&rtp).await {
                     if Error::ErrClosedPipe != err {
                         info!("[track] output track write_rtp got error: {err} and break");
@@ -131,7 +157,26 @@ impl Track {
                         info!("[track] output track write_rtp got error: {err}");
                     }
                 }
+
+                // If HLS writer exists, forward the RTP packet for HLS
+                if let Some(writer) = &hls_writer {
+                    let mut rtp_packet_data = Vec::new();
+                    rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
+                    rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
+
+                    let _ = writer.write_rtp(&rtp_packet_data, is_video);
+                }
+
+                // If MoQ writer exists, forward the RTP packet for MoQ
+                if let Some(writer) = &moq_writer {
+                    let mut rtp_packet_data = Vec::new();
+                    rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
+                    rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
+
+                    let _ = writer.write_rtp(&rtp_packet_data, is_video);
+                }
             }
+
             info!("[track] exit track loop {}", remote_track.rid());
         });
     }
