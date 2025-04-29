@@ -38,8 +38,12 @@ use crate::{
 };
 
 #[derive(RustEmbed)]
-#[folder = "hls"]
-struct Assets;
+#[folder = "../hls"]
+struct HlsAssets;
+
+#[derive(RustEmbed)]
+#[folder = "../public"]
+struct PublicAssets;
 
 #[endpoint(tags("system"))]
 async fn health_check(res: &mut Response) {
@@ -141,13 +145,16 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .push(meeting_router)
         .push(health_router);
 
-    let static_router =
-        Router::with_path("{*path}").get(static_embed::<Assets>().fallback("index.html"));
+    let static_hls_router =
+        Router::with_path("{*path}").get(static_embed::<HlsAssets>().fallback("index.html"));
+    let static_router = Router::with_path("html/{*path}")
+        .get(static_embed::<PublicAssets>().fallback("index.html"));
 
     let router = Router::new()
         .push(router)
         .push(socket_router)
-        .push(static_router);
+        .push(static_router)
+        .push(static_hls_router);
 
     // Config
     let doc_info = Info::new("[v3] Waterbus Service API", "3.0.0")

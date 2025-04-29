@@ -202,59 +202,6 @@ pub struct Participant {
 }
 
 #[derive(
-    Queryable,
-    Selectable,
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    QueryableByName,
-    Associations,
-    Identifiable,
-)]
-#[diesel(table_name = record_tracks)]
-#[serde(rename_all = "camelCase")]
-#[diesel(belongs_to(Record))]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct RecordTrack {
-    pub id: i32,
-    pub url_to_video: String,
-    pub start_time: String,
-    pub end_time: String,
-    pub created_at: NaiveDateTime,
-    pub deleted_at: Option<NaiveDateTime>,
-    pub record_id: Option<i32>,
-    pub user_id: Option<i32>,
-}
-
-#[derive(
-    Queryable,
-    Selectable,
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    QueryableByName,
-    Associations,
-    Identifiable,
-)]
-#[diesel(table_name = records)]
-#[serde(rename_all = "camelCase")]
-#[diesel(belongs_to(Meeting))]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Record {
-    pub id: i32,
-    pub url_to_video: Option<String>,
-    pub thumbnail: Option<String>,
-    pub duration: i32,
-    pub status: i32,
-    pub created_at: NaiveDateTime,
-    pub deleted_at: Option<NaiveDateTime>,
-    pub meeting_id: Option<i32>,
-    pub created_by_id: Option<i32>,
-}
-
-#[derive(
     Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
 )]
 #[diesel(table_name = users)]
@@ -274,20 +221,6 @@ pub struct User {
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub last_seen_at: Option<NaiveDateTime>,
-}
-
-#[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
-)]
-#[diesel(table_name = white_boards)]
-#[serde(rename_all = "camelCase")]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct WhiteBoard {
-    pub id: i32,
-    pub paints: String,
-    pub created_at: NaiveDateTime,
-    pub deleted_at: Option<NaiveDateTime>,
-    pub meeting_id: Option<i32>,
 }
 
 #[derive(Insertable)]

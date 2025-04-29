@@ -1,10 +1,14 @@
-[package]
-name = "waterbus-rs"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "signalling",
+    "crates/egress-manager",
+    "crates/webrtc-manager",
+    "crates/typesense-client",
+]
+resolver = "2"
 
-[dependencies]
-salvo = { version = "*", features = [
+[workspace.dependencies]
+salvo = { version = "0.78.0", features = [
     "quinn",
     "tower-compat",
     "oapi",
@@ -21,7 +25,8 @@ salvo = { version = "*", features = [
 serde = "1.0.219"
 socketioxide = { version = "0.16.2", features = ["extensions", "state"] }
 socketioxide-redis = "0.2.1"
-tokio = { version = "1.44.1", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }
+tokio-util = "0.7.14"
 tower = { version = "0.5.0", default-features = false }
 tower-http = { version = "0.6.2", features = ["cors", "fs", "auth"] }
 tracing = "0.1.41"
@@ -40,13 +45,37 @@ validator_derive = "0.20.0"
 aws-sdk-s3 = { version = "1.82.0", features = ["rt-tokio"] }
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 uuid = "1.16.0"
-rustls = { version = "0.23.25", features = ["ring"] }
+rustls = { version = "0.23.26", features = ["ring"] }
 nanoid = "0.4.0"
-rand = "0.9.0"
+rand = "0.9.1"
 serde_json = "1.0.140"
 bcrypt = "0.17.0"
 async-channel = "2.3.1"
-webrtc-manager = { path = "./webrtc-manager" }
-typesense-client = { path = "./typesense-client" }
-egress-manager = { path = "./egress-manager" }
+webrtc-manager = { path = "./crates/webrtc-manager" }
+typesense-client = { path = "./crates/typesense-client" }
+egress-manager = { path = "./crates/egress-manager" }
 rust-embed = "8.7.0"
+dashmap = "6.1.0"
+parking_lot = "0.12.3"
+webrtc = "0.12.0"
+gst = { package = "gstreamer", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-app = { package = "gstreamer-app", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-video = { package = "gstreamer-video", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-audio = { package = "gstreamer-audio", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-base = { package = "gstreamer-base", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-pbutils = { package = "gstreamer-pbutils", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_20",
+] }
+m3u8-rs = { git = "https://github.com/JeWe37/m3u8-rs", branch = "ll-hls" }
+moq-gst = { path = "/Users/lambiengcode/Documents/moq-gst" }
+gst-plugin-fmp4 = "0.13.5"

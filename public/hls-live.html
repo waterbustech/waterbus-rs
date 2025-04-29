@@ -19,8 +19,8 @@
         width: 95%;
         max-width: 800px;
         padding: 20px;
-        border-radius: 12px;
-        background-color: #1f1f1f;
+        border-radius: 0px;
+        background-color: #121212;
         box-shadow: 0 5px 15px rgba(0, 0, 0, 0.7);
         text-align: center;
       }
@@ -34,58 +34,66 @@
 
       .input-group {
         display: flex;
-        margin-bottom: 20px;
+        margin-bottom: 10px;
         justify-content: center;
+        border-radius: 0px;
+        overflow: hidden;
+        border: 2px solid #6e6e6e;
+        background-color: #2a2a2a;
       }
 
       .input-group input[type="text"] {
         flex-grow: 1;
         padding: 12px 15px;
-        border: 1px solid #444;
-        border-radius: 8px 0 0 8px;
-        background-color: #2a2a2a;
+        border: none;
+        border-radius: 0;
+        background-color: transparent;
         color: #eee;
         font-size: 1.1em;
-        transition: border-color 0.3s ease;
         outline: none;
+        width: 60%;
       }
 
       .input-group input[type="text"]:focus {
-        border-color: #ff6b81;
-        box-shadow: 0 0 5px rgba(255, 107, 129, 0.3);
+        border-color: #feca57;
+        box-shadow: 0 0 5px rgba(250, 202, 87, 0.3);
       }
 
       .input-group button {
         padding: 12px 20px;
         border: none;
-        border-radius: 0 8px 8px 0;
-        background-color: #ff6b81;
-        color: #fff;
+        border-radius: 0;
+        background-color: #feca57;
+        color: #2a2a2a;
         cursor: pointer;
         font-size: 1.1em;
-        transition: background-color 0.3s ease;
+        transition: background-color 0.3s ease, box-shadow 0.3s ease,
+          transform 0.2s ease;
         font-weight: 500;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
       }
 
       .input-group button:hover {
-        background-color: #e64a63;
+        background-color: #fdbd03;
+        box-shadow: 0 3px 7px rgba(0, 0, 0, 0.7);
+        transform: translateY(-2px);
       }
 
       .input-group button:active {
-        background-color: #c83745;
+        background-color: #e5a702;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        transform: translateY(0);
       }
 
       .video-wrapper {
-        position: relative; /* Make sure the wrapper is a positioning context */
+        position: relative;
         width: 100%;
       }
 
       video {
         width: 100%;
-        border-radius: 12px;
         background-color: #000;
-        box-shadow: 0 3px 7px rgba(0, 0, 0, 0.5);
-        transform: scaleX(-1); /* Mirror the video */
+        transform: scaleX(-1);
       }
 
       .video-controls {
@@ -93,10 +101,6 @@
         bottom: 0;
         left: 0;
         width: 100%;
-        /* You might need to adjust these styles to match the video controls appearance */
-        /* background-color: rgba(0, 0, 0, 0.5);  Optional: style the background of the controls */
-        /* padding: 10px; */
-        /* box-sizing: border-box; */
       }
 
       #latency-info {
@@ -113,11 +117,44 @@
         font-weight: 600;
         color: #fff;
       }
+
+      .window-frame {
+        box-shadow: 0 3px 7px rgba(0, 0, 0, 0.5);
+        border: 2px solid #6e6e6e;
+        background-color: #1f1f1f;
+        padding: 0;
+        /* margin-bottom: 20px; */
+        border-radius: 0px;
+      }
+
+      .window-top {
+        display: flex;
+        gap: 10px;
+        padding: 10px;
+      }
+
+      .window-circle {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #555;
+      }
+
+      .window-content {
+        border-radius: 0 0 8px 8px;
+        overflow: hidden;
+      }
+
+      .video-container {
+        margin: 6px;
+        border-radius: 0px;
+        overflow: hidden;
+        border: 2px solid #6e6e6e;
+      }
     </style>
   </head>
   <body>
     <div class="container">
-      <h1>Live HLS Stream</h1>
       <div class="input-group">
         <input
           type="text"
@@ -125,20 +162,28 @@
           placeholder="Enter Participant ID"
           value=""
         />
-        <button onclick="loadStream()">Load Stream</button>
+        <button onclick="loadStream()">Load</button>
       </div>
-      <div class="video-wrapper">
-        <video
-          id="video"
-          controls
-          playsinline
-          muted
-          class="mirrored-video"
-        ></video>
+      <div class="window-frame">
+        <div class="window-top">
+          <div class="window-circle"></div>
+          <div class="window-circle"></div>
+          <div class="window-circle"></div>
+        </div>
+        <div class="window-content">
+          <div class="video-container">
+            <div class="video-wrapper">
+              <video
+                id="video"
+                controls
+                playsinline
+                muted
+                class="mirrored-video"
+              ></video>
+            </div>
+          </div>
+        </div>
       </div>
-      <!-- <div id="latency-info">
-        Estimated Latency: <span id="latency-value">Loading...</span> ms
-      </div> -->
     </div>
     <script>
       var video = document.getElementById("video");
@@ -174,11 +219,6 @@
                   maxNumRetry: 2,
                   retryDelayMs: 0,
                   maxRetryDelayMs: 0,
-                },
-                errorRetry: {
-                  maxNumRetry: 1,
-                  retryDelayMs: 1000,
-                  maxRetryDelayMs: 8000,
                 },
               },
             },
@@ -234,7 +274,6 @@
             // const currentTime = video.currentTime;
             // const fragLoadedStart = data.frag.stats.loading.start;
             // const fragLoadedEnd = data.frag.stats.loading.end;
-
             // const latency = Math.abs(currentTime * 1000 - fragLoadedEnd);
             // latencyValueDisplay.textContent = latency.toFixed(3);
           });
