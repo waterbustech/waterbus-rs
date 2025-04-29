@@ -60,7 +60,7 @@ impl MoQWriter {
         println!("[moq] url: {:?}", moq_url);
 
         {
-            let mut state_lock = state.lock().unwrap(); // Lock mutably to iterate mutably
+            let mut state_lock = state.lock().unwrap();
 
             // Use &mut to get mutable references to the streams
             for stream in &mut state_lock.video_streams {
@@ -69,9 +69,7 @@ impl MoQWriter {
 
             // Assuming audio_streams also needs mutable setup
             for stream in &mut state_lock.audio_streams {
-                let res = stream.moq_setup(&moq_url, &pipeline, &path);
-
-                println!("res: {:?}", res);
+                let _ = stream.moq_setup(&moq_url, &pipeline, &path);
             }
         }
 
