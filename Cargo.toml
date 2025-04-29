@@ -3,7 +3,7 @@ members = [
     "signalling",
     "crates/egress-manager",
     "crates/webrtc-manager",
-    "crates/typesense-client",
+    "crates/typesense-client", "sfu", "dispatcher",
 ]
 resolver = "2"
 

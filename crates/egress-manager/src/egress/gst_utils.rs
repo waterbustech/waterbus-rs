@@ -508,12 +508,7 @@ impl VideoStream {
         Ok(())
     }
 
-    pub fn moq_setup(
-        &mut self,
-        moq_url: &str,
-        pipeline: &gst::Pipeline,
-        path: &Path,
-    ) -> Result<(), Error> {
+    pub fn moq_setup(&mut self, pipeline: &gst::Pipeline) -> Result<(), Error> {
         let caps = gst::Caps::builder("application/x-rtp")
             .field("media", "video")
             .field("encoding-name", "H264")
@@ -530,24 +525,35 @@ impl VideoStream {
 
         let rtp_depay = gst::ElementFactory::make("rtph264depay").build()?;
         let h264_parse = gst::ElementFactory::make("h264parse").build()?;
+        let queue = gst::ElementFactory::make("queue").name("v_queue").build()?;
+        let identity = gst::ElementFactory::make("identity")
+            .property("sync", true)
+            .build()?;
+
+        pipeline.add_many([&src, &rtp_depay, &h264_parse, &queue, &identity])?;
+
+        gst::Element::link_many([&src, &rtp_depay, &h264_parse, &queue, &identity])?;
 
         let mux = gst::ElementFactory::make("isofmp4mux")
             .name("mux")
-            .property("fragment-duration", 500.mseconds())
-            .property("chunk-duration", 100.mseconds())
-            .build()?;
-        let appsink = gst_app::AppSink::builder().buffer_list(true).build();
-
-        let moq_sink = gst::ElementFactory::make("moqsink")
-            .property("url", moq_url)
-            .property("tls-disable-verify", true)
+            .property("fragment-duration", 1.nseconds())
+            .property("chunk-duration", 1.nseconds())
             .build()?;
 
-        pipeline.add_many([&src, &rtp_depay, &h264_parse, &mux, &moq_sink])?;
+        pipeline.add(&mux)?;
 
-        gst::Element::link_many([&src, &rtp_depay, &h264_parse, &mux, &moq_sink])?;
+        let mux_sink_pad = mux
+            .request_pad_simple("sink_%u")
+            .ok_or_else(|| anyhow::anyhow!("Failed to request sink pad from mux"))?;
 
-        setup_appsink(&appsink, &self.name, path, true);
+        let identity_pad = identity
+            .static_pad("src")
+            .ok_or_else(|| anyhow::anyhow!("identity has no src pad"))?;
+
+        identity_pad.link(&mux_sink_pad)?;
+
+        // let appsink = gst_app::AppSink::builder().buffer_list(true).build();
+        // setup_appsink(&appsink, &self.name, path, true);
 
         let video_src = src.downcast::<AppSrc>().expect("Element is not an AppSrc");
         video_src.set_is_live(true);
@@ -698,12 +704,7 @@ impl AudioStream {
         Ok(())
     }
 
-    pub fn moq_setup(
-        &mut self,
-        moq_url: &str,
-        pipeline: &gst::Pipeline,
-        path: &Path,
-    ) -> Result<(), Error> {
+    pub fn moq_setup(&mut self, pipeline: &gst::Pipeline) -> Result<(), Error> {
         let caps = gst::Caps::builder("application/x-rtp")
             .field("media", "audio")
             .field("encoding-name", "OPUS")
@@ -724,18 +725,7 @@ impl AudioStream {
         let audioresample = gst::ElementFactory::make("audioresample").build()?;
         let aacenc = gst::ElementFactory::make("avenc_aac").build()?;
         let aacparse = gst::ElementFactory::make("aacparse").build()?;
-        let mux = gst::ElementFactory::make("isofmp4mux")
-            .name("audio_mux")
-            .property("fragment-duration", 500.mseconds())
-            .property("chunk-duration", 100.mseconds())
-            .build()?;
-
-        let moq_sink = gst::ElementFactory::make("moqsink")
-            .property("url", moq_url)
-            .property("tls-disable-verify", true)
-            .build()?;
-
-        let appsink = gst_app::AppSink::builder().buffer_list(true).build();
+        let queue = gst::ElementFactory::make("queue").name("a_queue").build()?;
 
         pipeline.add_many([
             &src,
@@ -745,8 +735,7 @@ impl AudioStream {
             &audioresample,
             &aacenc,
             &aacparse,
-            &mux,
-            &moq_sink,
+            &queue,
         ])?;
 
         gst::Element::link_many([
@@ -757,11 +746,25 @@ impl AudioStream {
             &audioresample,
             &aacenc,
             &aacparse,
-            &mux,
-            &moq_sink,
+            &queue,
         ])?;
 
-        setup_appsink(&appsink, &self.name, path, false);
+        let mux = pipeline
+            .by_name("mux")
+            .ok_or_else(|| anyhow::anyhow!("mux not found"))?;
+
+        let mux_sink_pad = mux
+            .request_pad_simple("sink_%u")
+            .ok_or_else(|| anyhow::anyhow!("Failed to request sink pad from mux"))?;
+
+        let queue_pad = queue
+            .static_pad("src")
+            .ok_or_else(|| anyhow::anyhow!("queue has no src pad"))?;
+
+        queue_pad.link(&mux_sink_pad)?;
+
+        // let appsink = gst_app::AppSink::builder().buffer_list(true).build();
+        // setup_appsink(&appsink, &self.name, path, false);
 
         let audio_src = src.downcast::<AppSrc>().expect("Element is not an AppSrc");
         audio_src.set_is_live(true);

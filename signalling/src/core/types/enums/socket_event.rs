@@ -94,11 +94,11 @@ impl SocketEvent {
             SocketEvent::DeleteMessageSSC => "DELETE_MESSAGE_SSC",
             SocketEvent::NewMemberJoinedSSC => "NEW_MEMBER_JOINED_SSC",
             SocketEvent::NewInvitationSSC => "NEW_INVITATION_SSC",
+            SocketEvent::SendPodNameSSC => "SEND_POD_NAME_SSC",
+            SocketEvent::ReconnectCSS => "RECONNECT_CSS",
             SocketEvent::Connection => "connection",
             SocketEvent::Disconnect => "disconnect",
             SocketEvent::Destroy => "destroy",
-            SocketEvent::SendPodNameSSC => "SEND_POD_NAME_SSC",
-            SocketEvent::ReconnectCSS => "reconnect_CSS",
         }
     }
 }

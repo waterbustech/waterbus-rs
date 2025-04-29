@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Ok;
-use gst::prelude::{ElementExt, GstObjectExt, PipelineExt};
+use gst::prelude::{ElementExt, ElementExtManual, GstBinExt, GstObjectExt, PipelineExt};
 use tokio::task;
 
 use super::gst_utils::{AudioStream, State, VideoStream};
@@ -64,14 +64,16 @@ impl MoQWriter {
 
             // Use &mut to get mutable references to the streams
             for stream in &mut state_lock.video_streams {
-                let _ = stream.moq_setup(&moq_url, &pipeline, &path);
+                let _ = stream.moq_setup(&pipeline);
             }
 
             // Assuming audio_streams also needs mutable setup
             for stream in &mut state_lock.audio_streams {
-                let _ = stream.moq_setup(&moq_url, &pipeline, &path);
+                let _ = stream.moq_setup(&pipeline);
             }
         }
+
+        let _ = Self::_setup_moq_sink(&moq_url, &pipeline);
 
         pipeline.auto_clock();
 
@@ -165,6 +167,23 @@ impl MoQWriter {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn _setup_moq_sink(moq_url: &str, pipeline: &gst::Pipeline) -> Result<(), anyhow::Error> {
+        let mux = pipeline
+            .by_name("mux")
+            .ok_or_else(|| anyhow::anyhow!("mux not found"))?;
+
+        let moq_sink = gst::ElementFactory::make("moqsink")
+            .property("url", moq_url)
+            .property("tls-disable-verify", true)
+            .build()?;
+
+        pipeline.add(&moq_sink)?;
+
+        mux.link(&moq_sink)?;
 
         Ok(())
     }
