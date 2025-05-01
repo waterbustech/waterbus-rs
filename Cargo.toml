@@ -1,12 +1,12 @@
 [workspace]
 members = [
     "signalling",
+    "sfu",
     "crates/egress-manager",
     "crates/webrtc-manager",
     "crates/typesense-client",
-    "sfu",
-    "dispatcher",
     "crates/waterbus-proto",
+    "crates/dispatcher",
 ]
 resolver = "2"
 

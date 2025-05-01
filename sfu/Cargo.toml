@@ -3,4 +3,8 @@ name = "sfu"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "sfu"
+path = "src/main.rs"
+
 [dependencies]

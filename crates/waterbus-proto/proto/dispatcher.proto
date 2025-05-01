@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package dispatcher;
+
+message NewUserJoinedRequest {
+    string participantId = 1;
+    string roomId = 2;
+}
+
+message SubscriberRenegotiateRequest {
+    string sdp = 1;
+    string clientId = 2;
+    string targetId = 3;
+}
+
+message DispatcherResponse {
+    bool isSuccess = 1;
+}
+
+service DispatcherService {
+    rpc newUserJoined(NewUserJoinedRequest) returns (DispatcherResponse) {}
+    rpc subscriberRenegotiate(SubscriberRenegotiateRequest) returns (DispatcherResponse) {}
+}
