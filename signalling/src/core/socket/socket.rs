@@ -4,7 +4,10 @@ use anyhow::anyhow;
 use async_channel::{Receiver, Sender};
 use salvo::prelude::*;
 use socketioxide::{
-    adapter::Adapter, extract::{Data, Extension, SocketRef, State}, handler::ConnectHandler, ParserConfig, SocketIo
+    ParserConfig, SocketIo,
+    adapter::Adapter,
+    extract::{Data, Extension, SocketRef, State},
+    handler::ConnectHandler,
 };
 use socketioxide_redis::{RedisAdapter, RedisAdapterCtr, drivers::redis::redis_client as redis};
 use tower::ServiceBuilder;
@@ -22,10 +25,9 @@ use webrtc_manager::{
 use crate::{
     core::{
         dtos::socket::socket_dto::{
-            AnswerSubscribeDto, CandidateDto, CleanWhiteBoardDto, JoinRoomDto, MsgDto,
-            PublisherRenegotiationDto, SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto,
-            SetScreenSharingDto, StartWhiteBoardDto, SubscribeDto, SubscriberCandidateDto,
-            UpdateWhiteBoardDto,
+            AnswerSubscribeDto, CandidateDto, JoinRoomDto, MsgDto, PublisherRenegotiationDto,
+            SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto, SetScreenSharingDto, SubscribeDto,
+            SubscriberCandidateDto,
         },
         env::env_config::EnvConfig,
         types::{
@@ -208,18 +210,6 @@ async fn on_connect<A: Adapter>(
     socket.on(
         SocketEvent::HandRaisingCSS.to_str(),
         handle_set_hand_raising,
-    );
-    socket.on(
-        SocketEvent::StartWhiteBoardCSS.to_str(),
-        handle_start_white_board,
-    );
-    socket.on(
-        SocketEvent::UpdateWhiteBoardCSS.to_str(),
-        handle_update_white_board,
-    );
-    socket.on(
-        SocketEvent::CleanWhiteBoardCSS.to_str(),
-        handle_clean_white_board,
     );
     socket.on(
         SocketEvent::SetSubscribeSubtitleCSS.to_str(),
@@ -714,24 +704,6 @@ async fn handle_set_hand_raising<A: Adapter>(
         )
         .await
         .ok();
-}
-
-async fn handle_start_white_board<A: Adapter>(
-    _: SocketRef<A>,
-    Data(_data): Data<StartWhiteBoardDto>,
-) {
-}
-
-async fn handle_update_white_board<A: Adapter>(
-    _: SocketRef<A>,
-    Data(_data): Data<UpdateWhiteBoardDto>,
-) {
-}
-
-async fn handle_clean_white_board<A: Adapter>(
-    _: SocketRef<A>,
-    Data(_data): Data<CleanWhiteBoardDto>,
-) {
 }
 
 async fn handle_set_subscribe_subtitle<A: Adapter>(

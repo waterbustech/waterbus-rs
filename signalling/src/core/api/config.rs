@@ -12,7 +12,7 @@ use salvo::{
         security::{Http, HttpAuthScheme},
     },
     prelude::*,
-    rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
+    // rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
     serve_static::static_embed,
 };
 use typesense_client::TypesenseClient;
@@ -88,12 +88,12 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
     let search_service = SearchService::new(typesense_client, pool.clone());
     search_service.init().await;
 
-    let limiter = RateLimiter::new(
-        FixedGuard::new(),
-        MokaStore::new(),
-        RemoteIpIssuer,
-        BasicQuota::per_second(200),
-    );
+    // let limiter = RateLimiter::new(
+    //     FixedGuard::new(),
+    //     MokaStore::new(),
+    //     RemoteIpIssuer,
+    //     BasicQuota::per_second(200),
+    // );
 
     let health_router = Router::new().path("/health-check").get(health_check);
     let auth_router = get_auth_router(jwt_utils.clone());
@@ -137,7 +137,7 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .hoop(CatchPanic::new())
         .hoop(CachingHeaders::new())
         .hoop(Compression::new().min_length(1024))
-        .hoop(limiter)
+        // .hoop(limiter)
         .hoop(set_services)
         .push(auth_router)
         .push(chat_router)

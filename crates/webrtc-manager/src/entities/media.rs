@@ -1,10 +1,7 @@
 use std::{fs, path::Path, sync::Arc};
 
 use dashmap::DashMap;
-use egress_manager::egress::{
-    hls_writer::HlsWriter,
-    moq_writer::MoQWriter,
-};
+use egress_manager::egress::{hls_writer::HlsWriter, moq_writer::MoQWriter};
 use parking_lot::RwLock;
 use tracing::info;
 use uuid::Uuid;
@@ -20,8 +17,8 @@ pub struct Media {
     pub participant_id: String,
     pub tracks: Arc<DashMap<String, TrackMutexWrapper>>,
     pub state: Arc<RwLock<MediaState>>,
-    hls_writer: Arc<HlsWriter>,
-    moq_writer: Arc<MoQWriter>,
+    hls_writer: Option<Arc<HlsWriter>>,
+    moq_writer: Option<Arc<MoQWriter>>,
 }
 
 #[derive(Debug)]
@@ -43,21 +40,23 @@ impl Media {
         is_audio_enabled: bool,
         is_e2ee_enabled: bool,
     ) -> Self {
-        let output_dir = format!("./hls/{}", publisher_id);
+        // let output_dir = format!("./hls/{}", publisher_id);
 
-        if !Path::new(&output_dir).exists() {
-            fs::create_dir_all(&output_dir).unwrap();
-        }
+        // if !Path::new(&output_dir).exists() {
+        //     fs::create_dir_all(&output_dir).unwrap();
+        // }
 
-        let hls_writer = HlsWriter::new(&output_dir).unwrap();
-        let moq_writer = MoQWriter::new(&publisher_id).unwrap();
+        // let hls_writer = HlsWriter::new(&output_dir).unwrap();
+        // let moq_writer = MoQWriter::new(&publisher_id).unwrap();
 
         Self {
             media_id: format!("m_{}", Uuid::new_v4()),
             participant_id: publisher_id,
             tracks: Arc::new(DashMap::new()),
-            hls_writer: Arc::new(hls_writer),
-            moq_writer: Arc::new(moq_writer),
+            // hls_writer: Arc::new(hls_writer),
+            // moq_writer: Arc::new(moq_writer),
+            hls_writer: None,
+            moq_writer: None,
             state: Arc::new(RwLock::new(MediaState {
                 video_enabled: is_video_enabled,
                 audio_enabled: is_audio_enabled,
@@ -95,8 +94,8 @@ impl Media {
             self.participant_id.clone(),
             None,
             // Some(self.hls_writer.clone()),
-            Some(self.moq_writer.clone()),
-            // None,
+            // Some(self.moq_writer.clone()),
+            None,
         )));
 
         if rtp_track.kind() == RTPCodecType::Video {
@@ -185,8 +184,8 @@ impl Media {
         }
 
         self.remove_all_tracks();
-        self.hls_writer.stop();
-        self.moq_writer.stop();
+        // self.hls_writer.stop();
+        // self.moq_writer.stop();
 
         {
             let mut state = self.state.write();

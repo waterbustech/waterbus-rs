@@ -3,7 +3,10 @@ members = [
     "signalling",
     "crates/egress-manager",
     "crates/webrtc-manager",
-    "crates/typesense-client", "sfu", "dispatcher",
+    "crates/typesense-client",
+    "sfu",
+    "dispatcher",
+    "crates/waterbus-proto",
 ]
 resolver = "2"
 
@@ -81,5 +84,8 @@ gst-pbutils = { package = "gstreamer-pbutils", git = "https://github.com/GStream
     "v1_20",
 ] }
 m3u8-rs = { git = "https://github.com/JeWe37/m3u8-rs", branch = "ll-hls" }
-moq-gst = { path = "/Users/lambiengcode/Documents/moq-gst" }
+moq-gst = { git = "https://github.com/waterbustech/moq-gst.git", branch = "main" }
 gst-plugin-fmp4 = "0.13.5"
+prost = "0.13.5"
+tonic = "0.13.0"
+waterbus-proto = { path = "./crates/waterbus-proto" }
