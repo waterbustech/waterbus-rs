@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package sfu;
+
+// Requests
+
+message IceCandidate {
+    string candidate = 1;
+    optional string sdpMid = 2;
+    optional uint32 sdpMLineIndex = 3;
+}
+
+message JoinRoomRequest {
+    string clientId = 1;
+    string sdp = 2;
+    bool isVideoEnabled = 3;
+    bool isAudioEnabled = 4;
+    bool isE2eeEnabled = 5;
+    int32 totalTracks = 6;
+}
+
+message SubscribeRequest {
+    string clientId = 1;
+    string targetId = 2;
+}
+
+message SetSubscriberSdpRequest {
+    string clientId = 1;
+    string targetId = 2;
+    string sdp = 3;
+}
+
+message PublisherRenegotiationRequest {
+    string clientId = 1;
+    string sdp = 2;
+}
+
+message AddPublisherCandidateRequest {
+    string clientId = 1;
+    IceCandidate candidate = 2;
+}
+
+message AddSubscriberCandidateRequest {
+    string clientId = 1;
+    string targetId = 2;
+    IceCandidate candidate = 3;
+}
+
+message LeaveRoomRequest {
+    string clientId = 1;
+}
+
+message SetEnabledRequest {
+    string clientId = 1;
+    bool isEnabled = 2;
+}
+
+message SetScreenSharingRequest {
+    string clientId = 1;
+    bool isEnabled = 2;
+    optional string screenTrackId = 3;
+}
+
+message SetCameraType {
+    string clientId = 1;
+    int32 cameraType = 2;
+}
+
+// Responses
+message JoinRoomResponse {
+    string sdp = 1;
+    string is_recording = 2;
+}
+
+message SubscribeResponse {
+    string offer = 1;
+    uint32 cameraType = 2;
+    bool videoEnabled = 3;
+    bool audioEnabled = 4;
+    bool isScreenSharing = 5;
+    bool isHandRaising = 6;
+    bool isE2eeEnabled = 7;
+    string videoCodec = 8;
+    optional string screenTrackId = 9;
+}
+
+message PublisherRenegotiationResponse {
+    string sdp = 1;
+}
+
+message LeaveRoomResponse {
+    string participantId = 1;
+    string roomId = 2;
+}
+
+message StatusResponse {
+    bool isSuccess = 1;
+}
+
+service SfuService {
+    rpc joinRoom(JoinRoomRequest) returns (JoinRoomResponse) {}
+    rpc subscribe(SubscribeRequest) returns (SubscribeResponse) {}
+    rpc setSubscriberSdp(SetSubscriberSdpRequest) returns (StatusResponse) {}
+    rpc publisherRenegotiation(PublisherRenegotiationRequest) returns (PublisherRenegotiationResponse) {}
+    rpc addPublisherCandidate(AddPublisherCandidateRequest) returns (StatusResponse) {}
+    rpc addSubscriberCandidate(AddSubscriberCandidateRequest) returns (StatusResponse) {}
+    rpc leaveRoom(LeaveRoomRequest) returns (LeaveRoomResponse) {}
+    rpc setVideoEnabled(SetEnabledRequest) returns (StatusResponse) {}
+    rpc setAudioEnabled(SetEnabledRequest) returns (StatusResponse) {}
+    rpc setHandRaising(SetEnabledRequest) returns (StatusResponse) {}
+    rpc setScreenSharing(SetScreenSharingRequest) returns (StatusResponse) {}
+    rpc setCameraType(SetCameraType) returns (StatusResponse) {}
+}

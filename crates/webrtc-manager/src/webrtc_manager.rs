@@ -205,7 +205,7 @@ impl WebRTCManager {
 
         room_clone_for_leave.leave_room(&participant_id);
 
-        self.remove_client(client_id);
+        self._remove_client(client_id);
 
         Ok(client)
     }
@@ -338,7 +338,7 @@ impl WebRTCManager {
         }
     }
 
-    pub fn remove_client(self, client_id: &str) {
+    pub fn _remove_client(self, client_id: &str) {
         self.clients.remove(client_id);
     }
 

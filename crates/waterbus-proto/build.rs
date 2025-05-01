@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    println!("start");
     let proto_root = "proto";
     let protos = collect_proto_files(proto_root)?;
 
@@ -26,5 +27,7 @@ fn collect_proto_files(dir: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
             files.push(path);
         }
     }
+
+    println!("files: {:?}", files);
     Ok(files)
 }
