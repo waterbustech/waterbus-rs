@@ -1,4 +1,4 @@
-use std::{fs, path::Path, sync::Arc};
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use egress_manager::egress::{hls_writer::HlsWriter, moq_writer::MoQWriter};
@@ -184,8 +184,13 @@ impl Media {
         }
 
         self.remove_all_tracks();
-        // self.hls_writer.stop();
-        // self.moq_writer.stop();
+
+        if let Some(writer) = &self.hls_writer {
+            writer.stop();
+        }
+        if let Some(writer) = &self.moq_writer {
+            writer.stop();
+        }
 
         {
             let mut state = self.state.write();

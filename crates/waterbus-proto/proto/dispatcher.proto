@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "common.proto";
+
 package dispatcher;
 
 message NewUserJoinedRequest {
@@ -13,6 +15,17 @@ message SubscriberRenegotiateRequest {
     string targetId = 3;
 }
 
+message PublisherCandidateRequest {
+    string clientId = 1;
+    common.IceCandidate candidate = 2;
+}
+
+message SubscriberCandidateRequest {
+    string clientId = 1;
+    string targetId = 2;
+    common.IceCandidate candidate = 3;
+}
+
 message DispatcherResponse {
     bool isSuccess = 1;
 }
@@ -20,4 +33,6 @@ message DispatcherResponse {
 service DispatcherService {
     rpc newUserJoined(NewUserJoinedRequest) returns (DispatcherResponse) {}
     rpc subscriberRenegotiate(SubscriberRenegotiateRequest) returns (DispatcherResponse) {}
+    rpc onPublisherCandidate(PublisherCandidateRequest) returns (DispatcherResponse) {}
+    rpc onSubscriberCandidate(SubscriberCandidateRequest) returns (DispatcherResponse) {}
 }

@@ -1,6 +1,6 @@
 use async_channel::{Receiver, Sender};
 
-use crate::core::entities::models::Message;
+use super::res::message_response::MessageResponse;
 
 #[derive(Debug, Clone)]
 pub struct AppChannel {
@@ -9,6 +9,7 @@ pub struct AppChannel {
 }
 
 pub enum AppEvent {
-    SendMessage(Message),
-    UpdateMessage(Message),
+    SendMessage(MessageResponse),
+    UpdateMessage(MessageResponse),
+    DeleteMessage(MessageResponse),
 }

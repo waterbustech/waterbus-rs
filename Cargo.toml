@@ -89,3 +89,5 @@ gst-plugin-fmp4 = "0.13.5"
 prost = "0.13.5"
 tonic = "0.13.0"
 waterbus-proto = { path = "./crates/waterbus-proto" }
+etcd-client = "0.15.0"
+sysinfo = "0.35.0"

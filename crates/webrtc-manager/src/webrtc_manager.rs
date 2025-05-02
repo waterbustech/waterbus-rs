@@ -13,6 +13,9 @@ use crate::{
 };
 
 pub struct JoinRoomReq {
+    pub client_id: String,
+    pub participant_id: String,
+    pub room_id: String,
     pub sdp: String,
     pub is_video_enabled: bool,
     pub is_audio_enabled: bool,
@@ -38,17 +41,18 @@ impl WebRTCManager {
         }
     }
 
-    pub async fn join_room(
-        self,
-        client_id: &str,
-        req: JoinRoomReq,
-    ) -> Result<JoinRoomResponse, WebRTCError> {
-        let client = self.get_client_by_id(client_id)?;
+    pub async fn join_room(&self, req: JoinRoomReq) -> Result<JoinRoomResponse, WebRTCError> {
+        let client_id = &req.client_id;
+        let room_id = &req.room_id;
+        let participant_id = &req.participant_id;
 
-        let client = client.clone();
-
-        let room_id = &client.room_id;
-        let participant_id = &client.participant_id;
+        self._add_client(
+            client_id,
+            WClient {
+                participant_id: participant_id.clone(),
+                room_id: room_id.clone(),
+            },
+        );
 
         let room = {
             let room_result = self._get_room_by_id(room_id);
@@ -191,7 +195,7 @@ impl WebRTCManager {
         Ok(())
     }
 
-    pub async fn leave_room(self, client_id: &str) -> Result<WClient, WebRTCError> {
+    pub async fn leave_room(&self, client_id: &str) -> Result<WClient, WebRTCError> {
         let client = self.get_client_by_id(client_id)?.clone();
         let room_id = &client.room_id;
         let participant_id = client.participant_id.clone();
@@ -332,13 +336,13 @@ impl WebRTCManager {
         Ok(())
     }
 
-    pub fn add_client(&self, client_id: &str, info: WClient) {
+    pub fn _add_client(&self, client_id: &str, info: WClient) {
         if !self.clients.contains_key(client_id) {
             self.clients.insert(client_id.to_string(), info);
         }
     }
 
-    pub fn _remove_client(self, client_id: &str) {
+    pub fn _remove_client(&self, client_id: &str) {
         self.clients.remove(client_id);
     }
 

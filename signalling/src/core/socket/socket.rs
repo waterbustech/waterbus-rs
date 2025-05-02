@@ -5,11 +5,14 @@ use async_channel::{Receiver, Sender};
 use salvo::prelude::*;
 use socketioxide::{
     ParserConfig, SocketIo,
-    adapter::Adapter,
+    adapter::{Adapter, Emitter},
     extract::{Data, Extension, SocketRef, State},
     handler::ConnectHandler,
 };
-use socketioxide_redis::{RedisAdapter, RedisAdapterCtr, drivers::redis::redis_client as redis};
+use socketioxide_redis::{
+    CustomRedisAdapter, RedisAdapter, RedisAdapterCtr,
+    drivers::redis::{RedisDriver, redis_client as redis},
+};
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
@@ -116,6 +119,59 @@ pub async fn get_socket_router(
     let router = Router::new().hoop(layer).path("/socket.io").goal(version);
 
     Ok(router)
+}
+
+pub fn handle_message_update(
+    io: SocketIo<CustomRedisAdapter<Emitter, RedisDriver>>,
+    app_channel: AppChannel,
+) {
+    // Non-blocking check for any new messages on the channel
+    while let Ok(msg) = app_channel.async_channel_rx.try_recv() {
+        match msg {
+            AppEvent::SendMessage(msg) => {
+                if let Some(meeting) = msg.clone().meeting {
+                    let io = io.clone();
+                    let msg = msg.clone();
+                    let meeting_code = meeting.code.to_string();
+                    tokio::spawn(async move {
+                        let _ = io
+                            .broadcast()
+                            .to(meeting_code)
+                            .emit(SocketEvent::SendMessageSSC.to_str(), &msg)
+                            .await;
+                    });
+                }
+            }
+            AppEvent::UpdateMessage(msg) => {
+                if let Some(meeting) = msg.clone().meeting {
+                    let io = io.clone();
+                    let msg = msg.clone();
+                    let meeting_code = meeting.code.to_string();
+                    tokio::spawn(async move {
+                        let _ = io
+                            .broadcast()
+                            .to(meeting_code)
+                            .emit(SocketEvent::UpdateMessageSSC.to_str(), &msg)
+                            .await;
+                    });
+                }
+            }
+            AppEvent::DeleteMessage(msg) => {
+                if let Some(meeting) = msg.clone().meeting {
+                    let io = io.clone();
+                    let msg = msg.clone();
+                    let meeting_code = meeting.code.to_string();
+                    tokio::spawn(async move {
+                        let _ = io
+                            .broadcast()
+                            .to(meeting_code)
+                            .emit(SocketEvent::DeleteMessageSSC.to_str(), &msg)
+                            .await;
+                    });
+                }
+            }
+        }
+    }
 }
 
 async fn authenticate_middleware<A: Adapter>(
@@ -253,14 +309,6 @@ async fn handle_join_room<A: Adapter>(
     let client_id = socket.id.to_string();
     let participant_id = &data.participant_id;
     let room_id = data.room_id.clone();
-
-    webrtc_manager.clone().add_client(
-        &client_id,
-        WClient {
-            participant_id: participant_id.clone(),
-            room_id: room_id.clone(),
-        },
-    );
 
     let participant_id_parsed = match participant_id.parse::<i32>() {
         Ok(id) => id,

@@ -1,3 +1,4 @@
+use async_channel::Sender;
 use salvo::{
     oapi::extract::{JsonBody, PathParam},
     prelude::*,
@@ -5,7 +6,7 @@ use salvo::{
 
 use crate::core::{
     dtos::{chat::send_message_dto::SendMessageDto, common::pagination_dto::PaginationDto},
-    types::res::failed_response::FailedResponse,
+    types::{app_channel::AppEvent, res::failed_response::FailedResponse},
     utils::jwt_utils::JwtUtils,
 };
 
@@ -74,6 +75,7 @@ async fn create_message(
     depot: &mut Depot,
 ) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let app_channel_tx  = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let data = data.0.data;
     let meeting_id = meeting_id.into_inner();
@@ -85,7 +87,8 @@ async fn create_message(
     match message {
         Ok(message) => {
             res.status_code(StatusCode::CREATED);
-            res.render(Json(message));
+            res.render(Json(message.clone()));
+            let _ = app_channel_tx.send(AppEvent::SendMessage(message.clone()));
         }
         Err(err) => {
             res.status_code(StatusCode::BAD_REQUEST);
@@ -105,6 +108,7 @@ async fn update_message(
     depot: &mut Depot,
 ) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let app_channel_tx  = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let data = data.0.data;
     let message_id = message_id.into_inner();
@@ -115,7 +119,8 @@ async fn update_message(
 
     match message {
         Ok(message) => {
-            res.render(Json(message));
+            res.render(Json(message.clone()));
+            let _ = app_channel_tx.send(AppEvent::UpdateMessage(message.clone()));
         }
         Err(err) => {
             res.status_code(StatusCode::BAD_REQUEST);
@@ -130,6 +135,7 @@ async fn update_message(
 #[endpoint(tags("chats"))]
 async fn delete_message(res: &mut Response, message_id: PathParam<i32>, depot: &mut Depot) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let app_channel_tx  = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let message_id = message_id.into_inner();
 
@@ -139,7 +145,8 @@ async fn delete_message(res: &mut Response, message_id: PathParam<i32>, depot: &
 
     match message {
         Ok(message) => {
-            res.render(Json(message));
+            res.render(Json(message.clone()));
+            let _ = app_channel_tx.send(AppEvent::DeleteMessage(message.clone()));
         }
         Err(err) => {
             res.status_code(StatusCode::BAD_REQUEST);

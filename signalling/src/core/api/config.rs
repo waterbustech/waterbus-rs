@@ -110,7 +110,7 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         &env,
         jwt_utils.clone(),
         sfu_service,
-        app_channel_tx,
+        app_channel_tx.clone(),
         app_channel_rx,
     )
     .await
@@ -134,6 +134,7 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .hoop(affix_state::inject(jwt_utils))
         .hoop(affix_state::inject(env.clone()))
         .hoop(affix_state::inject(search_service))
+        .hoop(affix_state::inject(app_channel_tx))
         .hoop(CatchPanic::new())
         .hoop(CachingHeaders::new())
         .hoop(Compression::new().min_length(1024))

@@ -7,7 +7,8 @@ use crate::entities::track::Track;
 
 pub type IceCandidateCallback =
     Arc<dyn Fn(IceCandidate) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-pub type RenegotiationCallback = Arc<dyn Fn(String) + Send + Sync>;
+pub type RenegotiationCallback =
+    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 pub type JoinedCallback = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 #[derive(Debug, Clone)]

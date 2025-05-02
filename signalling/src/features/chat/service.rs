@@ -3,7 +3,9 @@ use salvo::async_trait;
 
 use crate::{
     core::{
-        entities::models::{Meeting, MembersStatusEnum, Message, MessagesStatusEnum, MessagesTypeEnum, NewMessage},
+        entities::models::{
+            Meeting, MembersStatusEnum, MessagesStatusEnum, MessagesTypeEnum, NewMessage,
+        },
         types::{errors::chat_error::ChatError, res::message_response::MessageResponse},
     },
     features::{
@@ -36,13 +38,13 @@ pub trait ChatService: Send + Sync {
         message_id: i32,
         user_id: i32,
         data: &str,
-    ) -> Result<Message, ChatError>;
+    ) -> Result<MessageResponse, ChatError>;
 
     async fn delete_message_by_id(
         &self,
         message_id: i32,
         user_id: i32,
-    ) -> Result<Message, ChatError>;
+    ) -> Result<MessageResponse, ChatError>;
 
     async fn delete_conversation(
         &self,
@@ -193,24 +195,24 @@ impl ChatService for ChatServiceImpl {
         message_id: i32,
         user_id: i32,
         data: &str,
-    ) -> Result<Message, ChatError> {
-        let message = self.chat_repository.get_message_by_id(message_id).await?;
-        let meeting = message.meeting.unwrap();
+    ) -> Result<MessageResponse, ChatError> {
+        let mut message_response = self.chat_repository.get_message_by_id(message_id).await?;
+        let meeting = message_response.clone().meeting.unwrap();
 
-        if message.message.status == MessagesStatusEnum::Inactive as i32 {
+        if message_response.message.status == MessagesStatusEnum::Inactive as i32 {
             return Err(ChatError::UnexpectedError(
                 "Message has been deleted".to_string(),
             ));
         }
 
-        if message.message.created_by_id != Some(user_id) {
+        if message_response.message.created_by_id != Some(user_id) {
             return Err(ChatError::Forbidden(
                 "You not allowed modify message of other users".to_string(),
             ));
         }
 
         let now = Utc::now().naive_utc();
-        let mut message = message.message;
+        let mut message = message_response.message;
 
         self.update_latest_message_created_at(meeting, now, None)
             .await;
@@ -220,35 +222,39 @@ impl ChatService for ChatServiceImpl {
 
         let message = self.chat_repository.update_message(message).await?;
 
-        Ok(message)
+        message_response.message = message;
+
+        Ok(message_response)
     }
 
     async fn delete_message_by_id(
         &self,
         message_id: i32,
         user_id: i32,
-    ) -> Result<Message, ChatError> {
-        let message = self.chat_repository.get_message_by_id(message_id).await?;
+    ) -> Result<MessageResponse, ChatError> {
+        let mut message_response = self.chat_repository.get_message_by_id(message_id).await?;
 
-        if message.message.status == MessagesStatusEnum::Inactive as i32 {
+        if message_response.message.status == MessagesStatusEnum::Inactive as i32 {
             return Err(ChatError::UnexpectedError(
                 "Message has been deleted".to_string(),
             ));
         }
 
-        if message.message.created_by_id != Some(user_id) {
+        if message_response.message.created_by_id != Some(user_id) {
             return Err(ChatError::Forbidden(
                 "You not allowed modify message of other users".to_string(),
             ));
         }
 
-        let mut message = message.message;
+        let mut message = message_response.message;
 
         message.status = MessagesStatusEnum::Inactive as i32;
 
         let message = self.chat_repository.update_message(message).await?;
 
-        Ok(message)
+        message_response.message = message;
+
+        Ok(message_response)
     }
 
     async fn delete_conversation(

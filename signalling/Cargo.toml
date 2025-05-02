@@ -8,20 +8,7 @@ name = "signalling"
 path = "src/main.rs"
 
 [dependencies]
-salvo = { workspace = true, features = [
-    "quinn",
-    "tower-compat",
-    "oapi",
-    "affix-state",
-    "jwt-auth",
-    "logging",
-    "rate-limiter",
-    "catch-panic",
-    "caching-headers",
-    "compression",
-    "cors",
-    "serve-static",
-] }
+salvo = { workspace = true }
 serde = { workspace = true }
 socketioxide = { workspace = true, features = ["extensions", "state"] }
 socketioxide-redis = { workspace = true }

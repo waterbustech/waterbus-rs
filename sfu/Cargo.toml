@@ -8,3 +8,18 @@ name = "sfu"
 path = "src/main.rs"
 
 [dependencies]
+webrtc-manager = { workspace = true }
+waterbus-proto = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+etcd-client = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy = { workspace = true }
+nanoid = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }

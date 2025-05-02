@@ -1,22 +1,19 @@
 syntax = "proto3";
 
+import "common.proto";
+
 package sfu;
 
 // Requests
-
-message IceCandidate {
-    string candidate = 1;
-    optional string sdpMid = 2;
-    optional uint32 sdpMLineIndex = 3;
-}
-
 message JoinRoomRequest {
     string clientId = 1;
-    string sdp = 2;
-    bool isVideoEnabled = 3;
-    bool isAudioEnabled = 4;
-    bool isE2eeEnabled = 5;
-    int32 totalTracks = 6;
+    string participantId = 2;
+    string roomId = 3;
+    string sdp = 4;
+    bool isVideoEnabled = 5;
+    bool isAudioEnabled = 6;
+    bool isE2eeEnabled = 7;
+    int32 totalTracks = 8;
 }
 
 message SubscribeRequest {
@@ -37,13 +34,13 @@ message PublisherRenegotiationRequest {
 
 message AddPublisherCandidateRequest {
     string clientId = 1;
-    IceCandidate candidate = 2;
+    common.IceCandidate candidate = 2;
 }
 
 message AddSubscriberCandidateRequest {
     string clientId = 1;
     string targetId = 2;
-    IceCandidate candidate = 3;
+    common.IceCandidate candidate = 3;
 }
 
 message LeaveRoomRequest {
@@ -69,7 +66,7 @@ message SetCameraType {
 // Responses
 message JoinRoomResponse {
     string sdp = 1;
-    string is_recording = 2;
+    bool is_recording = 2;
 }
 
 message SubscribeResponse {

@@ -251,7 +251,7 @@ impl Room {
 
                 if let Ok(desc) = peer.create_offer(None).await {
                     let _ = peer.set_local_description(desc.clone()).await;
-                    callback(desc.sdp);
+                    tokio::spawn((callback)(desc.sdp));
                 }
             })
         }));
