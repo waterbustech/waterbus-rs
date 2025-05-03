@@ -15,7 +15,6 @@ struct NodeMetadata {
 pub struct EtcdNode {
     lease_id: i64,
     client: Client,
-    // key: String,
     shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
@@ -130,9 +129,8 @@ impl EtcdNode {
         system.refresh_memory();
 
         let total = system.total_memory() as f32;
-        let free = system.available_memory() as f32;
+        let free = system.free_memory() as f32;
 
-        println!("total: {}, free: {}", total, free);
         if total > 0.0 {
             Some((free / total) * 100.0)
         } else {

@@ -1,6 +1,7 @@
-use std::time::Duration;
-use tokio::task::JoinHandle;
+use std::{sync::Arc, time::Duration};
+use tokio::{sync::Mutex, task::JoinHandle};
 use tonic::{Request, Status, transport::Channel};
+use tracing::{info, warn};
 use waterbus_proto::{
     NewUserJoinedRequest, PublisherCandidateRequest, SubscriberCandidateRequest,
     SubscriberRenegotiateRequest, dispatcher_service_client::DispatcherServiceClient,
@@ -13,38 +14,46 @@ pub struct DispatcherGrpcClient {
 }
 
 impl DispatcherGrpcClient {
-    pub fn new(port: u16) -> Self {
-        let this = Self { port, client: None };
-
-        this.clone().start_client();
-
-        this
+    pub fn new(port: u16) -> Arc<Mutex<Self>> {
+        let client = Arc::new(Mutex::new(Self { port, client: None }));
+        DispatcherGrpcClient::start_client(client.clone());
+        client
     }
 
-    pub fn start_client(mut self) -> JoinHandle<()> {
+    fn start_client(this: Arc<Mutex<Self>>) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
-                match DispatcherServiceClient::connect(format!("[::1]:{}", self.port)).await {
-                    Ok(client) => {
-                        println!("Dispatcher client connected successfully.");
-                        self.client.replace(client);
+                let port;
+                {
+                    let locked = this.lock().await;
+                    port = locked.port;
+                }
 
-                        // Keep the connection alive and handle potential disconnections
-                        let mut interval = tokio::time::interval(Duration::from_secs(5)); // Check connection periodically
+                match DispatcherServiceClient::connect(format!("http://[::1]:{}", port)).await {
+                    Ok(client) => {
+                        info!("Dispatcher client connected successfully.");
+                        {
+                            let mut locked = this.lock().await;
+                            locked.client.replace(client);
+                        }
+
+                        let mut interval = tokio::time::interval(Duration::from_secs(5));
                         loop {
                             interval.tick().await;
-                            if self.client.is_none() {
-                                println!(
-                                    "Dispatcher client disconnected, attempting to reconnect..."
-                                );
+
+                            let disconnected = {
+                                let locked = this.lock().await;
+                                locked.client.is_none()
+                            };
+
+                            if disconnected {
+                                warn!("Dispatcher client disconnected, attempting to reconnect...");
                                 break;
                             }
-                            // You could add a simple ping or health check here if the service supports it
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to connect to dispatcher: {:?}", e);
-                        eprintln!("Retrying in 1 second...");
+                        warn!("Failed to connect to dispatcher: {:?}", e);
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
@@ -58,7 +67,7 @@ impl DispatcherGrpcClient {
             match client.new_user_joined(request).await {
                 Ok(_) => Ok(()),
                 Err(e) => {
-                    eprintln!("Error sending new_user_joined: {:?}", e);
+                    warn!("Error sending new_user_joined: {:?}", e);
                     self.client = None; // Mark as disconnected
                     Err(e)
                 }
@@ -77,7 +86,7 @@ impl DispatcherGrpcClient {
             match client.subscriber_renegotiate(request).await {
                 Ok(_) => Ok(()),
                 Err(e) => {
-                    eprintln!("Error sending subscriber_renegotiate: {:?}", e);
+                    warn!("Error sending subscriber_renegotiate: {:?}", e);
                     self.client = None; // Mark as disconnected
                     Err(e)
                 }
@@ -94,9 +103,11 @@ impl DispatcherGrpcClient {
         if let Some(ref mut client) = self.client {
             let request = Request::new(req);
             match client.on_publisher_candidate(request).await {
-                Ok(_) => Ok(()),
+                Ok(_) => {
+                    return Ok(());
+                }
                 Err(e) => {
-                    eprintln!("Error sending on_publisher_candidate: {:?}", e);
+                    warn!("Error sending on_publisher_candidate: {:?}", e);
                     self.client = None; // Mark as disconnected
                     Err(e)
                 }
@@ -115,7 +126,7 @@ impl DispatcherGrpcClient {
             match client.on_subscriber_candidate(request).await {
                 Ok(_) => Ok(()),
                 Err(e) => {
-                    eprintln!("Error sending on_subscriber_candidate: {:?}", e);
+                    warn!("Error sending on_subscriber_candidate: {:?}", e);
                     self.client = None; // Mark as disconnected
                     Err(e)
                 }

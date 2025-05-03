@@ -4,6 +4,7 @@ use time::{Duration, OffsetDateTime};
 
 #[derive(Debug, Clone)]
 pub struct EnvConfig {
+    pub etcd_addr: String,
     pub public_ip: String,
     pub app_port: u16,
     pub db_uri: DbUri,
@@ -12,6 +13,7 @@ pub struct EnvConfig {
     pub aws: AwsConfig,
     pub jwt: JwtConfig,
     pub udp_port_range: UdpPortRange,
+    pub grpc_port: GrpcPort,
 }
 
 #[derive(Debug, Clone)]
@@ -48,11 +50,18 @@ pub struct UdpPortRange {
     pub port_max: u16,
 }
 
+#[derive(Debug, Clone)]
+pub struct GrpcPort {
+    pub sfu_port: u16,
+    pub dispatcher_port: u16,
+}
+
 impl EnvConfig {
     pub fn new() -> Self {
         dotenv().ok();
 
         Self {
+            etcd_addr: env::var("ETCD_URI").expect("ETCD_URI must be set"),
             public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
             app_port: Self::get_env("APP_PORT", 3000),
             udp_port_range: UdpPortRange {
@@ -82,6 +91,10 @@ impl EnvConfig {
                     "AUTH_REFRESH_TOKEN_EXPIRES_IN",
                     315360000,
                 ),
+            },
+            grpc_port: GrpcPort {
+                sfu_port: Self::get_env("SFU_GRPC_PORT", 50051),
+                dispatcher_port: Self::get_env("DISPATCHER_GRPC_PORT", 50052),
             },
         }
     }

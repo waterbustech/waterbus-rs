@@ -65,7 +65,7 @@ impl SearchService {
 
     async fn _sync_db_to_typesense(&self) {
         if let Err(err) = self.client.delete_collection("users").await {
-            eprintln!("Failed to delete: {}", err);
+            warn!("Failed to delete: {}", err);
         }
 
         let schema = json!({

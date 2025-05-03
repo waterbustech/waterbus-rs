@@ -5,8 +5,9 @@ import "common.proto";
 package dispatcher;
 
 message NewUserJoinedRequest {
-    string participantId = 1;
-    string roomId = 2;
+    string clientId = 1;
+    string participantId = 2;
+    string roomId = 3;
 }
 
 message SubscriberRenegotiateRequest {

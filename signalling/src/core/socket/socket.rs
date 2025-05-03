@@ -1,13 +1,18 @@
-use std::sync::Arc;
+use std::str::FromStr;
 
 use anyhow::anyhow;
-use async_channel::{Receiver, Sender};
+use async_channel::Receiver;
+use dispatcher::{
+    dispatcher_manager::{DispatcherConfigs, DispatcherManager},
+    domain::DispatcherCallback,
+};
 use salvo::prelude::*;
 use socketioxide::{
     ParserConfig, SocketIo,
     adapter::{Adapter, Emitter},
     extract::{Data, Extension, SocketRef, State},
     handler::ConnectHandler,
+    socket::Sid,
 };
 use socketioxide_redis::{
     CustomRedisAdapter, RedisAdapter, RedisAdapterCtr,
@@ -16,13 +21,10 @@ use socketioxide_redis::{
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
-use webrtc_manager::{
-    errors::WebRTCError,
-    models::{
-        IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback, WClient,
-        WebRTCManagerConfigs,
-    },
-    webrtc_manager::{JoinRoomReq, WebRTCManager},
+use waterbus_proto::{
+    AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, LeaveRoomRequest,
+    PublisherRenegotiationRequest, SetCameraType, SetEnabledRequest, SetScreenSharingRequest,
+    SetSubscriberSdpRequest, SubscribeRequest,
 };
 
 use crate::{
@@ -34,12 +36,13 @@ use crate::{
         },
         env::env_config::EnvConfig,
         types::{
-            app_channel::{AppChannel, AppEvent},
+            app_channel::AppEvent,
             enums::socket_event::SocketEvent,
             res::socket_response::{
-                CameraTypeResponse, EnabledResponse, HandleRaisingResponse,
-                MeetingSubscribeResponse, ParticipantHasLeftResponse, ScreenSharingResponse,
-                SubscriberRenegotiationResponse, SubsriberCandidateResponse,
+                CameraTypeResponse, EnabledResponse, HandleRaisingResponse, IceCandidate,
+                MeetingJoinResponse, MeetingSubscribeResponse, ParticipantHasLeftResponse,
+                ScreenSharingResponse, SubscribeResponse, SubscriberRenegotiationResponse,
+                SubsriberCandidateResponse,
             },
         },
         utils::jwt_utils::JwtUtils,
@@ -83,28 +86,31 @@ pub async fn get_socket_router(
     env: &EnvConfig,
     jwt_utils: JwtUtils,
     sfu_service: SfuServiceImpl,
-    async_channel_tx: Sender<AppEvent>,
-    async_channel_rx: Receiver<AppEvent>,
+    message_receiver: Receiver<AppEvent>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let client = redis::Client::open(env.clone().redis_uri.0)?;
     let adapter = RedisAdapterCtr::new_with_redis(&client).await?;
     let conn = client.get_multiplexed_tokio_connection().await?;
 
-    let app_channel = AppChannel {
-        async_channel_rx,
-        async_channel_tx,
+    let env_clone = env.clone();
+
+    let (dispacher_sender, dispatcher_receiver) = async_channel::unbounded::<DispatcherCallback>();
+
+    let configs = DispatcherConfigs {
+        redis_uri: env_clone.redis_uri.0,
+        etcd_uri: env_clone.etcd_addr,
+        dispatcher_port: env_clone.grpc_port.dispatcher_port,
+        sfu_port: env_clone.grpc_port.sfu_port,
+        sender: dispacher_sender,
     };
+
+    let dispatcher = DispatcherManager::new(configs).await;
 
     let (layer, io) = SocketIo::builder()
         .with_state(RemoteUserCnt::new(conn))
         .with_state(jwt_utils.clone())
-        .with_state(app_channel)
         .with_state(sfu_service.clone())
-        .with_state(WebRTCManager::new(WebRTCManagerConfigs {
-            public_ip: env.public_ip.clone(),
-            port_min: env.udp_port_range.port_min,
-            port_max: env.udp_port_range.port_max,
-        }))
+        .with_state(dispatcher)
         .with_adapter::<RedisAdapter<_>>(adapter)
         .with_parser(ParserConfig::msgpack())
         .build_layer();
@@ -118,15 +124,164 @@ pub async fn get_socket_router(
     let layer = layer.compat();
     let router = Router::new().hoop(layer).path("/socket.io").goal(version);
 
+    // Listener
+    let io_clone = io.clone();
+    tokio::spawn(handle_dispatcher_callback(
+        io_clone,
+        dispatcher_receiver,
+        sfu_service,
+    ));
+
+    let io_clone = io.clone();
+    tokio::spawn(handle_message_update(io_clone, message_receiver));
+
     Ok(router)
 }
 
-pub fn handle_message_update(
+pub async fn handle_dispatcher_callback(
     io: SocketIo<CustomRedisAdapter<Emitter, RedisDriver>>,
-    app_channel: AppChannel,
+    receiver: Receiver<DispatcherCallback>,
+    sfu_service: SfuServiceImpl,
 ) {
     // Non-blocking check for any new messages on the channel
-    while let Ok(msg) = app_channel.async_channel_rx.try_recv() {
+    while let Ok(msg) = receiver.recv().await {
+        match msg {
+            DispatcherCallback::NewUserJoined(info) => {
+                let io = io.clone();
+                let sfu_service = sfu_service.clone();
+                let room_id = info.room_id;
+                let participant_id = info.participant_id;
+                let client_id = info.client_id;
+
+                let participant_id_parsed = match participant_id.parse::<i32>() {
+                    Ok(id) => id,
+                    Err(e) => {
+                        warn!("Failed to parse participant_id as i32: {:?}", e);
+                        return;
+                    }
+                };
+
+                let sid = Sid::from_str(&client_id);
+
+                if let Ok(sid) = sid {
+                    if let Some(socket) = io.get_socket(sid) {
+                        tokio::spawn(async move {
+                            let participant = sfu_service
+                                .update_participant(participant_id_parsed, &client_id)
+                                .await;
+
+                            if let Ok(participant) = participant {
+                                let _ = socket
+                                    .broadcast()
+                                    .to(room_id)
+                                    .emit(SocketEvent::NewParticipantSSC.to_str(), &participant)
+                                    .await
+                                    .ok();
+                            }
+                        });
+                    } else {
+                        warn!("Socket with id {} not found", client_id);
+                    }
+                }
+            }
+            DispatcherCallback::SubscriberRenegotiate(info) => {
+                let io = io.clone();
+                let client_id = info.client_id;
+                let target_id = info.target_id;
+                let sdp = info.sdp;
+
+                let sid = Sid::from_str(&client_id);
+
+                match sid {
+                    Ok(sid) => {
+                        if let Some(socket) = io.get_socket(sid) {
+                            let _ = socket
+                                .emit(
+                                    SocketEvent::SubscriberRenegotiationSSC.to_str(),
+                                    &SubscriberRenegotiationResponse {
+                                        target_id: target_id,
+                                        sdp: sdp,
+                                    },
+                                )
+                                .ok();
+                        } else {
+                            warn!("Socket with id {} not found", client_id);
+                        }
+                    }
+                    Err(err) => warn!("Failed to parse Sid from str: {:?}", err),
+                }
+            }
+            DispatcherCallback::PublisherCandidate(info) => {
+                if let Some(candidate) = info.candidate {
+                    let io = io.clone();
+                    let client_id = info.client_id;
+
+                    let candidate = IceCandidate {
+                        candidate: candidate.candidate,
+                        sdp_mid: candidate.sdp_mid,
+                        sdp_m_line_index: candidate.sdp_m_line_index,
+                    };
+
+                    let sid = Sid::from_str(&client_id);
+
+                    match sid {
+                        Ok(sid) => {
+                            if let Some(socket) = io.get_socket(sid) {
+                                let _ = socket
+                                    .emit(SocketEvent::PublisherCandidateSSC.to_str(), &candidate)
+                                    .ok();
+                            } else {
+                                warn!("Socket with id {} not found", client_id);
+                            }
+                        }
+                        Err(err) => warn!("Failed to parse Sid from str: {:?}", err),
+                    }
+                }
+            }
+            DispatcherCallback::SubscriberCandidate(info) => {
+                if let Some(candidate) = info.candidate {
+                    let io = io.clone();
+                    let client_id = info.client_id;
+                    let target_id = info.target_id;
+
+                    let candidate = IceCandidate {
+                        candidate: candidate.candidate,
+                        sdp_mid: candidate.sdp_mid,
+                        sdp_m_line_index: candidate.sdp_m_line_index,
+                    };
+
+                    let sid = Sid::from_str(&client_id);
+
+                    match sid {
+                        Ok(sid) => {
+                            if let Some(socket) = io.get_socket(sid) {
+                                let _ = socket
+                                    .emit(
+                                        SocketEvent::SubscriberCandidateSSC.to_str(),
+                                        &SubsriberCandidateResponse {
+                                            candidate,
+                                            target_id,
+                                        },
+                                    )
+                                    .ok();
+                            } else {
+                                warn!("Socket with id {} not found", client_id);
+                            }
+                        }
+                        Err(err) => warn!("Failed to parse Sid from str: {:?}", err),
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub async fn handle_message_update(
+    io: SocketIo<CustomRedisAdapter<Emitter, RedisDriver>>,
+    receiver: Receiver<AppEvent>,
+) {
+    // Non-blocking check for any new messages on the channel
+    while let Ok(msg) = receiver.recv().await {
         match msg {
             AppEvent::SendMessage(msg) => {
                 if let Some(meeting) = msg.clone().meeting {
@@ -138,7 +293,8 @@ pub fn handle_message_update(
                             .broadcast()
                             .to(meeting_code)
                             .emit(SocketEvent::SendMessageSSC.to_str(), &msg)
-                            .await;
+                            .await
+                            .ok();
                     });
                 }
             }
@@ -152,7 +308,8 @@ pub fn handle_message_update(
                             .broadcast()
                             .to(meeting_code)
                             .emit(SocketEvent::UpdateMessageSSC.to_str(), &msg)
-                            .await;
+                            .await
+                            .ok();
                     });
                 }
             }
@@ -166,7 +323,8 @@ pub fn handle_message_update(
                             .broadcast()
                             .to(meeting_code)
                             .emit(SocketEvent::DeleteMessageSSC.to_str(), &msg)
-                            .await;
+                            .await
+                            .ok();
                     });
                 }
             }
@@ -244,10 +402,6 @@ async fn on_connect<A: Adapter>(
         handle_subscriber_candidate,
     );
     socket.on(
-        SocketEvent::SetE2eeEnabledCSS.to_str(),
-        handle_set_e2ee_enabled,
-    );
-    socket.on(
         SocketEvent::SetCameraTypeCSS.to_str(),
         handle_set_camera_type,
     );
@@ -279,12 +433,12 @@ async fn on_connect<A: Adapter>(
 async fn on_disconnect<A: Adapter>(
     socket: SocketRef<A>,
     user_cnt: State<RemoteUserCnt>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
     sfu_service: State<SfuServiceImpl>,
 ) {
     let _ = user_cnt.remove_user().await.unwrap_or(0);
 
-    let _ = _handle_leave_room(socket, webrtc_manager.0.clone(), sfu_service.0, true).await;
+    let _ = _handle_leave_room(socket, dispatcher_manager.0.clone(), sfu_service.0, true).await;
 }
 
 async fn handle_msg<A: Adapter>(socket: SocketRef<A>, Data(data): Data<MsgDto>) {
@@ -303,7 +457,7 @@ async fn on_reconnect<A: Adapter>(_: SocketRef<A>) {}
 async fn handle_join_room<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<JoinRoomDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
     sfu_service: State<SfuServiceImpl>,
 ) {
     let client_id = socket.id.to_string();
@@ -322,53 +476,30 @@ async fn handle_join_room<A: Adapter>(
         .update_participant(participant_id_parsed, &client_id)
         .await;
 
-    if let Ok(participant) = participant {
-        let socket_clone = socket.clone();
-        let room_id_for_callback = room_id.clone();
-        let socket_clone_for_ice = socket_clone.clone();
-        let socket_clone_for_joined = socket_clone.clone();
-
-        let ice_candidate_callback: IceCandidateCallback =
-            Arc::new(move |candidate: IceCandidate| {
-                let socket_clone_for_ice = socket_clone_for_ice.clone();
-                Box::pin(async move {
-                    let _ = socket_clone_for_ice
-                        .emit(SocketEvent::PublisherCandidateSSC.to_str(), &candidate)
-                        .ok();
-                })
-            });
-
-        let joined_callback: JoinedCallback = Arc::new(move || {
-            println!("Joined callback triggered!");
-            let socket_clone_for_joined = socket_clone_for_joined.clone();
-            let room_id_for_callback = room_id_for_callback.clone();
-            let paricipant_clone = participant.clone();
-
-            Box::pin(async move {
-                let _ = socket_clone_for_joined
-                    .broadcast()
-                    .to(room_id_for_callback.clone())
-                    .emit(SocketEvent::NewParticipantSSC.to_str(), &paricipant_clone)
-                    .await
-                    .ok();
-            })
-        });
-
-        let req = JoinRoomReq {
+    if let Ok(_) = participant {
+        let req = JoinRoomRequest {
             sdp: data.sdp,
             is_audio_enabled: data.is_audio_enabled,
             is_video_enabled: data.is_video_enabled,
             is_e2ee_enabled: data.is_e2ee_enabled,
-            total_tracks: data.total_tracks,
-            callback: joined_callback,
-            ice_candidate_callback,
+            total_tracks: data.total_tracks as i32,
+            client_id,
+            participant_id: participant_id.to_string(),
+            room_id: room_id.clone(),
         };
 
-        match webrtc_manager.clone().join_room(&client_id, req).await {
+        match dispatcher_manager.join_room(req).await {
             Ok(res) => {
                 socket.join(room_id.clone());
 
-                let _ = socket.emit(SocketEvent::PublishSSC.to_str(), &res).ok();
+                let response = MeetingJoinResponse {
+                    sdp: res.sdp,
+                    is_recording: res.is_recording,
+                };
+
+                let _ = socket
+                    .emit(SocketEvent::PublishSSC.to_str(), &response)
+                    .ok();
             }
             Err(err) => {
                 warn!("Err: {:?}", err)
@@ -380,62 +511,34 @@ async fn handle_join_room<A: Adapter>(
 async fn handle_subscribe<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<SubscribeDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let target_id = data.target_id;
 
-    let socket_clone_for_renegotiation = socket.clone();
-    let target_id_clone = target_id.clone();
+    let req = SubscribeRequest {
+        client_id,
+        target_id: target_id.clone(),
+    };
 
-    let renegotiation_callback: RenegotiationCallback = Arc::new(move |sdp| {
-        info!("send sdp subscriber due to renegotiation needed trigger!");
-        let _ = socket_clone_for_renegotiation
-            .emit(
-                SocketEvent::SubscriberRenegotiationSSC.to_str(),
-                &SubscriberRenegotiationResponse {
-                    target_id: target_id_clone.clone(),
-                    sdp: sdp,
-                },
-            )
-            .ok();
-    });
-
-    let socket_clone = socket.clone();
-    let target_id_clone = target_id.clone();
-
-    let ice_candidate_callback: IceCandidateCallback = Arc::new(move |candidate| {
-        let socket_clone_for_ice = socket_clone.clone();
-        let target_id_clone_for_ice = target_id_clone.clone();
-
-        Box::pin(async move {
-            let _ = socket_clone_for_ice
-                .emit(
-                    SocketEvent::SubscriberCandidateSSC.to_str(),
-                    &SubsriberCandidateResponse {
-                        candidate: candidate,
-                        target_id: target_id_clone_for_ice.clone(),
-                    },
-                )
-                .ok();
-        })
-    });
-
-    let res = webrtc_manager
-        .subscribe(
-            &client_id,
-            &target_id,
-            renegotiation_callback,
-            ice_candidate_callback,
-        )
-        .await;
+    let res = dispatcher_manager.subscribe(req).await;
 
     if let Ok(res) = res {
         let _ = socket
             .emit(
                 SocketEvent::AnswerSubscriberSSC.to_str(),
                 &MeetingSubscribeResponse {
-                    subscribe_response: res,
+                    subscribe_response: SubscribeResponse {
+                        offer: res.offer,
+                        camera_type: res.camera_type as u8,
+                        video_enabled: res.video_enabled,
+                        audio_enabled: res.audio_enabled,
+                        is_screen_sharing: res.is_screen_sharing,
+                        is_hand_raising: res.is_hand_raising,
+                        is_e2ee_enabled: res.is_e2ee_enabled,
+                        video_codec: res.video_codec,
+                        screen_track_id: res.screen_track_id,
+                    },
                     target_id: target_id,
                 },
             )
@@ -446,35 +549,39 @@ async fn handle_subscribe<A: Adapter>(
 async fn handle_answer_subscribe<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<AnswerSubscribeDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let target_id = data.target_id;
     let sdp = data.sdp;
 
-    let _ = webrtc_manager
-        .set_subscriber_desc(&client_id, &target_id, &sdp)
-        .await;
+    let req = SetSubscriberSdpRequest {
+        client_id,
+        target_id,
+        sdp,
+    };
+
+    let _ = dispatcher_manager.set_subscribe_sdp(req).await;
 }
 
 async fn handle_publisher_renegotiation<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<PublisherRenegotiationDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let sdp = data.sdp;
 
-    let sdp = webrtc_manager
-        .handle_publisher_renegotiation(&client_id, &sdp)
-        .await;
+    let req = PublisherRenegotiationRequest { client_id, sdp };
+
+    let sdp = dispatcher_manager.publisher_renegotiate(req).await;
 
     match sdp {
         Ok(sdp) => {
             let _ = socket
                 .emit(
                     SocketEvent::PublisherRenegotiationSSC.to_str(),
-                    &PublisherRenegotiationDto { sdp: sdp },
+                    &PublisherRenegotiationDto { sdp: sdp.sdp },
                 )
                 .ok();
         }
@@ -485,273 +592,220 @@ async fn handle_publisher_renegotiation<A: Adapter>(
 async fn handle_publisher_candidate<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<CandidateDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let candidate = data;
 
-    let candidate = IceCandidate {
+    let candidate = waterbus_proto::common::IceCandidate {
         candidate: candidate.candidate,
         sdp_mid: candidate.sdp_mid,
-        sdp_m_line_index: candidate.sdp_m_line_index,
+        sdp_m_line_index: candidate.sdp_m_line_index.map(|v| v as u32),
     };
 
-    let _ = webrtc_manager
-        .add_publisher_candidate(&client_id, candidate)
-        .await;
+    let req = AddPublisherCandidateRequest {
+        client_id,
+        candidate: Some(candidate),
+    };
+
+    let _ = dispatcher_manager.add_publisher_candidate(req).await;
 }
 
 async fn handle_subscriber_candidate<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<SubscriberCandidateDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let candidate = data.candidate;
     let target_id = data.target_id;
 
-    let candidate = IceCandidate {
+    let candidate = waterbus_proto::common::IceCandidate {
         candidate: candidate.candidate,
         sdp_mid: candidate.sdp_mid,
-        sdp_m_line_index: candidate.sdp_m_line_index,
+        sdp_m_line_index: candidate.sdp_m_line_index.map(|v| v as u32),
     };
 
-    let _ = webrtc_manager
-        .add_subscriber_candidate(&client_id, &target_id, candidate)
-        .await;
-}
-
-async fn handle_set_e2ee_enabled<A: Adapter>(
-    socket: SocketRef<A>,
-    Data(data): Data<SetEnabledDto>,
-    webrtc_manager: State<WebRTCManager>,
-) {
-    let client_id = socket.id.to_string();
-    let is_enabled = data.is_enabled;
-
-    let client = {
-        match webrtc_manager.get_client_by_id(&client_id) {
-            Ok(client) => client,
-            Err(_) => return,
-        }
+    let req = AddSubscriberCandidateRequest {
+        client_id,
+        target_id,
+        candidate: Some(candidate),
     };
-    let client = client.clone();
 
-    let room_id = client.room_id;
-    let participant_id = client.participant_id;
-
-    let _ = webrtc_manager
-        .set_e2ee_enabled(&client_id, is_enabled)
-        .await;
-
-    let _ = socket
-        .broadcast()
-        .to(room_id)
-        .emit(
-            SocketEvent::SetE2eeEnabledSSC.to_str(),
-            &EnabledResponse {
-                participant_id: participant_id,
-                is_enabled,
-            },
-        )
-        .await
-        .ok();
+    let _ = dispatcher_manager.add_subscriber_candidate(req).await;
 }
 
 async fn handle_set_camera_type<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<SetCameraTypeDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let camera_type = data.type_;
 
-    let client = {
-        match webrtc_manager.get_client_by_id(&client_id) {
-            Ok(client) => client,
-            Err(_) => return,
-        }
+    let req = SetCameraType {
+        camera_type,
+        client_id,
     };
-    let client = client.clone();
 
-    let room_id = client.room_id;
-    let participant_id = client.participant_id;
+    let resp = dispatcher_manager.set_camera_type(req).await;
 
-    let camera_type_parsed: Result<u8, _> = camera_type.try_into();
-
-    match camera_type_parsed {
-        Ok(parsed_type) => {
-            let _ = webrtc_manager
-                .set_camera_type(&client_id, parsed_type)
-                .await;
-
+    match resp {
+        Ok(client) => {
             let _ = socket
                 .broadcast()
-                .to(room_id)
+                .to(client.room_id)
                 .emit(
                     SocketEvent::SetCameraTypeSSC.to_str(),
                     &CameraTypeResponse {
-                        participant_id: participant_id,
+                        participant_id: client.participant_id,
                         type_: camera_type,
                     },
                 )
                 .await
                 .ok();
         }
-        Err(e) => {
-            warn!("Failed to convert camera type to u8: {:?}", e);
-        }
+        Err(_) => {}
     }
 }
 
 async fn handle_set_video_enabled<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<SetEnabledDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let is_enabled = data.is_enabled;
 
-    let client = {
-        match webrtc_manager.get_client_by_id(&client_id) {
-            Ok(client) => client,
-            Err(_) => return,
-        }
+    let req = SetEnabledRequest {
+        client_id,
+        is_enabled,
     };
-    let client = client.clone();
 
-    let room_id = client.room_id;
-    let participant_id = client.participant_id;
+    let resp = dispatcher_manager.set_video_enabled(req).await;
 
-    let _ = webrtc_manager
-        .set_video_enabled(&client_id, is_enabled)
-        .await;
-
-    let _ = socket
-        .broadcast()
-        .to(room_id)
-        .emit(
-            SocketEvent::SetVideoEnabledSSC.to_str(),
-            &EnabledResponse {
-                participant_id: participant_id,
-                is_enabled,
-            },
-        )
-        .await
-        .ok();
+    match resp {
+        Ok(client) => {
+            let _ = socket
+                .broadcast()
+                .to(client.room_id)
+                .emit(
+                    SocketEvent::SetVideoEnabledSSC.to_str(),
+                    &EnabledResponse {
+                        participant_id: client.participant_id,
+                        is_enabled,
+                    },
+                )
+                .await
+                .ok();
+        }
+        Err(_) => {}
+    }
 }
 
 async fn handle_set_audio_enabled<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<SetEnabledDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let is_enabled = data.is_enabled;
 
-    let client = {
-        match webrtc_manager.get_client_by_id(&client_id) {
-            Ok(client) => client,
-            Err(_) => return,
-        }
+    let req = SetEnabledRequest {
+        client_id,
+        is_enabled,
     };
-    let client = client.clone();
 
-    let room_id = client.room_id;
-    let participant_id = client.participant_id;
+    let resp = dispatcher_manager.set_audio_enabled(req).await;
 
-    let _ = webrtc_manager
-        .set_audio_enabled(&client_id, is_enabled)
-        .await;
-
-    let _ = socket
-        .broadcast()
-        .to(room_id)
-        .emit(
-            SocketEvent::SetAudioEnabledSSC.to_str(),
-            &EnabledResponse {
-                participant_id: participant_id,
-                is_enabled,
-            },
-        )
-        .await
-        .ok();
+    match resp {
+        Ok(client) => {
+            let _ = socket
+                .broadcast()
+                .to(client.room_id)
+                .emit(
+                    SocketEvent::SetAudioEnabledSSC.to_str(),
+                    &EnabledResponse {
+                        participant_id: client.participant_id,
+                        is_enabled,
+                    },
+                )
+                .await
+                .ok();
+        }
+        Err(_) => {}
+    }
 }
 
 async fn handle_set_screen_sharing<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<SetScreenSharingDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let is_enabled = data.is_sharing;
     let screen_track_id = data.screen_track_id;
 
-    let client = {
-        match webrtc_manager.get_client_by_id(&client_id) {
-            Ok(client) => client,
-            Err(_) => return,
-        }
+    let req = SetScreenSharingRequest {
+        client_id,
+        is_enabled,
+        screen_track_id: screen_track_id.clone(),
     };
-    let client = client.clone();
 
-    let room_id = client.room_id;
-    let participant_id = client.participant_id;
+    let resp = dispatcher_manager.set_screen_sharing(req).await;
 
-    let _ = webrtc_manager
-        .set_screen_sharing(&client_id, is_enabled, screen_track_id.clone())
-        .await;
-
-    let _ = socket
-        .broadcast()
-        .to(room_id)
-        .emit(
-            SocketEvent::SetScreenSharingSSC.to_str(),
-            &ScreenSharingResponse {
-                participant_id: participant_id,
-                is_sharing: is_enabled,
-                screen_track_id: screen_track_id,
-            },
-        )
-        .await
-        .ok();
+    match resp {
+        Ok(client) => {
+            let _ = socket
+                .broadcast()
+                .to(client.room_id)
+                .emit(
+                    SocketEvent::SetScreenSharingSSC.to_str(),
+                    &ScreenSharingResponse {
+                        participant_id: client.participant_id,
+                        is_sharing: is_enabled,
+                        screen_track_id: screen_track_id,
+                    },
+                )
+                .await
+                .ok();
+        }
+        Err(_) => {}
+    }
 }
 
 async fn handle_set_hand_raising<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<SetHandRaisingDto>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
     let is_enabled = data.is_raising;
 
-    let client = {
-        match webrtc_manager.get_client_by_id(&client_id) {
-            Ok(client) => client,
-            Err(_) => return,
-        }
+    let req = SetEnabledRequest {
+        client_id,
+        is_enabled,
     };
-    let client = client.clone();
 
-    let room_id = client.room_id;
-    let participant_id = client.participant_id;
+    let resp = dispatcher_manager.set_hand_raising(req).await;
 
-    let _ = webrtc_manager
-        .set_hand_raising(&client_id, is_enabled)
-        .await;
-
-    let _ = socket
-        .broadcast()
-        .to(room_id)
-        .emit(
-            SocketEvent::HandRaisingSSC.to_str(),
-            &HandleRaisingResponse {
-                participant_id: participant_id,
-                is_raising: is_enabled,
-            },
-        )
-        .await
-        .ok();
+    match resp {
+        Ok(client) => {
+            let _ = socket
+                .broadcast()
+                .to(client.room_id)
+                .emit(
+                    SocketEvent::HandRaisingSSC.to_str(),
+                    &HandleRaisingResponse {
+                        participant_id: client.participant_id,
+                        is_raising: is_enabled,
+                    },
+                )
+                .await
+                .ok();
+        }
+        Err(_) => {}
+    }
 }
 
 async fn handle_set_subscribe_subtitle<A: Adapter>(
@@ -762,10 +816,10 @@ async fn handle_set_subscribe_subtitle<A: Adapter>(
 
 async fn handle_leave_room<A: Adapter>(
     socket: SocketRef<A>,
-    webrtc_manager: State<WebRTCManager>,
+    dispatcher_manager: State<DispatcherManager>,
     sfu_service: State<SfuServiceImpl>,
 ) {
-    let _ = _handle_leave_room(socket, webrtc_manager.0, sfu_service.0, false).await;
+    let _ = _handle_leave_room(socket, dispatcher_manager.0, sfu_service.0, false).await;
 }
 
 async fn _handle_on_connection(user_id: i32, socket_id: &str, sfu_service: SfuServiceImpl) {
@@ -774,13 +828,15 @@ async fn _handle_on_connection(user_id: i32, socket_id: &str, sfu_service: SfuSe
 
 async fn _handle_leave_room<A: Adapter>(
     socket: SocketRef<A>,
-    webrtc_manager: WebRTCManager,
+    dispatcher_manager: DispatcherManager,
     sfu_service: SfuServiceImpl,
     is_remove_ccu: bool,
-) -> Result<WClient, WebRTCError> {
-    let socket_id = socket.id.to_string();
+) -> Result<(), anyhow::Error> {
+    let client_id = socket.id.to_string();
 
-    let info = webrtc_manager.leave_room(&socket_id).await?;
+    let req = LeaveRoomRequest { client_id };
+
+    let info = dispatcher_manager.leave_room(req).await?;
 
     let info_clone = info.clone();
     let room_id = info_clone.room_id.clone();
@@ -815,8 +871,8 @@ async fn _handle_leave_room<A: Adapter>(
     };
 
     if is_remove_ccu {
-        let _ = sfu_service.delete_ccu(&socket_id).await;
+        let _ = sfu_service.delete_ccu(&socket.id.to_string()).await;
     }
 
-    Ok(info)
+    Ok(())
 }

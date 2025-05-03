@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use tokio::sync::{Mutex, RwLock};
+use tracing::warn;
 use webrtc::{
     api::{
         APIBuilder, interceptor_registry::register_default_interceptors, media_engine::MediaEngine,
@@ -140,7 +141,7 @@ impl Room {
                                 (Some(track), false)
                             }
                             AddTrackResponse::FailedToAddTrack => {
-                                eprintln!("Failed to add track");
+                                warn!("Failed to add track");
                                 (None, false)
                             }
                         };
@@ -153,7 +154,7 @@ impl Room {
                             )
                             .await
                             {
-                                eprintln!("Failed to add track to subscribers: {:?}", e);
+                                warn!("Failed to add track to subscribers: {:?}", e);
                             }
 
                             if should_count {
@@ -245,7 +246,7 @@ impl Room {
             Box::pin(async move {
                 let media = media.read().await;
                 if media.tracks.len() < 3 {
-                    println!("Not enough tracks, skipping renegotiation");
+                    warn!("Not enough tracks, skipping renegotiation");
                     return;
                 }
 
@@ -269,7 +270,7 @@ impl Room {
                         };
                         tokio::spawn((callback)(ice));
                     } else {
-                        eprintln!("Failed to convert ICE candidate");
+                        warn!("Failed to convert ICE candidate");
                     }
                 }
             })

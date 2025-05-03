@@ -1,10 +1,40 @@
 use sfu::infrastructure::{config::app_env::AppEnv, etcd::EtcdNode, grpc::grpc::GrpcServer};
-use tracing::warn;
+use tracing::{Metadata, warn};
+use tracing_subscriber::{
+    EnvFilter, Layer, filter::FilterFn, fmt, layer::SubscriberExt, registry,
+    util::SubscriberInitExt,
+};
 use webrtc_manager::models::WebRTCManagerConfigs;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    tracing_subscriber::fmt().init();
+    let filter = EnvFilter::new("info")
+        .add_directive("webrtc_srtp::session=info".parse().unwrap())
+        .add_directive("webrtc_ice::agent::agent_internal=off".parse().unwrap())
+        .add_directive(
+            "webrtc::peer_connection::peer_connection_internal=off"
+                .parse()
+                .unwrap(),
+        );
+
+    let filter_fn = FilterFn::new(|meta: &Metadata<'_>| {
+        let is_webrtc_session = meta.target().contains("webrtc_srtp::session");
+        let is_webrtc_ice = meta.target().contains("webrtc_ice::agent::agent_internal");
+        let is_webrtc_pc_internal = meta
+            .target()
+            .contains("webrtc::peer_connection::peer_connection_internal");
+
+        !(is_webrtc_session || is_webrtc_ice || is_webrtc_pc_internal)
+    });
+
+    registry()
+        .with(filter)
+        .with(fmt::layer().with_filter(filter_fn))
+        .init();
+
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
 
     let app_env = AppEnv::new();
 
@@ -17,7 +47,11 @@ async fn main() -> Result<(), anyhow::Error> {
     let etcd_node =
         EtcdNode::register(app_env.etcd_addr, app_env.node_id, app_env.node_ip, 10).await?;
 
-    GrpcServer::start(app_env.grpc_port.sfu_port, webrtc_configs);
+    GrpcServer::start(
+        app_env.grpc_port.sfu_port,
+        app_env.grpc_port.dispatcher_port,
+        webrtc_configs,
+    );
 
     tokio::signal::ctrl_c().await?;
 

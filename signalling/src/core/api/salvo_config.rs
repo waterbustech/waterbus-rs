@@ -12,7 +12,7 @@ use salvo::{
         security::{Http, HttpAuthScheme},
     },
     prelude::*,
-    // rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
+    rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
     serve_static::static_embed,
 };
 use typesense_client::TypesenseClient;
@@ -88,12 +88,12 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
     let search_service = SearchService::new(typesense_client, pool.clone());
     search_service.init().await;
 
-    // let limiter = RateLimiter::new(
-    //     FixedGuard::new(),
-    //     MokaStore::new(),
-    //     RemoteIpIssuer,
-    //     BasicQuota::per_second(200),
-    // );
+    let limiter = RateLimiter::new(
+        FixedGuard::new(),
+        MokaStore::new(),
+        RemoteIpIssuer,
+        BasicQuota::per_second(200),
+    );
 
     let health_router = Router::new().path("/health-check").get(health_check);
     let auth_router = get_auth_router(jwt_utils.clone());
@@ -101,20 +101,14 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
     let chat_router = get_chat_router(jwt_utils.clone());
     let meeting_router = get_meeting_router(jwt_utils.clone());
 
-    let (app_channel_tx, app_channel_rx) = async_channel::unbounded::<AppEvent>();
+    let (message_sender, message_receiver) = async_channel::unbounded::<AppEvent>();
 
     let meeting_repository = MeetingRepositoryImpl::new(pool.clone());
     let ccu_repository = CcuRepositoryImpl::new(pool.clone());
     let sfu_service = SfuServiceImpl::new(ccu_repository, meeting_repository);
-    let socket_router = get_socket_router(
-        &env,
-        jwt_utils.clone(),
-        sfu_service,
-        app_channel_tx.clone(),
-        app_channel_rx,
-    )
-    .await
-    .expect("Failed to config socket.io");
+    let socket_router = get_socket_router(&env, jwt_utils.clone(), sfu_service, message_receiver)
+        .await
+        .expect("Failed to config socket.io");
 
     let cors = Cors::new()
         .allow_origin(Any)
@@ -134,11 +128,11 @@ pub async fn get_salvo_service(env: &EnvConfig) -> Service {
         .hoop(affix_state::inject(jwt_utils))
         .hoop(affix_state::inject(env.clone()))
         .hoop(affix_state::inject(search_service))
-        .hoop(affix_state::inject(app_channel_tx))
+        .hoop(affix_state::inject(message_sender))
         .hoop(CatchPanic::new())
         .hoop(CachingHeaders::new())
         .hoop(Compression::new().min_length(1024))
-        // .hoop(limiter)
+        .hoop(limiter)
         .hoop(set_services)
         .push(auth_router)
         .push(chat_router)

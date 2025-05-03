@@ -7,6 +7,7 @@ use diesel::{
     update,
 };
 use salvo::async_trait;
+use tracing::warn;
 
 use crate::core::{
     database::schema::{meetings, members, messages, participants, users},
@@ -498,7 +499,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
             .filter(participants::id.eq(participant_id))
             .execute(&mut conn)
             .map_err(|err| {
-                println!("err: {:?}", err);
+                warn!("err: {:?}", err);
                 MeetingError::UnexpectedError("Failed to delete participant".to_string())
             })?;
 
@@ -514,7 +515,7 @@ impl MeetingRepository for MeetingRepositoryImpl {
         match participant {
             Ok(participant) => {
                 // Successfully found the participant, print or use the participant
-                println!("Participant found: {:?}", participant);
+                warn!("Participant found: {:?}", participant);
             }
             Err(_) => {}
         }

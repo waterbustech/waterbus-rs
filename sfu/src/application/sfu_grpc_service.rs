@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tonic::{Request, Response, Status};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
@@ -23,13 +23,13 @@ use super::dispacher_grpc_client::DispatcherGrpcClient;
 #[derive(Debug)]
 pub struct SfuGrpcService {
     webrtc_manager: Arc<RwLock<WebRTCManager>>,
-    dispatcher_grpc_client: Arc<RwLock<DispatcherGrpcClient>>,
+    dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
 }
 
 impl SfuGrpcService {
     pub fn new(
         configs: WebRTCManagerConfigs,
-        dispatcher_grpc_client: Arc<RwLock<DispatcherGrpcClient>>,
+        dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
     ) -> Self {
         let webrtc_manager = Arc::new(RwLock::new(WebRTCManager::new(configs)));
 
@@ -58,7 +58,7 @@ impl SfuService for SfuGrpcService {
                 let client_id = client_id.clone();
 
                 Box::pin(async move {
-                    let mut dispatcher = dispatcher.write().await;
+                    let mut dispatcher = dispatcher.lock().await;
 
                     let _ = dispatcher
                         .on_publisher_candidate(PublisherCandidateRequest {
@@ -75,19 +75,22 @@ impl SfuService for SfuGrpcService {
 
         let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
         let participant_id = req.participant_id.clone();
-        let room_id = req.client_id.clone();
+        let room_id = req.room_id.clone();
+        let client_id = req.client_id.clone();
         let joined_callback: JoinedCallback = Arc::new(move || {
             let dispatcher = Arc::clone(&dispatcher);
             let participant_id = participant_id.clone();
             let room_id = room_id.clone();
+            let client_id = client_id.clone();
 
             Box::pin(async move {
-                let mut dispatcher = dispatcher.write().await;
+                let mut dispatcher = dispatcher.lock().await;
 
                 let _ = dispatcher
                     .new_user_joined(NewUserJoinedRequest {
-                        participant_id: participant_id,
-                        room_id: room_id,
+                        participant_id,
+                        room_id,
+                        client_id,
                     })
                     .await;
             })
@@ -137,7 +140,7 @@ impl SfuService for SfuGrpcService {
             let target_id = target_id.clone();
 
             Box::pin(async move {
-                let mut dispatcher = dispatcher.write().await;
+                let mut dispatcher = dispatcher.lock().await;
 
                 let _ = dispatcher
                     .subsriber_renegotiate(SubscriberRenegotiateRequest {
@@ -158,7 +161,7 @@ impl SfuService for SfuGrpcService {
             let target_id = target_id.clone();
 
             Box::pin(async move {
-                let mut dispatcher = dispatcher.write().await;
+                let mut dispatcher = dispatcher.lock().await;
 
                 let _ = dispatcher
                     .on_subscriber_candidate(SubscriberCandidateRequest {

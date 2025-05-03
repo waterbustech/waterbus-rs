@@ -1691,6 +1691,20 @@ dependencies = [
 [[package]]
 name = "dispatcher"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "etcd-client",
+ "futures-util",
+ "prost",
+ "redis 0.30.0",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic 0.13.0",
+ "tracing",
+ "waterbus-proto",
+]
 
 [[package]]
 name = "displaydoc"
@@ -4711,6 +4725,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "redis"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "438a4e5f8e9aa246d6f3666d6978441bf1b37d5f417b50c4dd220be09f5fcc17"
+dependencies = [
+ "arc-swap",
+ "combine",
+ "itoa",
+ "num-bigint",
+ "percent-encoding",
+ "ryu",
+ "sha1_smol",
+ "socket2",
+ "url",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5726,6 +5757,7 @@ dependencies = [
  "nanoid",
  "parking_lot",
  "prost",
+ "rustls 0.23.26",
  "serde",
  "serde_json",
  "sysinfo",
@@ -5747,6 +5779,12 @@ dependencies = [
  "cpufeatures",
  "digest",
 ]
+
+[[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"
@@ -5795,6 +5833,7 @@ dependencies = [
  "chrono",
  "diesel",
  "diesel-derive-enum",
+ "dispatcher",
  "dotenvy",
  "egress-manager",
  "jsonwebtoken",
@@ -5819,7 +5858,7 @@ dependencies = [
  "uuid",
  "validator",
  "validator_derive",
- "webrtc-manager",
+ "waterbus-proto",
 ]
 
 [[package]]
@@ -5975,7 +6014,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "pin-project-lite",
- "redis",
+ "redis 0.29.5",
  "rmp",
  "rmp-serde",
  "serde",
