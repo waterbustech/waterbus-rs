@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use egress_manager::egress::{hls_writer::HlsWriter, moq_writer::MoQWriter};
 use parking_lot::RwLock;
-use tracing::info;
+use tracing::{debug, info};
 use uuid::Uuid;
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
 
@@ -213,7 +213,7 @@ impl Media {
             rtp_track.rid()
         };
 
-        info!(
+        debug!(
             "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
             rtp_track.id(),
             rtp_track.kind(),

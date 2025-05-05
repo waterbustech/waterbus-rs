@@ -1,4 +1,3 @@
-use crate::{errors::WebRTCError, models::TrackMutexWrapper};
 use dashmap::DashMap;
 use std::{
     sync::{
@@ -7,54 +6,26 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::watch;
+use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 use webrtc::{
     peer_connection::RTCPeerConnection,
-    rtcp::{
-        payload_feedbacks::receiver_estimated_maximum_bitrate::ReceiverEstimatedMaximumBitrate,
-        transport_feedbacks::transport_layer_cc::TransportLayerCc,
-    },
+    rtcp::payload_feedbacks::receiver_estimated_maximum_bitrate::ReceiverEstimatedMaximumBitrate,
     rtp_transceiver::{
         RTCRtpTransceiver, RTCRtpTransceiverInit,
         rtp_transceiver_direction::RTCRtpTransceiverDirection,
     },
-    track::track_local::{TrackLocal, track_local_static_rtp::TrackLocalStaticRTP},
+    track::track_local::TrackLocal,
 };
 
-const BWE_THRESHOLD_H: f32 = 550_000.0;
-const BWE_THRESHOLD_F: f32 = 1_600_000.0;
+use crate::{errors::WebRTCError, models::TrackMutexWrapper};
 
-#[derive(Debug)]
-struct TrackContext {
-    transceiver: Arc<RTCRtpTransceiver>,
-    local_track: Arc<TrackLocalStaticRTP>,
-}
+use super::{forward_track::ForwardTrack, quality::TrackQuality};
 
-type TrackMap = Arc<DashMap<String, TrackContext>>;
+const BWE_THRESHOLD_H: f32 = 1_000_000.0;
+const BWE_THRESHOLD_F: f32 = 2_500_000.0;
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-#[repr(u8)]
-pub enum PreferredQuality {
-    Low = 0,
-    Medium = 1,
-    High = 2,
-}
-
-impl PreferredQuality {
-    pub fn from_u8(value: u8) -> PreferredQuality {
-        match value {
-            0 => PreferredQuality::Low,
-            2 => PreferredQuality::High,
-            _ => PreferredQuality::Medium,
-        }
-    }
-
-    pub fn as_u8(&self) -> u8 {
-        self.clone() as u8
-    }
-}
+type TrackMap = Arc<DashMap<String, Arc<RwLock<ForwardTrack>>>>;
 
 #[derive(Debug)]
 pub struct Subscriber {
@@ -63,25 +34,25 @@ pub struct Subscriber {
     preferred_quality: Arc<AtomicU8>,
     tracks: Arc<DashMap<String, TrackMutexWrapper>>,
     track_map: TrackMap,
-    quality_change_counter: Arc<DashMap<PreferredQuality, u32>>,
+    user_id: String,
 }
 
 impl Subscriber {
-    pub fn new(peer_connection: Arc<RTCPeerConnection>) -> Self {
+    pub fn new(peer_connection: Arc<RTCPeerConnection>, user_id: String) -> Self {
         let cancel_token = CancellationToken::new();
         let (tx, _rx) = watch::channel(());
 
         let this = Self {
             peer_connection,
             cancel_token: cancel_token.clone(),
-            preferred_quality: Arc::new(AtomicU8::new(PreferredQuality::Medium.as_u8())),
+            preferred_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
             tracks: Arc::new(DashMap::new()),
             track_map: Arc::new(DashMap::new()),
-            quality_change_counter: Arc::new(DashMap::new()),
+            user_id,
         };
 
-        this._spawn_remb_loop(cancel_token, tx.clone());
-        this._spawn_track_update_loop(tx);
+        this.spawn_remb_loop(cancel_token, tx.clone());
+        this.spawn_track_update_loop(tx);
 
         this
     }
@@ -95,26 +66,36 @@ impl Subscriber {
         if let Some(mut existing) = self.tracks.get_mut(&track_id) {
             *existing = remote_track;
         } else {
-            self.tracks
-                .insert(track_id.to_string(), remote_track.clone());
-            self._add_transceiver(remote_track, &track_id).await?;
+            self.tracks.insert(track_id.clone(), remote_track.clone());
+            self.add_transceiver(remote_track, &track_id).await?;
         }
 
         Ok(())
     }
 
-    async fn _add_transceiver(
+    async fn add_transceiver(
         &self,
         remote_track: TrackMutexWrapper,
         track_id: &str,
     ) -> Result<(), WebRTCError> {
         let peer_connection = self.peer_connection.clone();
 
-        let track_selected = self.get_appropriate_track(&remote_track).await?;
+        let forward_track = {
+            let track = remote_track
+                .read()
+                .await
+                .new_forward_track(self.user_id.clone())?;
+            track
+        };
+
+        let local_track = {
+            let reader = forward_track.read().await;
+            reader.local_track.clone()
+        };
 
         let transceiver = peer_connection
             .add_transceiver_from_track(
-                Arc::clone(&track_selected) as Arc<dyn TrackLocal + Send + Sync>,
+                Arc::clone(&local_track) as Arc<dyn TrackLocal + Send + Sync>,
                 Some(RTCRtpTransceiverInit {
                     direction: RTCRtpTransceiverDirection::Sendonly,
                     send_encodings: vec![],
@@ -123,26 +104,18 @@ impl Subscriber {
             .await
             .map_err(|_| WebRTCError::FailedToAddTrack)?;
 
-        self._read_rtcp(&transceiver).await;
+        self.read_rtcp(&transceiver).await;
 
-        self.track_map.insert(
-            track_id.to_owned(),
-            TrackContext {
-                transceiver: Arc::clone(&transceiver),
-                local_track: Arc::clone(&track_selected),
-            },
-        );
+        self.track_map
+            .insert(track_id.to_owned(), Arc::clone(&forward_track));
 
         Ok(())
     }
 
-    async fn _read_rtcp(&self, transceiver: &Arc<RTCRtpTransceiver>) {
+    async fn read_rtcp(&self, transceiver: &Arc<RTCRtpTransceiver>) {
         let rtp_sender = transceiver.sender().await;
         let cancel_token = self.cancel_token.clone();
 
-        // Read incoming RTCP packets
-        // Before these packets are returned they are processed by interceptors. For things
-        // like NACK this needs to be called.
         tokio::spawn(async move {
             let mut rtcp_buf = vec![0u8; 1500];
             loop {
@@ -160,22 +133,19 @@ impl Subscriber {
         });
     }
 
-    fn _spawn_remb_loop(&self, cancel_token: CancellationToken, tx: watch::Sender<()>) {
+    fn spawn_remb_loop(&self, cancel_token: CancellationToken, tx: watch::Sender<()>) {
         let pc2 = Arc::downgrade(&self.peer_connection);
         let preferred_quality = Arc::clone(&self.preferred_quality);
-        let quality_change_counter = Arc::clone(&self.quality_change_counter);
 
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => {
-                        // info!("[RTCP] REMB loop cancelled");
                         break;
                     }
                     _ = tokio::time::sleep(std::time::Duration::from_secs(4)) => {
                         if let Some(pc) = pc2.upgrade() {
-                            // Passing the cloned `subscriber` instead of `self`
-                            Self::_monitor_remb(quality_change_counter.clone(), pc, preferred_quality.clone(), tx.clone()).await;
+                            Self::monitor_remb( pc, preferred_quality.clone(), tx.clone()).await;
                         }
                     }
                 }
@@ -183,11 +153,10 @@ impl Subscriber {
         });
     }
 
-    async fn _monitor_remb(
-        quality_change_counter: Arc<DashMap<PreferredQuality, u32>>,
+    async fn monitor_remb(
         peer_connection: Arc<RTCPeerConnection>,
         preferred_quality: Arc<AtomicU8>,
-        _tx: watch::Sender<()>,
+        tx: watch::Sender<()>,
     ) {
         let senders = peer_connection.get_senders().await;
         for sender in senders {
@@ -201,56 +170,24 @@ impl Subscriber {
                         {
                             let bitrate = remb.bitrate;
                             let new_quality = if bitrate >= BWE_THRESHOLD_F {
-                                PreferredQuality::High
+                                TrackQuality::High
                             } else if bitrate >= BWE_THRESHOLD_H {
-                                PreferredQuality::Medium
+                                TrackQuality::Medium
                             } else {
-                                PreferredQuality::Low
+                                TrackQuality::Low
                             };
 
                             let current_u8 =
                                 preferred_quality.load(std::sync::atomic::Ordering::Relaxed);
-                            let current_quality = PreferredQuality::from_u8(current_u8);
+                            let current_quality = TrackQuality::from_u8(current_u8);
 
-                            if std::mem::discriminant(&current_quality)
-                                != std::mem::discriminant(&new_quality)
-                            {
-                                let mut counter = quality_change_counter
-                                    .entry(new_quality.clone())
-                                    .or_insert(0);
-                                *counter += 1;
-
-                                if *counter >= 3 {
-                                    preferred_quality.store(
-                                        new_quality.as_u8(),
-                                        std::sync::atomic::Ordering::Relaxed,
-                                    );
-                                    *counter = 0;
-                                    // let _ = tx.send(());
-                                }
-                            } else {
-                                if let Some(mut counter) =
-                                    quality_change_counter.get_mut(&new_quality)
-                                {
-                                    *counter = 0;
-                                }
-                            }
-                        }
-
-                        // 🚀 Logging TransportCC packets
-                        if let Some(tcc) = packet.as_any().downcast_ref::<TransportLayerCc>() {
-                            println!(
-                                "[TransportCC] Media SSRC: {}, Base Sequence: {}, Packet Status Count: {}",
-                                tcc.media_ssrc, tcc.base_sequence_number, tcc.packet_status_count
-                            );
-                            for (i, status) in tcc.packet_chunks.iter().enumerate() {
-                                println!("[TransportCC] Chunk #{}: {:?}", i, status);
-                            }
-                            for recv_delta in &tcc.recv_deltas {
-                                println!(
-                                    "[TransportCC] Received delta: {:?}, Type: {:?}",
-                                    recv_delta.delta, recv_delta.type_tcc_packet
+                            if current_quality != new_quality {
+                                preferred_quality.store(
+                                    new_quality.as_u8(),
+                                    std::sync::atomic::Ordering::Relaxed,
                                 );
+
+                                let _ = tx.send(());
                             }
                         }
                     }
@@ -261,7 +198,7 @@ impl Subscriber {
         }
     }
 
-    fn _spawn_track_update_loop(&self, tx: watch::Sender<()>) {
+    fn spawn_track_update_loop(&self, tx: watch::Sender<()>) {
         let tracks = Arc::clone(&self.tracks);
         let preferred_quality = Arc::clone(&self.preferred_quality);
         let track_map = Arc::clone(&self.track_map);
@@ -269,77 +206,46 @@ impl Subscriber {
 
         tokio::spawn(async move {
             while rx.changed().await.is_ok() {
-                let preferred = PreferredQuality::from_u8(preferred_quality.load(Ordering::SeqCst));
+                let preferred = TrackQuality::from_u8(preferred_quality.load(Ordering::SeqCst));
 
                 for entry in tracks.iter() {
                     let track_id = entry.key();
-                    let track = entry.value();
 
-                    let track_guard = track.read().await;
-
-                    if track_guard.is_simulcast {
-                        if let Some(new_encoding) =
-                            track_guard.get_track_appropriate(&preferred).await
-                        {
-                            if let Some(mut ctx) = track_map.get_mut(track_id) {
-                                // Declare ctx as mutable here
-                                let sender = ctx.transceiver.sender().await;
-                                let cur_track = sender.track().await;
-
-                                match cur_track {
-                                    Some(cur_track) => {
-                                        if cur_track.rid() != new_encoding.rid() {
-                                            let result = sender
-                                                .replace_track(Some(Arc::clone(&new_encoding)
-                                                    as Arc<dyn TrackLocal + Send + Sync>))
-                                                .await;
-
-                                            match result {
-                                                Ok(()) => {
-                                                    ctx.local_track = Arc::clone(&new_encoding);
-                                                }
-                                                Err(err) => {
-                                                    warn!("Got err when replace track: {:?}", err);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    None => {}
-                                }
-                            }
-                        }
+                    if let Some(ctx) = track_map.get_mut(track_id) {
+                        let mut track_writer = ctx.write().await;
+                        track_writer.set_effective_quality(&preferred);
                     }
                 }
             }
         });
     }
 
-    async fn get_appropriate_track(
-        &self,
-        remote_track: &TrackMutexWrapper,
-    ) -> Result<Arc<TrackLocalStaticRTP>, WebRTCError> {
-        let preferred_quality =
-            PreferredQuality::from_u8(self.preferred_quality.load(Ordering::SeqCst));
-
-        let track = remote_track.read().await;
-
-        track
-            .get_track_appropriate(&preferred_quality)
-            .await
-            .ok_or(WebRTCError::FailedToAddTrack)
-    }
-
     pub fn close(&self) {
         self.cancel_token.cancel();
 
-        self.tracks.clear();
-        self.track_map.clear();
-        self.quality_change_counter.clear();
+        self.clear_all_forward_tracks();
 
         let pc = Arc::clone(&self.peer_connection);
 
         tokio::spawn(async move {
             let _ = pc.close().await;
         });
+    }
+
+    pub fn clear_all_forward_tracks(&self) {
+        let user_id = self.user_id.clone();
+
+        for track in self.tracks.iter() {
+            let user_id = user_id.clone();
+            let track = track.clone();
+            tokio::spawn(async move {
+                let writer = track.write().await;
+
+                writer.remove_forward_track(&user_id);
+            });
+        }
+
+        self.tracks.clear();
+        self.track_map.clear();
     }
 }

@@ -4,7 +4,7 @@ use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::core::env::env_config::EnvConfig;
+use crate::core::env::app_env::AppEnv;
 use crate::core::types::res::failed_response::FailedResponse;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -17,24 +17,28 @@ pub struct JwtClaims {
 pub struct JwtUtils {
     secret_key: String,
     refresh_secret_key: String,
-    token_expires_at: OffsetDateTime,
-    refresh_token_expires_at: OffsetDateTime,
+    token_duration: time::Duration,
+    refresh_token_duration: time::Duration,
 }
 
 impl JwtUtils {
-    pub fn new(env: EnvConfig) -> Self {
+    pub fn new(env: AppEnv) -> Self {
         Self {
             secret_key: env.jwt.jwt_token,
             refresh_secret_key: env.jwt.refresh_token,
-            token_expires_at: env.jwt.token_expires_at,
-            refresh_token_expires_at: env.jwt.refresh_token_expires_at,
+            token_duration: time::Duration::seconds(env.jwt.token_expires_in_seconds),
+            refresh_token_duration: time::Duration::seconds(
+                env.jwt.refresh_token_expires_in_seconds,
+            ),
         }
     }
 
     pub fn generate_token(&self, user_id: &str) -> String {
+        let exp = OffsetDateTime::now_utc() + self.token_duration;
+
         let claims = JwtClaims {
             id: user_id.to_owned(),
-            exp: self.token_expires_at.unix_timestamp(),
+            exp: exp.unix_timestamp(),
         };
 
         encode(
@@ -55,9 +59,11 @@ impl JwtUtils {
     }
 
     pub fn generate_refresh_token(&self, user_id: &str) -> String {
+        let exp = OffsetDateTime::now_utc() + self.refresh_token_duration;
+
         let claims = JwtClaims {
             id: user_id.to_owned(),
-            exp: self.refresh_token_expires_at.unix_timestamp(),
+            exp: exp.unix_timestamp(),
         };
 
         encode(

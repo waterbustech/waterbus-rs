@@ -1,9 +1,8 @@
 use dotenvy::dotenv;
 use std::env;
-use time::{Duration, OffsetDateTime};
 
 #[derive(Debug, Clone)]
-pub struct EnvConfig {
+pub struct AppEnv {
     pub etcd_addr: String,
     pub public_ip: String,
     pub app_port: u16,
@@ -32,8 +31,8 @@ pub struct TypesenseConfig {
 pub struct JwtConfig {
     pub jwt_token: String,
     pub refresh_token: String,
-    pub token_expires_at: OffsetDateTime,
-    pub refresh_token_expires_at: OffsetDateTime,
+    pub token_expires_in_seconds: i64,
+    pub refresh_token_expires_in_seconds: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -56,7 +55,7 @@ pub struct GrpcPort {
     pub dispatcher_port: u16,
 }
 
-impl EnvConfig {
+impl AppEnv {
     pub fn new() -> Self {
         dotenv().ok();
 
@@ -86,10 +85,10 @@ impl EnvConfig {
                 jwt_token: env::var("AUTH_JWT_SECRET").expect("AUTH_JWT_SECRET must be set"),
                 refresh_token: env::var("AUTH_REFRESH_SECRET")
                     .expect("AUTH_REFRESH_SECRET must be set"),
-                token_expires_at: Self::parse_expiration("AUTH_JWT_TOKEN_EXPIRES_IN", 86400),
-                refresh_token_expires_at: Self::parse_expiration(
+                token_expires_in_seconds: Self::get_dur_env("AUTH_JWT_TOKEN_EXPIRES_IN", 86_400), // a day
+                refresh_token_expires_in_seconds: Self::get_dur_env(
                     "AUTH_REFRESH_TOKEN_EXPIRES_IN",
-                    315360000,
+                    31_536_000, // a year
                 ),
             },
             grpc_port: GrpcPort {
@@ -106,15 +105,10 @@ impl EnvConfig {
             .unwrap_or(default)
     }
 
-    fn parse_expiration(var: &str, default: u64) -> OffsetDateTime {
-        let val = env::var(var).unwrap_or_else(|_| default.to_string());
-        let seconds = if let Some(num) = val.strip_suffix('h') {
-            num.parse::<u64>().map(|n| n * 3600).unwrap_or(default)
-        } else if let Some(num) = val.strip_suffix('d') {
-            num.parse::<u64>().map(|n| n * 86400).unwrap_or(default)
-        } else {
-            val.parse().unwrap_or(default)
-        };
-        OffsetDateTime::now_utc() + Duration::seconds(seconds as i64)
+    fn get_dur_env(var: &str, default: i64) -> i64 {
+        env::var(var)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
     }
 }

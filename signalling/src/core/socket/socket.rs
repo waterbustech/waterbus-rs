@@ -34,7 +34,7 @@ use crate::{
             SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto, SetScreenSharingDto, SubscribeDto,
             SubscriberCandidateDto,
         },
-        env::env_config::EnvConfig,
+        env::app_env::AppEnv,
         types::{
             app_channel::AppEvent,
             enums::socket_event::SocketEvent,
@@ -83,7 +83,7 @@ impl RemoteUserCnt {
 }
 
 pub async fn get_socket_router(
-    env: &EnvConfig,
+    env: &AppEnv,
     jwt_utils: JwtUtils,
     sfu_service: SfuServiceImpl,
     message_receiver: Receiver<AppEvent>,
@@ -458,52 +458,37 @@ async fn handle_join_room<A: Adapter>(
     socket: SocketRef<A>,
     Data(data): Data<JoinRoomDto>,
     dispatcher_manager: State<DispatcherManager>,
-    sfu_service: State<SfuServiceImpl>,
 ) {
     let client_id = socket.id.to_string();
     let participant_id = &data.participant_id;
     let room_id = data.room_id.clone();
 
-    let participant_id_parsed = match participant_id.parse::<i32>() {
-        Ok(id) => id,
-        Err(e) => {
-            warn!("Failed to parse participant_id as i32: {:?}", e);
-            return;
-        }
+    let req = JoinRoomRequest {
+        sdp: data.sdp,
+        is_audio_enabled: data.is_audio_enabled,
+        is_video_enabled: data.is_video_enabled,
+        is_e2ee_enabled: data.is_e2ee_enabled,
+        total_tracks: data.total_tracks as i32,
+        client_id,
+        participant_id: participant_id.to_string(),
+        room_id: room_id.clone(),
     };
 
-    let participant = sfu_service
-        .update_participant(participant_id_parsed, &client_id)
-        .await;
+    match dispatcher_manager.join_room(req).await {
+        Ok(res) => {
+            socket.join(room_id.clone());
 
-    if let Ok(_) = participant {
-        let req = JoinRoomRequest {
-            sdp: data.sdp,
-            is_audio_enabled: data.is_audio_enabled,
-            is_video_enabled: data.is_video_enabled,
-            is_e2ee_enabled: data.is_e2ee_enabled,
-            total_tracks: data.total_tracks as i32,
-            client_id,
-            participant_id: participant_id.to_string(),
-            room_id: room_id.clone(),
-        };
+            let response = MeetingJoinResponse {
+                sdp: res.sdp,
+                is_recording: res.is_recording,
+            };
 
-        match dispatcher_manager.join_room(req).await {
-            Ok(res) => {
-                socket.join(room_id.clone());
-
-                let response = MeetingJoinResponse {
-                    sdp: res.sdp,
-                    is_recording: res.is_recording,
-                };
-
-                let _ = socket
-                    .emit(SocketEvent::PublishSSC.to_str(), &response)
-                    .ok();
-            }
-            Err(err) => {
-                warn!("Err: {:?}", err)
-            }
+            let _ = socket
+                .emit(SocketEvent::PublishSSC.to_str(), &response)
+                .ok();
+        }
+        Err(err) => {
+            warn!("Err: {:?}", err)
         }
     }
 }

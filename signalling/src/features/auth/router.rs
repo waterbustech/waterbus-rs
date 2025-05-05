@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::core::dtos::auth::login_dto::LoginDto;
 use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
-use crate::core::env::env_config::EnvConfig;
+use crate::core::env::app_env::AppEnv;
 use crate::core::types::res::failed_response::FailedResponse;
 use crate::core::utils::aws_utils::get_s3_client;
 use crate::core::utils::jwt_utils::JwtUtils;
@@ -86,7 +86,7 @@ async fn get_oauth_token(res: &mut Response, data: JsonBody<OauthRequestDto>) {
 /// Get AWS-S3 presigned url
 #[endpoint(tags("auth"))]
 async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
-    let env = depot.obtain::<EnvConfig>().unwrap();
+    let env = depot.obtain::<AppEnv>().unwrap();
     let bucket_name = env.clone().aws.bucket_name;
     let region = env.clone().aws.region;
 

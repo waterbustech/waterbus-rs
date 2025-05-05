@@ -19,7 +19,7 @@ use typesense_client::TypesenseClient;
 
 use crate::{
     core::{
-        database::db::establish_connection, env::env_config::EnvConfig,
+        database::db::establish_connection, env::app_env::AppEnv,
         socket::socket::get_socket_router, types::app_channel::AppEvent,
         utils::jwt_utils::JwtUtils,
     },
@@ -77,7 +77,7 @@ async fn set_services(depot: &mut Depot) {
     depot.inject(meeting_service);
 }
 
-pub async fn get_salvo_service(env: &EnvConfig) -> Service {
+pub async fn get_salvo_service(env: &AppEnv) -> Service {
     let pool = establish_connection(env.clone());
 
     let db_pooled_connection = DbConnection(pool.clone());

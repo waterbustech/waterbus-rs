@@ -2,15 +2,16 @@ use dashmap::DashMap;
 use egress_manager::egress::hls_writer::HlsWriter;
 use egress_manager::egress::moq_writer::MoQWriter;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::info;
-use webrtc::Error;
 use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
-use webrtc::track::track_local::TrackLocalWriter;
-use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 use webrtc::track::track_remote::TrackRemote;
 use webrtc::util::Marshal;
 
-use super::subscriber::PreferredQuality;
+use crate::entities::quality::TrackQuality;
+use crate::errors::WebRTCError;
+
+use super::forward_track::ForwardTrack;
 
 #[derive(Debug, Clone)]
 pub struct Track {
@@ -22,9 +23,9 @@ pub struct Track {
     pub capability: RTCRtpCodecCapability,
     pub kind: RTPCodecType,
     remote_tracks: Vec<Arc<TrackRemote>>,
-    pub local_tracks: DashMap<String, Arc<TrackLocalStaticRTP>>,
-    hls_writer: Option<Arc<HlsWriter>>,
-    moq_writer: Option<Arc<MoQWriter>>,
+    forward_tracks: Arc<DashMap<String, Arc<RwLock<ForwardTrack>>>>,
+    // hls_writer: Option<Arc<HlsWriter>>,
+    // moq_writer: Option<Arc<MoQWriter>>,
 }
 
 impl Track {
@@ -35,127 +36,87 @@ impl Track {
         hls_writer: Option<Arc<HlsWriter>>,
         moq_writer: Option<Arc<MoQWriter>>,
     ) -> Self {
-        let mut handler = Track {
+        let kind = track.kind();
+
+        let handler = Track {
             id: track.id(),
             room_id,
             participant_id,
             is_simulcast: false,
             stream_id: track.stream_id().to_string(),
             capability: track.codec().capability,
-            kind: track.kind(),
+            kind,
             remote_tracks: vec![track.clone()],
-            local_tracks: DashMap::new(),
-            hls_writer,
-            moq_writer,
+            forward_tracks: Arc::new(DashMap::new()),
+            // hls_writer: hls_writer.clone(),
+            // moq_writer: moq_writer.clone(),
         };
 
-        handler._create_local_track(track);
+        handler._forward_rtp(track, hls_writer, moq_writer, kind);
+
         handler
     }
 
     pub fn add_track(&mut self, track: Arc<TrackRemote>) {
         self.remote_tracks.push(track.clone());
-        self._create_local_track(track);
+
+        self._forward_rtp(track, None, None, self.kind);
 
         self.is_simulcast = true;
     }
 
-    pub async fn get_track_appropriate(
-        &self,
-        preferred: &PreferredQuality,
-    ) -> Option<Arc<TrackLocalStaticRTP>> {
-        if !self.is_simulcast {
-            // Default to "f" for non-simulcast tracks
-            return self.local_tracks.get("f").map(|track| Arc::clone(&track));
-        }
-
-        // Map PreferredQuality to a preferred RID
-        let preferred_rid = match preferred {
-            PreferredQuality::High => "f",
-            PreferredQuality::Medium => "h",
-            PreferredQuality::Low => "q",
-        };
-
-        // Try to find the preferred RID first
-        if let Some(track) = self.local_tracks.get(preferred_rid) {
-            return Some(Arc::clone(&track));
-        }
-
-        // Fallback: Try other qualities in order of preference
-        let fallback_order = match preferred {
-            PreferredQuality::High => vec!["h", "q"],
-            PreferredQuality::Medium => vec!["f", "q"],
-            PreferredQuality::Low => vec!["h", "f"],
-        };
-
-        for rid in fallback_order {
-            if let Some(track) = self.local_tracks.get(rid) {
-                return Some(Arc::clone(&track));
-            }
-        }
-
-        // No matching track found
-        None
-    }
-
     pub fn stop(&mut self) {
         self.remote_tracks.clear();
-        self.local_tracks.clear();
+        self.forward_tracks.clear();
     }
 
-    fn _create_local_track(&mut self, remote_track: Arc<TrackRemote>) {
-        let local_track = if remote_track.rid().is_empty() {
-            Arc::new(TrackLocalStaticRTP::new(
-                self.capability.clone(),
-                remote_track.id(),
-                remote_track.stream_id(),
-            ))
-        } else {
-            Arc::new(TrackLocalStaticRTP::new_with_rid(
-                self.capability.clone(),
-                remote_track.id(),
-                remote_track.rid().to_owned(),
-                remote_track.stream_id(),
-            ))
-        };
+    pub fn new_forward_track(&self, id: String) -> Result<Arc<RwLock<ForwardTrack>>, WebRTCError> {
+        if self.forward_tracks.contains_key(&id) {
+            return Err(WebRTCError::FailedToAddTrack);
+        }
 
-        let rid = if self.is_simulcast {
-            remote_track.rid().to_owned()
-        } else {
-            // Default "f" for audio and non-simulcast video
-            "f".to_string()
-        };
+        let forward_track = Arc::new(RwLock::new(ForwardTrack::new(
+            self.capability.clone(),
+            self.id.clone(),
+            self.stream_id.clone(),
+        )));
 
-        self.local_tracks.insert(rid, local_track.clone());
+        self.forward_tracks.insert(id, forward_track.clone());
 
-        Self::_forward_rtp(
-            remote_track,
-            local_track,
-            self.hls_writer.clone(),
-            self.moq_writer.clone(),
-            self.kind,
-        );
+        Ok(forward_track)
+    }
+
+    pub fn remove_forward_track(&self, id: &str) {
+        self.forward_tracks.remove(id);
     }
 
     pub fn _forward_rtp(
+        &self,
         remote_track: Arc<TrackRemote>,
-        local_track: Arc<TrackLocalStaticRTP>,
         hls_writer: Option<Arc<HlsWriter>>,
         moq_writer: Option<Arc<MoQWriter>>,
         kind: RTPCodecType,
     ) {
+        let forward_tracks = self.forward_tracks.clone();
+        let track_quality = TrackQuality::from_str(remote_track.rid());
+
         tokio::spawn(async move {
             let is_video = kind == RTPCodecType::Video;
 
             while let Ok((rtp, _)) = remote_track.read_rtp().await {
-                // Write RTP to local track
-                if let Err(err) = local_track.write_rtp(&rtp).await {
-                    if Error::ErrClosedPipe != err {
-                        info!("[track] output track write_rtp got error: {err} and break");
-                        break;
-                    } else {
-                        info!("[track] output track write_rtp got error: {err}");
-                    }
+                // Forward to all ForwardTracks
+                for entry in forward_tracks.iter() {
+                    let forward_track = entry.value().clone();
+                    let track_quality = track_quality.clone();
+
+                    let rtp_clone = rtp.clone();
+                    tokio::spawn(async move {
+                        forward_track
+                            .read()
+                            .await
+                            .write_rtp(&rtp_clone, is_video, track_quality)
+                            .await;
+                    });
                 }
 
                 // If HLS writer exists, forward the RTP packet for HLS

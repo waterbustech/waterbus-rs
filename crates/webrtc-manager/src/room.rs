@@ -229,7 +229,7 @@ impl Room {
 
         let pc = self._create_pc().await?;
 
-        self._add_subscriber(&peer_id, &pc);
+        self._add_subscriber(&peer_id, &pc, participant_id.clone());
 
         let media_arc = self._get_media(target_id)?;
 
@@ -498,8 +498,8 @@ impl Room {
             .insert(participant_id.to_owned(), participant.clone());
     }
 
-    fn _add_subscriber(&self, peer_id: &str, pc: &Arc<RTCPeerConnection>) {
-        let subscriber = Arc::new(Subscriber::new(pc.clone()));
+    fn _add_subscriber(&self, peer_id: &str, pc: &Arc<RTCPeerConnection>, user_id: String) {
+        let subscriber = Arc::new(Subscriber::new(pc.clone(), user_id));
 
         self.subscribers.insert(peer_id.to_owned(), subscriber);
     }

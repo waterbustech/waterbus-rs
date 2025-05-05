@@ -3,7 +3,7 @@ use salvo::{
     prelude::*,
 };
 
-use signalling::core::{api::salvo_config::get_salvo_service, env::env_config::EnvConfig};
+use signalling::core::{api::salvo_config::get_salvo_service, env::app_env::AppEnv};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -13,7 +13,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    let env = EnvConfig::new();
+    let env = AppEnv::new();
     let http_addr = format!("0.0.0.0:{}", env.app_port);
 
     // Load TLS certificate and key
