@@ -7,20 +7,16 @@ use waterbus_proto::{
     sfu_service_client::SfuServiceClient,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SfuGrpcClient {}
 
 impl SfuGrpcClient {
-    pub fn new() -> Self {
-        Self {}
-    }
-
     async fn get_client(
         &self,
         server_address: String,
     ) -> Result<SfuServiceClient<Channel>, tonic::transport::Error> {
-        let addr = format!("http://[::1]:{}", 50051);
-        SfuServiceClient::connect(addr).await
+        // let addr = format!("http://[::1]:{}", 50051);
+        SfuServiceClient::connect(server_address).await
     }
 
     pub async fn join_room(

@@ -1,10 +1,14 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, Ordering},
+};
 
 use tracing::{debug, warn};
 use webrtc::{
     Error,
+    rtp::extension::{HeaderExtension, transport_cc_extension::TransportCcExtension},
     rtp_transceiver::rtp_codec::RTCRtpCodecCapability,
-    track::track_local::{TrackLocalWriter, track_local_static_rtp::TrackLocalStaticRTP},
+    track::track_local::track_local_static_rtp::TrackLocalStaticRTP,
 };
 
 use super::quality::TrackQuality;
@@ -12,8 +16,8 @@ use super::quality::TrackQuality;
 #[derive(Debug, Clone)]
 pub struct ForwardTrack {
     pub local_track: Arc<TrackLocalStaticRTP>,
-    pub requested_quality: TrackQuality,
-    pub effective_quality: TrackQuality,
+    requested_quality: Arc<AtomicU8>,
+    effective_quality: Arc<AtomicU8>,
 }
 
 impl ForwardTrack {
@@ -22,46 +26,49 @@ impl ForwardTrack {
 
         Self {
             local_track,
-            requested_quality: TrackQuality::Medium,
-            effective_quality: TrackQuality::Medium,
+            requested_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
+            effective_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
         }
     }
 
-    pub fn set_requested_quality(&mut self, quality: &TrackQuality) {
-        if *quality != self.requested_quality {
-            debug!("change requested quality to: {:?}", quality);
-
-            self.requested_quality = quality.clone();
+    pub fn set_requested_quality(&self, quality: &TrackQuality) {
+        let current = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
+        if *quality != current {
+            debug!("[quality] change requested quality to: {:?}", quality);
+            self.requested_quality
+                .store(quality.as_u8(), Ordering::SeqCst);
         }
     }
 
-    pub fn set_effective_quality(&mut self, quality: &TrackQuality) {
-        if *quality != self.effective_quality {
-            debug!("change effective quality to: {:?}", quality);
-
-            self.effective_quality = quality.clone();
+    pub fn set_effective_quality(&self, quality: &TrackQuality) {
+        let current = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
+        if *quality != current {
+            debug!("[quality] change effective quality to: {:?}", quality);
+            self.effective_quality
+                .store(quality.as_u8(), Ordering::SeqCst);
         }
     }
 
-    pub async fn write_rtp(
-        &self,
-        rtp: &webrtc::rtp::packet::Packet,
-        is_video: bool,
-        track_quality: TrackQuality,
-    ) {
-        let selected_quality = self
-            .requested_quality
-            .clone()
-            .min(self.effective_quality.clone());
+    pub fn get_desired_quality(&self) -> TrackQuality {
+        let requested = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
+        let effective = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
+        requested.min(effective)
+    }
 
-        if !is_video || selected_quality == track_quality {
-            // Forward the RTP packet
-            if let Err(err) = self.local_track.write_rtp(rtp).await {
-                if Error::ErrClosedPipe != err {
-                    warn!("[track] output track write_rtp got error: {err} and break");
-                } else {
-                    warn!("[track] output track write_rtp got error: {err}");
-                }
+    pub async fn write_rtp(&self, rtp: &webrtc::rtp::packet::Packet) {
+        // Forward the RTP packet
+        if let Err(err) = self
+            .local_track
+            .write_rtp_with_extensions(
+                rtp,
+                &[HeaderExtension::TransportCc(TransportCcExtension::default())],
+            )
+            .await
+        {
+            if Error::ErrClosedPipe != err {
+                warn!("[track] output track write_rtp got error: {err} and break");
+            } else {
+                warn!("[track] output track write_rtp got error: {err}");
             }
         }
     }

@@ -16,3 +16,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 webrtc = { workspace = true }
 egress-manager = { workspace = true }
+
+[dev-dependencies]
+mockall = "0.13.1"

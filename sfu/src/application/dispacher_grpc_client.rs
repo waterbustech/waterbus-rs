@@ -9,13 +9,18 @@ use waterbus_proto::{
 
 #[derive(Debug, Clone)]
 pub struct DispatcherGrpcClient {
+    host: String,
     port: u16,
     client: Option<DispatcherServiceClient<Channel>>,
 }
 
 impl DispatcherGrpcClient {
-    pub fn new(port: u16) -> Arc<Mutex<Self>> {
-        let client = Arc::new(Mutex::new(Self { port, client: None }));
+    pub fn new(host: String, port: u16) -> Arc<Mutex<Self>> {
+        let client = Arc::new(Mutex::new(Self {
+            port,
+            host,
+            client: None,
+        }));
         DispatcherGrpcClient::start_client(client.clone());
         client
     }
@@ -24,12 +29,14 @@ impl DispatcherGrpcClient {
         tokio::spawn(async move {
             loop {
                 let port;
+                let host;
                 {
                     let locked = this.lock().await;
                     port = locked.port;
+                    host = locked.host.clone();
                 }
 
-                match DispatcherServiceClient::connect(format!("http://[::1]:{}", port)).await {
+                match DispatcherServiceClient::connect(format!("{}:{}", host, port)).await {
                     Ok(client) => {
                         info!("Dispatcher client connected successfully.");
                         {

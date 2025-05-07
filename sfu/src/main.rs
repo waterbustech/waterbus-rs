@@ -50,8 +50,9 @@ async fn main() -> Result<(), anyhow::Error> {
         EtcdNode::register(app_env.etcd_addr, app_env.node_id, app_env.node_ip, ttl).await?;
 
     GrpcServer::start(
-        app_env.grpc_port.sfu_port,
-        app_env.grpc_port.dispatcher_port,
+        app_env.grpc_configs.sfu_port,
+        app_env.grpc_configs.dispatcher_host,
+        app_env.grpc_configs.dispatcher_port,
         webrtc_configs,
     );
 

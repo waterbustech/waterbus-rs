@@ -10,11 +10,16 @@ use crate::application::{
 pub struct GrpcServer {}
 
 impl GrpcServer {
-    pub fn start(port: u16, dispatcher_port: u16, configs: WebRTCManagerConfigs) {
+    pub fn start(
+        port: u16,
+        dispatcher_host: String,
+        dispatcher_port: u16,
+        configs: WebRTCManagerConfigs,
+    ) {
         info!("GrpcServer is running on port: {}", port);
 
         tokio::spawn(async move {
-            match Self::start_server(port, dispatcher_port, configs).await {
+            match Self::start_server(port, dispatcher_host, dispatcher_port, configs).await {
                 Ok(_) => info!("GrpcServer stopped successfully"),
                 Err(e) => info!("GrpcServer stopped with an error: {:?}", e),
             }
@@ -23,12 +28,13 @@ impl GrpcServer {
 
     async fn start_server(
         port: u16,
+        dispatcher_host: String,
         dispatcher_port: u16,
         configs: WebRTCManagerConfigs,
     ) -> anyhow::Result<()> {
         let addr = format!("[::1]:{}", port).parse().unwrap();
 
-        let dispatcher_grpc_client = DispatcherGrpcClient::new(dispatcher_port);
+        let dispatcher_grpc_client = DispatcherGrpcClient::new(dispatcher_host, dispatcher_port);
 
         let sfu_grpc_service = SfuGrpcService::new(configs, dispatcher_grpc_client);
 

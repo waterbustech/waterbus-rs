@@ -99,8 +99,8 @@ pub async fn get_socket_router(
     let configs = DispatcherConfigs {
         redis_uri: env_clone.redis_uri.0,
         etcd_uri: env_clone.etcd_addr,
-        dispatcher_port: env_clone.grpc_port.dispatcher_port,
-        sfu_port: env_clone.grpc_port.sfu_port,
+        dispatcher_port: env_clone.grpc_configs.dispatcher_port,
+        sfu_port: env_clone.grpc_configs.sfu_port,
         sender: dispacher_sender,
     };
 

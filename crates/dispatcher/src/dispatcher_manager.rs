@@ -43,7 +43,7 @@ impl DispatcherManager {
             .await
             .unwrap();
 
-        let sfu_grpc_client = SfuGrpcClient::new();
+        let sfu_grpc_client = SfuGrpcClient::default();
         let cache_manager = CacheManager::new(configs.redis_uri);
 
         Self {
