@@ -3,7 +3,10 @@ use egress_manager::egress::hls_writer::HlsWriter;
 use egress_manager::egress::moq_writer::MoQWriter;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use std::time::Duration;
+use tracing::debug;
+use webrtc::rtp::codecs::vp9::Vp9Packet;
+use webrtc::rtp::packetizer::Depacketizer;
 use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
 use webrtc::track::track_remote::TrackRemote;
 use webrtc::util::Marshal;
@@ -13,12 +16,23 @@ use crate::errors::WebRTCError;
 
 use super::forward_track::ForwardTrack;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecType {
+    H264,
+    VP8,
+    VP9,
+    AV1,
+    Other,
+}
+
 #[derive(Debug, Clone)]
 pub struct Track {
     pub id: String,
     pub room_id: String,
     pub participant_id: String,
     pub is_simulcast: bool,
+    pub is_svc: bool,
+    pub codec_type: CodecType,
     pub stream_id: String,
     pub capability: RTCRtpCodecCapability,
     pub kind: RTPCodecType,
@@ -37,11 +51,28 @@ impl Track {
     ) -> Self {
         let kind = track.kind();
 
+        // Determine codec type from mime type
+        let codec_type = match track.codec().capability.mime_type.to_lowercase().as_str() {
+            s if s.contains("vp8") => CodecType::VP8,
+            s if s.contains("vp9") => CodecType::VP9,
+            s if s.contains("av1") => CodecType::AV1,
+            s if s.contains("h264") => CodecType::H264,
+            _ => CodecType::Other,
+        };
+
+        // Determine if SVC is used based on codec
+        let is_svc = match codec_type {
+            CodecType::VP9 => true,
+            _ => false,
+        };
+
         let handler = Track {
             id: track.id(),
             room_id,
             participant_id,
             is_simulcast: false,
+            is_svc,
+            codec_type,
             stream_id: track.stream_id().to_string(),
             capability: track.codec().capability,
             kind,
@@ -93,43 +124,64 @@ impl Track {
     }
 
     pub fn rebuild_acceptable_map(&self) {
-        let mut quality_map: HashMap<TrackQuality, Arc<TrackRemote>> = HashMap::new();
+        let mut quality_map: HashMap<TrackQuality, bool> = HashMap::new();
+
         for track in &self.remote_tracks {
             let q = TrackQuality::from_str(track.rid());
-            quality_map.insert(q, track.clone());
+            quality_map.insert(q, true);
         }
 
         self.acceptable_map.clear();
 
+        let available_qualities: Vec<TrackQuality> =
+            [TrackQuality::Low, TrackQuality::Medium, TrackQuality::High]
+                .iter()
+                .filter(|q| quality_map.contains_key(q))
+                .cloned()
+                .collect();
+
         for current in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
             for desired in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-                let result = {
-                    let resolved = match desired {
-                        TrackQuality::Low => quality_map
-                            .get(&TrackQuality::Low)
-                            .or(quality_map.get(&TrackQuality::Medium))
-                            .or(quality_map.get(&TrackQuality::High)),
-                        TrackQuality::Medium => quality_map
-                            .get(&TrackQuality::Medium)
-                            .or(quality_map.get(&TrackQuality::Low))
-                            .or(quality_map.get(&TrackQuality::High)),
-                        TrackQuality::High => quality_map
-                            .get(&TrackQuality::High)
-                            .or(quality_map.get(&TrackQuality::Medium))
-                            .or(quality_map.get(&TrackQuality::Low)),
-                        TrackQuality::None => None,
-                    };
-                    resolved.is_some()
-                        && matches!(
-                            (current, desired),
-                            (a, b) if a == b
-                                || (a == &TrackQuality::Low && b != &TrackQuality::None)
-                                || (a == &TrackQuality::Medium && b != &TrackQuality::None)
-                                || (a == &TrackQuality::High && b != &TrackQuality::None)
-                        )
+                let acceptable = match available_qualities.len() {
+                    3 => current == desired,
+                    1 => true,
+                    2 => {
+                        if !available_qualities.contains(desired) {
+                            // Map missing quality to the nearest available
+                            let mapped_desired = match desired {
+                                TrackQuality::Medium => {
+                                    if available_qualities.contains(&TrackQuality::Low) {
+                                        TrackQuality::Low
+                                    } else {
+                                        TrackQuality::High
+                                    }
+                                }
+                                TrackQuality::Low => {
+                                    if available_qualities.contains(&TrackQuality::Medium) {
+                                        TrackQuality::Medium
+                                    } else {
+                                        TrackQuality::High
+                                    }
+                                }
+                                TrackQuality::High => {
+                                    if available_qualities.contains(&TrackQuality::Medium) {
+                                        TrackQuality::Medium
+                                    } else {
+                                        TrackQuality::Low
+                                    }
+                                }
+                                TrackQuality::None => TrackQuality::None,
+                            };
+                            current == &mapped_desired
+                        } else {
+                            current == desired
+                        }
+                    }
+                    _ => false,
                 };
+
                 self.acceptable_map
-                    .insert((current.clone(), desired.clone()), result);
+                    .insert((current.clone(), desired.clone()), acceptable);
             }
         }
     }
@@ -143,369 +195,125 @@ impl Track {
     ) {
         let forward_tracks = self.forward_tracks.clone();
         let current_quality = TrackQuality::from_str(remote_track.rid());
-        let this = self.clone();
+        let acceptable_map = self.acceptable_map.clone();
+        let is_svc = self.is_svc;
+        let codec_type = self.codec_type.clone();
 
         tokio::spawn(async move {
             let is_video = kind == RTPCodecType::Video;
 
-            while let Ok((rtp, _)) = remote_track.read_rtp().await {
-                // Forward to all ForwardTracks
-                for entry in forward_tracks.iter() {
-                    let forward_track = entry.value().clone();
-                    let desired_quality = forward_track.get_desired_quality();
+            loop {
+                let result =
+                    tokio::time::timeout(Duration::from_secs(3), remote_track.read_rtp()).await;
 
-                    if !this._is_acceptable_track(current_quality.clone(), desired_quality) {
-                        continue;
+                match result {
+                    Ok(Ok((rtp, _))) => {
+                        if !rtp.payload.is_empty() {
+                            for entry in forward_tracks.iter() {
+                                let forward_track = entry.value().clone();
+                                let desired_quality = forward_track.get_desired_quality();
+
+                                // For simulcast, use the existing quality check
+                                if !is_svc
+                                    && !is_video
+                                    && !Self::is_acceptable_track(
+                                        &acceptable_map,
+                                        current_quality.clone(),
+                                        desired_quality.clone(),
+                                    )
+                                {
+                                    continue;
+                                }
+
+                                // For SVC, check if we should forward this layer
+                                let should_forward = if is_svc && is_video {
+                                    match codec_type {
+                                        CodecType::VP9 => {
+                                            let mut vp9_packet = Vp9Packet::default();
+                                            let frame_fragment =
+                                                vp9_packet.depacketize(&rtp.payload);
+
+                                            match frame_fragment {
+                                                Ok(_) => {
+                                                    let should_fwd = desired_quality
+                                                        .should_forward_vp9_svc(&vp9_packet);
+
+                                                    should_fwd
+                                                }
+                                                Err(err) => {
+                                                    println!(
+                                                        "Failed to vp9_packet.depacketize: {}",
+                                                        err
+                                                    );
+
+                                                    true
+                                                }
+                                            }
+                                        }
+                                        CodecType::AV1 => true,
+                                        _ => true,
+                                    }
+                                } else {
+                                    true
+                                };
+
+                                if !should_forward {
+                                    continue;
+                                }
+
+                                let rtp_clone = rtp.clone();
+                                // Spawn a new task for each forward track to avoid blocking
+                                tokio::spawn(async move {
+                                    forward_track.write_rtp(&rtp_clone).await;
+                                });
+                            }
+                        }
+
+                        // If HLS writer exists, forward the RTP packet for HLS
+                        if let Some(writer) = &hls_writer {
+                            let mut rtp_packet_data = Vec::new();
+                            rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
+                            rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
+
+                            let _ = writer.write_rtp(&rtp_packet_data, is_video);
+                        }
+
+                        // If MoQ writer exists, forward the RTP packet for MoQ
+                        if let Some(writer) = &moq_writer {
+                            let mut rtp_packet_data = Vec::new();
+                            rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
+                            rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
+
+                            let _ = writer.write_rtp(&rtp_packet_data, is_video);
+                        }
                     }
-
-                    let rtp_clone = rtp.clone();
-                    // Spawn a new task for each forward track to avoid blocking
-                    tokio::spawn(async move {
-                        forward_track.write_rtp(&rtp_clone).await;
-                    });
-                }
-
-                // If HLS writer exists, forward the RTP packet for HLS
-                if let Some(writer) = &hls_writer {
-                    let mut rtp_packet_data = Vec::new();
-                    rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
-                    rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
-
-                    let _ = writer.write_rtp(&rtp_packet_data, is_video);
-                }
-
-                // If MoQ writer exists, forward the RTP packet for MoQ
-                if let Some(writer) = &moq_writer {
-                    let mut rtp_packet_data = Vec::new();
-                    rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
-                    rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
-
-                    let _ = writer.write_rtp(&rtp_packet_data, is_video);
+                    Ok(Err(err)) => {
+                        debug!("Failed to read rtp: {}", err);
+                        break;
+                    }
+                    Err(_) => {
+                        if !remote_track.rid().is_empty() {
+                            debug!(
+                                "Timeout read rtp from track with rid: {}",
+                                remote_track.rid()
+                            );
+                        }
+                    }
                 }
             }
 
-            info!("[track] exit track loop {}", remote_track.rid());
+            debug!("[track] exit track loop {}", remote_track.rid());
         });
     }
 
-    pub fn _is_acceptable_track(&self, current: TrackQuality, desired: TrackQuality) -> bool {
-        if !self.is_simulcast {
-            return true;
-        }
-
-        self.acceptable_map
+    fn is_acceptable_track(
+        acceptable_map: &Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
+        current: TrackQuality,
+        desired: TrackQuality,
+    ) -> bool {
+        acceptable_map
             .get(&(current, desired))
             .map(|v| *v)
             .unwrap_or(false)
-    }
-}
-
-#[cfg(test)]
-mod track_tests {
-
-    use dashmap::DashMap;
-    use std::{sync::Arc, vec};
-
-    use crate::entities::quality::TrackQuality;
-
-    struct TestTrack {
-        is_simulcast: bool,
-        qualities: Vec<TrackQuality>,
-        acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
-    }
-
-    impl TestTrack {
-        // Create a test track with specific qualities
-        fn new(qualities: Vec<TrackQuality>) -> Self {
-            let mut track = TestTrack {
-                is_simulcast: qualities.len() > 1,
-
-                qualities,
-                acceptable_map: Arc::new(DashMap::new()),
-            };
-
-            track.rebuild_acceptable_map();
-            track
-        }
-
-        // This is a simplified version of the original rebuild_acceptable_map function
-        fn rebuild_acceptable_map(&mut self) {
-            let mut quality_map: std::collections::HashMap<TrackQuality, TrackQuality> =
-                std::collections::HashMap::new();
-            for q in &self.qualities {
-                quality_map.insert(q.clone(), q.clone());
-            }
-
-            self.acceptable_map.clear();
-
-            for current in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-                for desired in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-                    let result = {
-                        let resolved = match desired {
-                            TrackQuality::Low => quality_map
-                                .get(&TrackQuality::Low)
-                                .or(quality_map.get(&TrackQuality::Medium))
-                                .or(quality_map.get(&TrackQuality::High)),
-                            TrackQuality::Medium => quality_map
-                                .get(&TrackQuality::Medium)
-                                .or(quality_map.get(&TrackQuality::Low))
-                                .or(quality_map.get(&TrackQuality::High)),
-                            TrackQuality::High => quality_map
-                                .get(&TrackQuality::High)
-                                .or(quality_map.get(&TrackQuality::Medium))
-                                .or(quality_map.get(&TrackQuality::Low)),
-                            TrackQuality::None => None,
-                        };
-                        resolved.is_some()
-                            && matches!(
-                                (current, desired),
-                                (a, b) if a == b
-                                    || (a == &TrackQuality::Low && b != &TrackQuality::None)
-                                    || (a == &TrackQuality::Medium && b != &TrackQuality::None)
-                                    || (a == &TrackQuality::High && b != &TrackQuality::None)
-                            )
-                    };
-                    self.acceptable_map
-                        .insert((current.clone(), desired.clone()), result);
-                }
-            }
-        }
-
-        // This is a simplified version of the original _is_acceptable_track function
-        fn is_acceptable_track(&self, current: TrackQuality, desired: TrackQuality) -> bool {
-            if !self.is_simulcast {
-                return true;
-            }
-
-            self.acceptable_map
-                .get(&(current, desired))
-                .map(|v| *v)
-                .unwrap_or(false)
-        }
-    }
-
-    // Helper function to convert RID string to TrackQuality
-    fn qualities_from_rids(rids: Vec<&str>) -> Vec<TrackQuality> {
-        rids.iter().map(|rid| TrackQuality::from_str(rid)).collect()
-    }
-
-    #[test]
-    fn test_rebuild_acceptable_map_single_track() {
-        // Create a track with only high quality ("f")
-        let track = TestTrack::new(qualities_from_rids(vec!["f"]));
-
-        // Verify the acceptable map
-        assert!(
-            track
-                .acceptable_map
-                .contains_key(&(TrackQuality::High, TrackQuality::High))
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::High))
-                .unwrap()
-        );
-
-        // High quality track should be usable for medium and low requests too
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::Medium))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::Low))
-                .unwrap()
-        );
-
-        // Medium quality requests should use high track
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Medium, TrackQuality::High))
-                .unwrap()
-        );
-
-        // Low quality requests should use high track
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Low, TrackQuality::High))
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn test_rebuild_acceptable_map_simulcast() {
-        // Create a track with all three quality levels: q (low), h (medium), f (high)
-        let track = TestTrack::new(qualities_from_rids(vec!["q", "h", "f"]));
-
-        // Each quality level should be usable for its own request
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Low, TrackQuality::Low))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Medium, TrackQuality::Medium))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::High))
-                .unwrap()
-        );
-
-        // Low track should be usable for all quality requests
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Low, TrackQuality::Low))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Low, TrackQuality::Medium))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Low, TrackQuality::High))
-                .unwrap()
-        );
-
-        // Medium track should be usable for all quality requests
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Medium, TrackQuality::Low))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Medium, TrackQuality::Medium))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Medium, TrackQuality::High))
-                .unwrap()
-        );
-
-        // High track should be usable for all quality requests
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::Low))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::Medium))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::High))
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn test_rebuild_acceptable_map_partial_simulcast() {
-        // Create a track with only low and high quality levels
-        let track = TestTrack::new(qualities_from_rids(vec!["q", "f"]));
-
-        // Each available quality level should be usable for its own request
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Low, TrackQuality::Low))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::High, TrackQuality::High))
-                .unwrap()
-        );
-
-        // Check medium quality fallback
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Medium, TrackQuality::Medium))
-                .unwrap()
-        );
-
-        // Check specific fallback paths
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Low, TrackQuality::Medium))
-                .unwrap()
-        );
-        assert!(
-            *track
-                .acceptable_map
-                .get(&(TrackQuality::Medium, TrackQuality::Low))
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn test_is_acceptable_track_non_simulcast() {
-        // Create a non-simulcast track
-        let mut track = TestTrack::new(qualities_from_rids(vec!["f"]));
-        track.is_simulcast = false;
-
-        // Any quality combination should be acceptable for non-simulcast
-        assert!(track.is_acceptable_track(TrackQuality::Low, TrackQuality::High));
-        assert!(track.is_acceptable_track(TrackQuality::Medium, TrackQuality::Low));
-        assert!(track.is_acceptable_track(TrackQuality::High, TrackQuality::Medium));
-    }
-
-    #[test]
-    fn test_is_acceptable_track_simulcast() {
-        // Create a simulcast track with all quality levels
-        let track = TestTrack::new(qualities_from_rids(vec!["q", "h", "f"]));
-
-        // Same quality level should always be acceptable
-        assert!(track.is_acceptable_track(TrackQuality::Low, TrackQuality::Low));
-        assert!(track.is_acceptable_track(TrackQuality::Medium, TrackQuality::Medium));
-        assert!(track.is_acceptable_track(TrackQuality::High, TrackQuality::High));
-
-        // Check all quality combinations
-        assert!(track.is_acceptable_track(TrackQuality::Low, TrackQuality::Medium));
-        assert!(track.is_acceptable_track(TrackQuality::Low, TrackQuality::High));
-        assert!(track.is_acceptable_track(TrackQuality::Medium, TrackQuality::Low));
-        assert!(track.is_acceptable_track(TrackQuality::Medium, TrackQuality::High));
-        assert!(track.is_acceptable_track(TrackQuality::High, TrackQuality::Low));
-        assert!(track.is_acceptable_track(TrackQuality::High, TrackQuality::Medium));
-    }
-
-    #[test]
-    fn test_is_acceptable_track_none_quality() {
-        // Create a simulcast track
-        let track = TestTrack::new(qualities_from_rids(vec!["q", "h", "f"]));
-
-        // TrackQuality::None should not be acceptable
-        assert!(!track.is_acceptable_track(TrackQuality::Low, TrackQuality::None));
-        assert!(!track.is_acceptable_track(TrackQuality::Medium, TrackQuality::None));
-        assert!(!track.is_acceptable_track(TrackQuality::High, TrackQuality::None));
-        assert!(!track.is_acceptable_track(TrackQuality::None, TrackQuality::Low));
     }
 }
