@@ -193,9 +193,9 @@ impl Track {
         moq_writer: Option<Arc<MoQWriter>>,
         kind: RTPCodecType,
     ) {
-        let forward_tracks = self.forward_tracks.clone();
+        let forward_tracks = Arc::clone(&self.forward_tracks);
         let current_quality = TrackQuality::from_str(remote_track.rid());
-        let acceptable_map = self.acceptable_map.clone();
+        let acceptable_map = Arc::clone(&self.acceptable_map);
         let is_svc = self.is_svc;
         let codec_type = self.codec_type.clone();
 
@@ -212,6 +212,12 @@ impl Track {
                             for entry in forward_tracks.iter() {
                                 let forward_track = entry.value().clone();
                                 let desired_quality = forward_track.get_desired_quality();
+
+                                // If subscriber request to not receive rtp, let's skip it
+                                // video view in their device maybe invisible
+                                if desired_quality == TrackQuality::None {
+                                    continue;
+                                }
 
                                 // For simulcast, use the existing quality check
                                 if !is_svc

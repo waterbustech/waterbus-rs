@@ -44,13 +44,13 @@ impl TrackQuality {
 
     // Check if an SVC packet should be forwarded based on desired quality
     pub fn should_forward_vp9_svc(&self, vp9_packet: &Vp9Packet) -> bool {
-        if !vp9_packet.l {
+        if !vp9_packet.l || vp9_packet.tid == 0 {
             return true;
         }
 
         let (desired_spatial_id, _) = self.quality_to_svc_layers();
 
-        let forward = vp9_packet.sid <= desired_spatial_id;
+        let forward = vp9_packet.sid == desired_spatial_id;
 
         forward
     }
