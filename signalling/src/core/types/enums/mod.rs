@@ -1,1 +1,1 @@
-pub mod socket_event;
+pub mod ws_event;

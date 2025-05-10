@@ -37,7 +37,7 @@ use crate::{
         env::app_env::AppEnv,
         types::{
             app_channel::AppEvent,
-            enums::socket_event::SocketEvent,
+            enums::ws_event::WsEvent,
             res::socket_response::{
                 CameraTypeResponse, EnabledResponse, HandleRaisingResponse, IceCandidate,
                 MeetingJoinResponse, MeetingSubscribeResponse, ParticipantHasLeftResponse,
@@ -174,7 +174,7 @@ pub async fn handle_dispatcher_callback(
                                 let _ = socket
                                     .broadcast()
                                     .to(room_id)
-                                    .emit(SocketEvent::NewParticipantSSC.to_str(), &participant)
+                                    .emit(WsEvent::RoomNewParticipant.to_str(), &participant)
                                     .await
                                     .ok();
                             }
@@ -197,7 +197,7 @@ pub async fn handle_dispatcher_callback(
                         if let Some(socket) = io.get_socket(sid) {
                             let _ = socket
                                 .emit(
-                                    SocketEvent::SubscriberRenegotiationSSC.to_str(),
+                                    WsEvent::RoomSubscriberRenegotiation.to_str(),
                                     &SubscriberRenegotiationResponse {
                                         target_id: target_id,
                                         sdp: sdp,
@@ -228,7 +228,7 @@ pub async fn handle_dispatcher_callback(
                         Ok(sid) => {
                             if let Some(socket) = io.get_socket(sid) {
                                 let _ = socket
-                                    .emit(SocketEvent::PublisherCandidateSSC.to_str(), &candidate)
+                                    .emit(WsEvent::RoomPublisherCandidate.to_str(), &candidate)
                                     .ok();
                             } else {
                                 warn!("Socket with id {} not found", client_id);
@@ -257,7 +257,7 @@ pub async fn handle_dispatcher_callback(
                             if let Some(socket) = io.get_socket(sid) {
                                 let _ = socket
                                     .emit(
-                                        SocketEvent::SubscriberCandidateSSC.to_str(),
+                                        WsEvent::RoomSubscriberCandidate.to_str(),
                                         &SubsriberCandidateResponse {
                                             candidate,
                                             target_id,
@@ -292,7 +292,7 @@ pub async fn handle_message_update(
                         let _ = io
                             .broadcast()
                             .to(meeting_code)
-                            .emit(SocketEvent::SendMessageSSC.to_str(), &msg)
+                            .emit(WsEvent::ChatSend.to_str(), &msg)
                             .await
                             .ok();
                     });
@@ -307,7 +307,7 @@ pub async fn handle_message_update(
                         let _ = io
                             .broadcast()
                             .to(meeting_code)
-                            .emit(SocketEvent::UpdateMessageSSC.to_str(), &msg)
+                            .emit(WsEvent::ChatUpdate.to_str(), &msg)
                             .await
                             .ok();
                     });
@@ -322,7 +322,7 @@ pub async fn handle_message_update(
                         let _ = io
                             .broadcast()
                             .to(meeting_code)
-                            .emit(SocketEvent::DeleteMessageSSC.to_str(), &msg)
+                            .emit(WsEvent::ChatDelete.to_str(), &msg)
                             .await
                             .ok();
                     });
@@ -382,50 +382,38 @@ async fn on_connect<A: Adapter>(
 
     socket.on("message", handle_msg);
 
-    socket.on(SocketEvent::ReconnectCSS.to_str(), on_reconnect);
-    socket.on(SocketEvent::PublishCSS.to_str(), handle_join_room);
-    socket.on(SocketEvent::SubscribeCSS.to_str(), handle_subscribe);
+    socket.on(WsEvent::RoomReconnect.to_str(), on_reconnect);
+    socket.on(WsEvent::RoomPublish.to_str(), handle_join_room);
+    socket.on(WsEvent::RoomSubscribe.to_str(), handle_subscribe);
     socket.on(
-        SocketEvent::AnswerSubscriberCSS.to_str(),
+        WsEvent::RoomAnswerSubscriber.to_str(),
         handle_answer_subscribe,
     );
     socket.on(
-        SocketEvent::PublisherRenegotiationCSS.to_str(),
+        WsEvent::RoomPublisherRenegotiation.to_str(),
         handle_publisher_renegotiation,
     );
     socket.on(
-        SocketEvent::PublisherCandidateCSS.to_str(),
+        WsEvent::RoomPublisherCandidate.to_str(),
         handle_publisher_candidate,
     );
     socket.on(
-        SocketEvent::SubscriberCandidateCSS.to_str(),
+        WsEvent::RoomSubscriberCandidate.to_str(),
         handle_subscriber_candidate,
     );
+    socket.on(WsEvent::RoomCameraType.to_str(), handle_set_camera_type);
+    socket.on(WsEvent::RoomVideoEnabled.to_str(), handle_set_video_enabled);
+    socket.on(WsEvent::RoomAudioEnabled.to_str(), handle_set_audio_enabled);
     socket.on(
-        SocketEvent::SetCameraTypeCSS.to_str(),
-        handle_set_camera_type,
-    );
-    socket.on(
-        SocketEvent::SetVideoEnabledCSS.to_str(),
-        handle_set_video_enabled,
-    );
-    socket.on(
-        SocketEvent::SetAudioEnabledCSS.to_str(),
-        handle_set_audio_enabled,
-    );
-    socket.on(
-        SocketEvent::SetScreenSharingCSS.to_str(),
+        WsEvent::RoomScreenSharing.to_str(),
         handle_set_screen_sharing,
     );
+    socket.on(WsEvent::RoomHandRaising.to_str(), handle_set_hand_raising);
     socket.on(
-        SocketEvent::HandRaisingCSS.to_str(),
-        handle_set_hand_raising,
-    );
-    socket.on(
-        SocketEvent::SetSubscribeSubtitleCSS.to_str(),
+        WsEvent::RoomSubtitleTrack.to_str(),
         handle_set_subscribe_subtitle,
     );
-    socket.on(SocketEvent::LeaveRoomCSS.to_str(), handle_leave_room);
+    socket.on(WsEvent::RoomLeave.to_str(), handle_leave_room);
 
     socket.on_disconnect(on_disconnect);
 }
@@ -483,9 +471,7 @@ async fn handle_join_room<A: Adapter>(
                 is_recording: res.is_recording,
             };
 
-            let _ = socket
-                .emit(SocketEvent::PublishSSC.to_str(), &response)
-                .ok();
+            let _ = socket.emit(WsEvent::RoomPublish.to_str(), &response).ok();
         }
         Err(err) => {
             warn!("Err: {:?}", err)
@@ -511,7 +497,7 @@ async fn handle_subscribe<A: Adapter>(
     if let Ok(res) = res {
         let _ = socket
             .emit(
-                SocketEvent::AnswerSubscriberSSC.to_str(),
+                WsEvent::RoomAnswerSubscriber.to_str(),
                 &MeetingSubscribeResponse {
                     subscribe_response: SubscribeResponse {
                         offer: res.offer,
@@ -565,7 +551,7 @@ async fn handle_publisher_renegotiation<A: Adapter>(
         Ok(sdp) => {
             let _ = socket
                 .emit(
-                    SocketEvent::PublisherRenegotiationSSC.to_str(),
+                    WsEvent::RoomPublisherRenegotiation.to_str(),
                     &PublisherRenegotiationDto { sdp: sdp.sdp },
                 )
                 .ok();
@@ -641,7 +627,7 @@ async fn handle_set_camera_type<A: Adapter>(
                 .broadcast()
                 .to(client.room_id)
                 .emit(
-                    SocketEvent::SetCameraTypeSSC.to_str(),
+                    WsEvent::RoomCameraType.to_str(),
                     &CameraTypeResponse {
                         participant_id: client.participant_id,
                         type_: camera_type,
@@ -675,7 +661,7 @@ async fn handle_set_video_enabled<A: Adapter>(
                 .broadcast()
                 .to(client.room_id)
                 .emit(
-                    SocketEvent::SetVideoEnabledSSC.to_str(),
+                    WsEvent::RoomVideoEnabled.to_str(),
                     &EnabledResponse {
                         participant_id: client.participant_id,
                         is_enabled,
@@ -709,7 +695,7 @@ async fn handle_set_audio_enabled<A: Adapter>(
                 .broadcast()
                 .to(client.room_id)
                 .emit(
-                    SocketEvent::SetAudioEnabledSSC.to_str(),
+                    WsEvent::RoomAudioEnabled.to_str(),
                     &EnabledResponse {
                         participant_id: client.participant_id,
                         is_enabled,
@@ -745,7 +731,7 @@ async fn handle_set_screen_sharing<A: Adapter>(
                 .broadcast()
                 .to(client.room_id)
                 .emit(
-                    SocketEvent::SetScreenSharingSSC.to_str(),
+                    WsEvent::RoomScreenSharing.to_str(),
                     &ScreenSharingResponse {
                         participant_id: client.participant_id,
                         is_sharing: is_enabled,
@@ -780,7 +766,7 @@ async fn handle_set_hand_raising<A: Adapter>(
                 .broadcast()
                 .to(client.room_id)
                 .emit(
-                    SocketEvent::HandRaisingSSC.to_str(),
+                    WsEvent::RoomHandRaising.to_str(),
                     &HandleRaisingResponse {
                         participant_id: client.participant_id,
                         is_raising: is_enabled,
@@ -831,7 +817,7 @@ async fn _handle_leave_room<A: Adapter>(
         .broadcast()
         .to(info_clone.room_id)
         .emit(
-            SocketEvent::ParticipantHasLeftSSC.to_str(),
+            WsEvent::RoomParticipantLeft.to_str(),
             &ParticipantHasLeftResponse {
                 target_id: info_clone.participant_id,
             },
