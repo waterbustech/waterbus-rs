@@ -3,15 +3,12 @@ use serde::{Deserialize, Serialize};
 use validator_derive::Validate;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Validate, Clone)]
-#[salvo(schema(example = json!({"fullName": "Kai", "googleId": "lambiengcode"})))]
+#[serde(rename_all = "camelCase")]
+#[salvo(schema(example = json!({"fullName": "Kai", "externalId": "kai@waterbus"})))]
 pub struct LoginDto {
     #[validate(length(min = 1))]
-    #[serde(rename = "fullName")]
     pub full_name: String,
 
-    #[serde(rename = "googleId")]
-    pub google_id: Option<String>,
-
-    #[serde(rename = "customId")]
-    pub custom_id: Option<String>,
+    #[validate(length(min = 1))]
+    pub external_id: String,
 }

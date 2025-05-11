@@ -1,14 +1,10 @@
 use salvo::{
-    oapi::extract::{JsonBody, PathParam, QueryParam},
+    oapi::extract::{JsonBody, PathParam},
     prelude::*,
 };
 
 use crate::core::{
-    dtos::{
-        common::page_request_dto::PageRequestDto,
-        user::update_user_dto::UpdateUserDto,
-    },
-    types::res::failed_response::FailedResponse,
+    dtos::user::update_user_dto::UpdateUserDto, types::res::failed_response::FailedResponse,
     utils::jwt_utils::JwtUtils,
 };
 
@@ -19,7 +15,6 @@ pub fn get_user_router(jwt_utils: JwtUtils) -> Router {
         .path("users")
         .get(get_user_by_token)
         .put(update_user)
-        .push(Router::with_path("search").get(search_user))
         .push(
             Router::with_path("username/{user_name}")
                 .get(check_username_exists)
@@ -103,33 +98,6 @@ async fn update_username(res: &mut Response, user_name: PathParam<String>, depot
     match user {
         Ok(user) => {
             res.render(Json(user));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
-}
-
-/// Search user
-#[endpoint(tags("user"))]
-async fn search_user(
-    res: &mut Response,
-    q: QueryParam<String>,
-    page_request_dto: PageRequestDto,
-    depot: &mut Depot,
-) {
-    let user_service = depot.obtain::<UserServiceImpl>().unwrap();
-
-    let query = q.into_inner();
-
-    let result = user_service.search_user(&query, page_request_dto).await;
-
-    match result {
-        Ok(value) => {
-            res.render(Json(value));
         }
         Err(err) => {
             res.status_code(StatusCode::BAD_REQUEST);

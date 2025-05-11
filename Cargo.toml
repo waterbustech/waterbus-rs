@@ -4,7 +4,6 @@ members = [
     "sfu",
     "crates/egress-manager",
     "crates/webrtc-manager",
-    "crates/typesense-client",
     "crates/waterbus-proto",
     "crates/dispatcher",
 ]
@@ -93,6 +92,5 @@ redis = "0.30.0"
 # Local crates
 waterbus-proto = { path = "./crates/waterbus-proto" }
 webrtc-manager = { path = "./crates/webrtc-manager" }
-typesense-client = { path = "./crates/typesense-client" }
 egress-manager = { path = "./crates/egress-manager" }
 dispatcher = { path = "./crates/dispatcher" }

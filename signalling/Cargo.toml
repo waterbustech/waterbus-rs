@@ -39,6 +39,5 @@ bcrypt = { workspace = true }
 async-channel = { workspace = true }
 dispatcher = { workspace = true }
 waterbus-proto = { workspace = true }
-typesense-client = { workspace = true }
 egress-manager = { workspace = true }
 rust-embed = { workspace = true }

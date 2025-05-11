@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use validator_derive::Validate;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Validate)]
-pub struct JoinMeetingDto {
+pub struct JoinRoomDto {
     #[validate(length(min = 6))]
-    pub password: String,
+    pub password: Option<String>,
 }

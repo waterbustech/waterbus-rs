@@ -8,7 +8,6 @@ pub struct AppEnv {
     pub app_port: u16,
     pub db_uri: DbUri,
     pub redis_uri: RedisUri,
-    pub typesense: TypesenseConfig,
     pub aws: AwsConfig,
     pub jwt: JwtConfig,
     pub udp_port_range: UdpPortRange,
@@ -20,12 +19,6 @@ pub struct DbUri(pub String);
 
 #[derive(Debug, Clone)]
 pub struct RedisUri(pub String);
-
-#[derive(Debug, Clone)]
-pub struct TypesenseConfig {
-    pub uri: String,
-    pub api_key: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct JwtConfig {
@@ -71,10 +64,6 @@ impl AppEnv {
             },
             db_uri: DbUri(env::var("DATABASE_URI").expect("DATABASE_URI must be set")),
             redis_uri: RedisUri(env::var("REDIS_URI").expect("REDIS_URI must be set")),
-            typesense: TypesenseConfig {
-                uri: env::var("TYPESENSE_URI").expect("TYPESENSE_URI must be set"),
-                api_key: env::var("TYPESENSE_API_KEY").expect("TYPESENSE_API_KEY must be set"),
-            },
             aws: AwsConfig {
                 key_id: env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY_ID must be set"),
                 access_key: env::var("AWS_SECRET_ACCESS_KEY")

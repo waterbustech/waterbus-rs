@@ -5,13 +5,13 @@ use crate::{
     core::{
         entities::models::{Ccu, NewCcu},
         types::{
-            errors::{ccu_error::CcuError, meeting_error::MeetingError},
-            res::meeting_response::ParticipantResponse,
+            errors::{ccu_error::CcuError, room_error::RoomError},
+            res::room_response::ParticipantResponse,
         },
     },
     features::{
         ccu::repository::{CcuRepository, CcuRepositoryImpl},
-        meeting::repository::{MeetingRepository, MeetingRepositoryImpl},
+        room::repository::{RoomRepository, RoomRepositoryImpl},
     },
 };
 
@@ -21,31 +21,28 @@ pub trait SfuService {
 
     async fn delete_ccu(&self, socket_id: &str) -> Result<(), CcuError>;
 
-    async fn get_ccu_by_id(&self, ccu_id: i32) -> Result<Ccu, CcuError>;
+    // async fn get_ccu_by_id(&self, ccu_id: i32) -> Result<Ccu, CcuError>;
 
     async fn update_participant(
         &self,
         participant_id: i32,
         socket_id: &str,
-    ) -> Result<ParticipantResponse, MeetingError>;
+    ) -> Result<ParticipantResponse, RoomError>;
 
-    async fn delete_participant(&self, participant_id: i32) -> Result<(), MeetingError>;
+    async fn delete_participant(&self, participant_id: i32) -> Result<(), RoomError>;
 }
 
 #[derive(Debug, Clone)]
 pub struct SfuServiceImpl {
     ccu_repository: CcuRepositoryImpl,
-    meeting_repository: MeetingRepositoryImpl,
+    room_repository: RoomRepositoryImpl,
 }
 
 impl SfuServiceImpl {
-    pub fn new(
-        ccu_repository: CcuRepositoryImpl,
-        meeting_repository: MeetingRepositoryImpl,
-    ) -> Self {
+    pub fn new(ccu_repository: CcuRepositoryImpl, room_repository: RoomRepositoryImpl) -> Self {
         Self {
-            ccu_repository: ccu_repository,
-            meeting_repository: meeting_repository,
+            ccu_repository,
+            room_repository,
         }
     }
 }
@@ -73,25 +70,25 @@ impl SfuService for SfuServiceImpl {
         Ok(())
     }
 
-    async fn get_ccu_by_id(&self, ccu_id: i32) -> Result<Ccu, CcuError> {
-        let ccu = self.ccu_repository.get_ccu_by_id(ccu_id).await?;
+    // async fn get_ccu_by_id(&self, ccu_id: i32) -> Result<Ccu, CcuError> {
+    //     let ccu = self.ccu_repository.get_ccu_by_id(ccu_id).await?;
 
-        Ok(ccu)
-    }
+    //     Ok(ccu)
+    // }
 
     async fn update_participant(
         &self,
         participant_id: i32,
         socket_id: &str,
-    ) -> Result<ParticipantResponse, MeetingError> {
+    ) -> Result<ParticipantResponse, RoomError> {
         let ccu = self
             .ccu_repository
             .get_ccu_by_socket_id(socket_id)
             .await
-            .map_err(|_| MeetingError::UnexpectedError("CCU not found".into()))?;
+            .map_err(|_| RoomError::UnexpectedError("CCU not found".into()))?;
 
         let participant = self
-            .meeting_repository
+            .room_repository
             .get_participant_by_id(participant_id)
             .await?;
 
@@ -99,17 +96,14 @@ impl SfuService for SfuServiceImpl {
 
         participant.ccu_id = Some(ccu.id);
 
-        let participant = self
-            .meeting_repository
-            .update_participant(participant)
-            .await?;
+        let participant = self.room_repository.update_participant(participant).await?;
 
         Ok(participant)
     }
 
-    async fn delete_participant(&self, participant_id: i32) -> Result<(), MeetingError> {
+    async fn delete_participant(&self, participant_id: i32) -> Result<(), RoomError> {
         let _ = self
-            .meeting_repository
+            .room_repository
             .delete_participant_by_id(participant_id)
             .await?;
 

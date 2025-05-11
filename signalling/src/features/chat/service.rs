@@ -3,13 +3,11 @@ use salvo::async_trait;
 
 use crate::{
     core::{
-        entities::models::{
-            Meeting, MembersStatusEnum, MessagesStatusEnum, MessagesTypeEnum, NewMessage,
-        },
+        entities::models::{MessagesStatusEnum, MessagesTypeEnum, NewMessage, Room},
         types::{errors::chat_error::ChatError, res::message_response::MessageResponse},
     },
     features::{
-        meeting::repository::{MeetingRepository, MeetingRepositoryImpl},
+        room::repository::{RoomRepository, RoomRepositoryImpl},
         user::repository::{UserRepository, UserRepositoryImpl},
     },
 };
@@ -18,9 +16,9 @@ use super::repository::{ChatRepository, ChatRepositoryImpl};
 
 #[async_trait]
 pub trait ChatService: Send + Sync {
-    async fn get_messages_by_meeting(
+    async fn get_messages_by_room(
         &self,
-        meeting_id: i32,
+        room_id: i32,
         user_id: i32,
         skip: i64,
         limit: i64,
@@ -28,7 +26,7 @@ pub trait ChatService: Send + Sync {
 
     async fn create_message(
         &self,
-        meeting_id: i32,
+        room_id: i32,
         user_id: i32,
         data: &str,
     ) -> Result<MessageResponse, ChatError>;
@@ -50,11 +48,11 @@ pub trait ChatService: Send + Sync {
         &self,
         conversation_id: i32,
         user_id: i32,
-    ) -> Result<Meeting, ChatError>;
+    ) -> Result<Room, ChatError>;
 
     async fn update_latest_message_created_at(
         &self,
-        meeting: Meeting,
+        room: Room,
         now: NaiveDateTime,
         latest_mesage_id: Option<i32>,
     );
@@ -63,19 +61,19 @@ pub trait ChatService: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct ChatServiceImpl {
     chat_repository: ChatRepositoryImpl,
-    meeting_repository: MeetingRepositoryImpl,
+    room_repository: RoomRepositoryImpl,
     user_repository: UserRepositoryImpl,
 }
 
 impl ChatServiceImpl {
     pub fn new(
         chat_repository: ChatRepositoryImpl,
-        meeting_repository: MeetingRepositoryImpl,
+        room_repository: RoomRepositoryImpl,
         user_repository: UserRepositoryImpl,
     ) -> Self {
         Self {
             chat_repository,
-            meeting_repository,
+            room_repository,
             user_repository,
         }
     }
@@ -83,23 +81,23 @@ impl ChatServiceImpl {
 
 #[async_trait]
 impl ChatService for ChatServiceImpl {
-    async fn get_messages_by_meeting(
+    async fn get_messages_by_room(
         &self,
-        meeting_id: i32,
+        room_id: i32,
         user_id: i32,
         skip: i64,
         limit: i64,
     ) -> Result<Vec<MessageResponse>, ChatError> {
-        let meeting = self
-            .meeting_repository
-            .get_meeting_by_id(meeting_id)
+        let room = self
+            .room_repository
+            .get_room_by_id(room_id)
             .await
-            .map_err(|_| ChatError::ConversationNotFound(meeting_id))?;
+            .map_err(|_| ChatError::ConversationNotFound(room_id))?;
 
-        let is_member = meeting.members.iter().any(|member| {
-            member.member.user_id == Some(user_id)
-                && member.member.status != MembersStatusEnum::Inviting as i32
-        });
+        let is_member = room
+            .members
+            .iter()
+            .any(|member| member.member.user_id == Some(user_id));
 
         if !is_member {
             return Err(ChatError::Forbidden(
@@ -107,22 +105,22 @@ impl ChatService for ChatServiceImpl {
             ));
         }
 
-        let index_of_user = meeting.members.iter().position(|member| {
-            member.member.user_id == Some(user_id)
-                && member.member.status != MembersStatusEnum::Inviting as i32
-        });
+        let index_of_user = room
+            .members
+            .iter()
+            .position(|member| member.member.user_id == Some(user_id));
 
         let deleted_at = match index_of_user {
             Some(index) => {
-                let member = &meeting.members[index].member;
-                member.soft_deleted_at.unwrap_or(meeting.meeting.created_at)
+                let member = &room.members[index].member;
+                member.soft_deleted_at.unwrap_or(room.room.created_at)
             }
-            None => meeting.meeting.created_at,
+            None => room.room.created_at,
         };
 
         let messages = self
             .chat_repository
-            .get_messages_by_meeting(meeting_id, deleted_at, skip, limit)
+            .get_messages_by_room(room_id, deleted_at, skip, limit)
             .await?;
 
         Ok(messages)
@@ -130,7 +128,7 @@ impl ChatService for ChatServiceImpl {
 
     async fn create_message(
         &self,
-        meeting_id: i32,
+        room_id: i32,
         user_id: i32,
         data: &str,
     ) -> Result<MessageResponse, ChatError> {
@@ -140,38 +138,18 @@ impl ChatService for ChatServiceImpl {
             .await
             .map_err(|_| ChatError::MemberNotFound(user_id))?;
 
-        let meeting = self
-            .meeting_repository
-            .get_meeting_by_id(meeting_id)
+        let room = self
+            .room_repository
+            .get_room_by_id(room_id)
             .await
-            .map_err(|_| ChatError::ConversationNotFound(meeting_id))?;
-
-        let index_of_member = meeting
-            .members
-            .iter()
-            .position(|member| member.member.user_id == Some(user_id));
-
-        if let Some(index) = index_of_member {
-            let mut member = meeting.members[index].member.clone();
-
-            if member.status == MembersStatusEnum::Inviting as i32 {
-                return Err(ChatError::Forbidden(
-                    "User is not accept invitation".to_string(),
-                ));
-            } else if member.status == MembersStatusEnum::Invisible as i32 {
-                member.status = MembersStatusEnum::Joined as i32;
-                let _ = self.meeting_repository.update_member(member).await;
-            }
-        } else {
-            return Err(ChatError::MemberNotFound(user_id));
-        }
+            .map_err(|_| ChatError::ConversationNotFound(room_id))?;
 
         let now = Utc::now().naive_utc();
 
         let new_message = NewMessage {
             data,
             created_by_id: Some(&user_id),
-            meeting_id: Some(&meeting_id),
+            room_id: Some(&room_id),
             status: &(MessagesStatusEnum::Active as i32),
             type_: &(MessagesTypeEnum::Default as i32),
             created_at: now,
@@ -180,13 +158,13 @@ impl ChatService for ChatServiceImpl {
 
         let new_message = self.chat_repository.create_message(new_message).await?;
 
-        self.update_latest_message_created_at(meeting.meeting.clone(), now, Some(new_message.id))
+        self.update_latest_message_created_at(room.room.clone(), now, Some(new_message.id))
             .await;
 
         Ok(MessageResponse {
             message: new_message,
             created_by: Some(user),
-            meeting: Some(meeting.meeting.clone()),
+            room: Some(room.room.clone()),
         })
     }
 
@@ -197,7 +175,7 @@ impl ChatService for ChatServiceImpl {
         data: &str,
     ) -> Result<MessageResponse, ChatError> {
         let mut message_response = self.chat_repository.get_message_by_id(message_id).await?;
-        let meeting = message_response.clone().meeting.unwrap();
+        let room = message_response.clone().room.unwrap();
 
         if message_response.message.status == MessagesStatusEnum::Inactive as i32 {
             return Err(ChatError::UnexpectedError(
@@ -214,8 +192,7 @@ impl ChatService for ChatServiceImpl {
         let now = Utc::now().naive_utc();
         let mut message = message_response.message;
 
-        self.update_latest_message_created_at(meeting, now, None)
-            .await;
+        self.update_latest_message_created_at(room, now, None).await;
 
         message.data = data.to_string();
         message.updated_at = now;
@@ -261,14 +238,14 @@ impl ChatService for ChatServiceImpl {
         &self,
         conversation_id: i32,
         user_id: i32,
-    ) -> Result<Meeting, ChatError> {
-        let meeting = self
-            .meeting_repository
-            .get_meeting_by_id(conversation_id)
+    ) -> Result<Room, ChatError> {
+        let room = self
+            .room_repository
+            .get_room_by_id(conversation_id)
             .await
             .map_err(|_| ChatError::ConversationNotFound(conversation_id))?;
 
-        let index_of_member = meeting
+        let index_of_member = room
             .members
             .iter()
             .position(|member| member.member.user_id == Some(user_id));
@@ -276,18 +253,17 @@ impl ChatService for ChatServiceImpl {
         match index_of_member {
             Some(index) => {
                 let now = Utc::now().naive_utc();
-                let mut member = meeting.members[index].member.clone();
+                let mut member = room.members[index].member.clone();
 
                 member.soft_deleted_at = Some(now);
-                member.status = MembersStatusEnum::Invisible as i32;
 
                 let _ = self
-                    .meeting_repository
+                    .room_repository
                     .update_member(member)
                     .await
                     .map_err(|_| ChatError::UnexpectedError("".to_string()))?;
 
-                Ok(meeting.meeting)
+                Ok(room.room)
             }
             None => Err(ChatError::ConversationNotFound(user_id)),
         }
@@ -295,18 +271,18 @@ impl ChatService for ChatServiceImpl {
 
     async fn update_latest_message_created_at(
         &self,
-        meeting: Meeting,
+        room: Room,
         now: NaiveDateTime,
         latest_mesage_id: Option<i32>,
     ) {
-        let mut meeting = meeting.clone();
+        let mut room = room.clone();
 
-        meeting.latest_message_created_at = Some(now);
+        room.latest_message_created_at = Some(now);
 
         if let Some(id) = latest_mesage_id {
-            meeting.latest_message_id = Some(id);
+            room.latest_message_id = Some(id);
         }
 
-        let _ = self.meeting_repository.update_meeting(meeting).await;
+        let _ = self.room_repository.update_room(room).await;
     }
 }

@@ -73,9 +73,3 @@ pub struct SetCameraTypeDto {
 pub struct SetHandRaisingDto {
     pub is_raising: bool,
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MsgDto {
-    pub my_msg: String,
-}

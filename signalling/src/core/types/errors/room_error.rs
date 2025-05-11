@@ -3,15 +3,18 @@ use thiserror::Error;
 use super::general::GeneralError;
 
 #[derive(Debug, Error)]
-pub enum MeetingError {
-    #[error("Meeting with ID {0} not found")]
-    MeetingNotFound(i32),
+pub enum RoomError {
+    #[error("Room with ID {0} not found")]
+    RoomNotFound(i32),
 
-    #[error("Meeting with ID {0} is already exists")]
-    MeetingExists(i32),
+    #[error("Room with Code {0} not found")]
+    RoomCodeNotFound(String),
 
-    #[error("Host can not leave the meeting")]
-    HostCannotLeaveMeeting,
+    #[error("Room with ID {0} is already exists")]
+    RoomExists(i32),
+
+    #[error("Owner can not leave the room")]
+    OwnerCannotLeaveRoom,
 
     #[error("Only the host has permission")]
     YouDontHavePermissions,

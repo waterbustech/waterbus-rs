@@ -1,21 +1,26 @@
 use nanoid::nanoid;
-use rand::Rng;
+use rand::{Rng, distr::Alphanumeric, rng};
 
-pub fn generate_meeting_code() -> i32 {
-    let mut rng = rand::rng();
-    let mut id = String::new();
+pub fn generate_room_code() -> String {
+    let mut rng = rng();
 
-    while id.len() != 9 || id.starts_with('0') {
-        id.clear();
-        for _ in 0..9 {
-            let digit = rng.random_range(1..=9).to_string();
-            id.push_str(&digit);
-        }
+    fn random_alpha_string(len: usize, rng: &mut impl Rng) -> String {
+        (0..len)
+            .map(|_| {
+                let c = rng.sample(Alphanumeric);
+                c.to_ascii_lowercase() as char
+            })
+            .filter(|c| c.is_ascii_alphabetic())
+            .take(len)
+            .collect()
     }
 
-    let code = id.parse().unwrap();
-
-    code
+    format!(
+        "{}-{}-{}",
+        random_alpha_string(3, &mut rng),
+        random_alpha_string(4, &mut rng),
+        random_alpha_string(3, &mut rng),
+    )
 }
 
 pub fn generate_username() -> String {

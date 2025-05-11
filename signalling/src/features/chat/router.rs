@@ -16,25 +16,25 @@ pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
     let router = Router::with_hoop(jwt_utils.auth_middleware())
         .path("chats")
         .push(
-            Router::with_path("/{meeting_id}")
+            Router::with_path("/{room_id}")
                 .post(create_message)
-                .get(get_messages_by_meeting),
+                .get(get_messages_by_room),
         )
         .push(
             Router::with_path("/{message_id}")
                 .put(update_message)
                 .delete(delete_message),
         )
-        .push(Router::with_path("conversations/{meeting_id}").delete(delete_conversation));
+        .push(Router::with_path("conversations/{room_id}").delete(delete_conversation));
 
     router
 }
 
 /// Get messages by room
 #[endpoint(tags("chats"))]
-async fn get_messages_by_meeting(
+async fn get_messages_by_room(
     res: &mut Response,
-    meeting_id: PathParam<i32>,
+    room_id: PathParam<i32>,
     pagination_dto: PaginationDto,
     depot: &mut Depot,
 ) {
@@ -42,11 +42,11 @@ async fn get_messages_by_meeting(
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let pagination_dto = pagination_dto.clone();
-    let meeting_id = meeting_id.0;
+    let room_id = room_id.0;
 
     let messages = chat_service
-        .get_messages_by_meeting(
-            meeting_id,
+        .get_messages_by_room(
+            room_id,
             user_id.parse().unwrap(),
             pagination_dto.skip,
             pagination_dto.limit,
@@ -70,7 +70,7 @@ async fn get_messages_by_meeting(
 #[endpoint(tags("chats"))]
 async fn create_message(
     res: &mut Response,
-    meeting_id: PathParam<i32>,
+    room_id: PathParam<i32>,
     data: JsonBody<SendMessageDto>,
     depot: &mut Depot,
 ) {
@@ -78,10 +78,10 @@ async fn create_message(
     let app_channel_tx = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let data = data.0.data;
-    let meeting_id = meeting_id.into_inner();
+    let room_id = room_id.into_inner();
 
     let message = chat_service
-        .create_message(meeting_id, user_id.parse().unwrap(), &data)
+        .create_message(room_id, user_id.parse().unwrap(), &data)
         .await;
 
     match message {
@@ -165,18 +165,18 @@ async fn delete_message(res: &mut Response, message_id: PathParam<i32>, depot: &
 
 /// Delete conversation
 #[endpoint(tags("chats"))]
-async fn delete_conversation(res: &mut Response, meeting_id: PathParam<i32>, depot: &mut Depot) {
+async fn delete_conversation(res: &mut Response, room_id: PathParam<i32>, depot: &mut Depot) {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
-    let meeting_id = meeting_id.into_inner();
+    let room_id = room_id.into_inner();
 
-    let meeting = chat_service
-        .delete_conversation(meeting_id, user_id.parse().unwrap())
+    let room = chat_service
+        .delete_conversation(room_id, user_id.parse().unwrap())
         .await;
 
-    match meeting {
-        Ok(meeting) => {
-            res.render(Json(meeting));
+    match room {
+        Ok(room) => {
+            res.render(Json(room));
         }
         Err(err) => {
             res.status_code(StatusCode::BAD_REQUEST);

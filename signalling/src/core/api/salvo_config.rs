@@ -15,7 +15,6 @@ use salvo::{
     rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
     serve_static::static_embed,
 };
-use typesense_client::TypesenseClient;
 
 use crate::{
     core::{
@@ -27,11 +26,7 @@ use crate::{
         auth::{repository::AuthRepositoryImpl, router::get_auth_router, service::AuthServiceImpl},
         ccu::repository::CcuRepositoryImpl,
         chat::{repository::ChatRepositoryImpl, router::get_chat_router, service::ChatServiceImpl},
-        meeting::{
-            repository::MeetingRepositoryImpl, router::get_meeting_router,
-            service::MeetingServiceImpl,
-        },
-        search::SearchService,
+        room::{repository::RoomRepositoryImpl, router::get_room_router, service::RoomServiceImpl},
         sfu::service::SfuServiceImpl,
         user::{repository::UserRepositoryImpl, router::get_user_router, service::UserServiceImpl},
     },
@@ -53,28 +48,26 @@ async fn health_check(res: &mut Response) {
 #[handler]
 async fn set_services(depot: &mut Depot) {
     let pool = depot.obtain::<DbConnection>().unwrap();
-    let search_service = depot.obtain::<SearchService>().unwrap();
 
     let auth_repository = AuthRepositoryImpl::new(pool.clone().0);
     let user_repository = UserRepositoryImpl::new(pool.clone().0);
     let chat_repository = ChatRepositoryImpl::new(pool.clone().0);
-    let meeting_repository = MeetingRepositoryImpl::new(pool.clone().0);
+    let room_repository = RoomRepositoryImpl::new(pool.clone().0);
 
     let auth_service = AuthServiceImpl::new(auth_repository.clone());
     let chat_service = ChatServiceImpl::new(
         chat_repository.clone(),
-        meeting_repository.clone(),
+        room_repository.clone(),
         user_repository.clone(),
     );
 
-    let user_service = UserServiceImpl::new(user_repository.clone(), search_service.clone());
-    let meeting_service =
-        MeetingServiceImpl::new(meeting_repository.clone(), user_repository.clone());
+    let user_service = UserServiceImpl::new(user_repository.clone());
+    let room_service = RoomServiceImpl::new(room_repository.clone(), user_repository.clone());
 
     depot.inject(auth_service);
     depot.inject(user_service);
     depot.inject(chat_service);
-    depot.inject(meeting_service);
+    depot.inject(room_service);
 }
 
 pub async fn get_salvo_service(env: &AppEnv) -> Service {
@@ -82,11 +75,6 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
 
     let db_pooled_connection = DbConnection(pool.clone());
     let jwt_utils = JwtUtils::new(env.clone());
-
-    let typesense_client =
-        TypesenseClient::new(env.typesense.uri.clone(), env.typesense.api_key.clone());
-    let search_service = SearchService::new(typesense_client, pool.clone());
-    search_service.init().await;
 
     let limiter = RateLimiter::new(
         FixedGuard::new(),
@@ -99,13 +87,13 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
     let auth_router = get_auth_router(jwt_utils.clone());
     let user_router = get_user_router(jwt_utils.clone());
     let chat_router = get_chat_router(jwt_utils.clone());
-    let meeting_router = get_meeting_router(jwt_utils.clone());
+    let room_router = get_room_router(jwt_utils.clone());
 
     let (message_sender, message_receiver) = async_channel::unbounded::<AppEvent>();
 
-    let meeting_repository = MeetingRepositoryImpl::new(pool.clone());
+    let room_repository = RoomRepositoryImpl::new(pool.clone());
     let ccu_repository = CcuRepositoryImpl::new(pool.clone());
-    let sfu_service = SfuServiceImpl::new(ccu_repository, meeting_repository);
+    let sfu_service = SfuServiceImpl::new(ccu_repository, room_repository);
     let socket_router = get_socket_router(&env, jwt_utils.clone(), sfu_service, message_receiver)
         .await
         .expect("Failed to config socket.io");
@@ -127,7 +115,6 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))
         .hoop(affix_state::inject(env.clone()))
-        .hoop(affix_state::inject(search_service))
         .hoop(affix_state::inject(message_sender))
         .hoop(CatchPanic::new())
         .hoop(CachingHeaders::new())
@@ -137,7 +124,7 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
         .push(auth_router)
         .push(chat_router)
         .push(user_router)
-        .push(meeting_router)
+        .push(room_router)
         .push(health_router);
 
     let static_hls_router =

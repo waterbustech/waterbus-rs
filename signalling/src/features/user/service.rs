@@ -1,13 +1,8 @@
 use salvo::async_trait;
-use serde_json::Value;
 
-use crate::{
-    core::{
-        dtos::{common::page_request_dto::PageRequestDto, user::update_user_dto::UpdateUserDto},
-        entities::models::User,
-        types::errors::user_error::UserError,
-    },
-    features::search::SearchService,
+use crate::core::{
+    dtos::user::update_user_dto::UpdateUserDto, entities::models::User,
+    types::errors::user_error::UserError,
 };
 
 use super::repository::{UserRepository, UserRepositoryImpl};
@@ -16,11 +11,6 @@ use super::repository::{UserRepository, UserRepositoryImpl};
 pub trait UserService: Send + Sync {
     async fn get_user_by_id(&self, user_id: i32) -> Result<User, UserError>;
     async fn update_user(&self, user_id: i32, data: UpdateUserDto) -> Result<User, UserError>;
-    async fn search_user(
-        &self,
-        query: &str,
-        page_request_dto: PageRequestDto,
-    ) -> Result<Value, UserError>;
     async fn check_username_exists(&self, username: &str) -> bool;
     async fn update_username(&self, user_id: i32, username: &str) -> Result<User, UserError>;
 }
@@ -28,14 +18,12 @@ pub trait UserService: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct UserServiceImpl {
     repository: UserRepositoryImpl,
-    search_service: SearchService,
 }
 
 impl UserServiceImpl {
-    pub fn new(repository: UserRepositoryImpl, search_service: SearchService) -> Self {
+    pub fn new(repository: UserRepositoryImpl) -> Self {
         Self {
             repository: repository,
-            search_service: search_service,
         }
     }
 }
@@ -72,21 +60,6 @@ impl UserService for UserServiceImpl {
             }
             Err(err) => Err(err),
         }
-    }
-
-    async fn search_user(
-        &self,
-        query: &str,
-        page_request_dto: PageRequestDto,
-    ) -> Result<Value, UserError> {
-        self.search_service
-            .search_users(
-                query,
-                Some(page_request_dto.page),
-                Some(page_request_dto.per_page),
-            )
-            .await
-            .map_err(|err| UserError::General(err))
     }
 
     async fn check_username_exists(&self, username: &str) -> bool {

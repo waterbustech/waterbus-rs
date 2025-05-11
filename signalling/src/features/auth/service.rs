@@ -46,13 +46,9 @@ impl AuthService for AuthServiceImpl {
     ) -> Result<AuthResponse, AuthError> {
         let login_dto = data.clone();
 
-        let google_id = login_dto.google_id.as_deref();
-        let custom_id = login_dto.custom_id.as_deref();
+        let external_id = login_dto.external_id;
 
-        let user_exists = self
-            .repository
-            .get_user_by_auth_id(google_id, custom_id)
-            .await;
+        let user_exists = self.repository.get_user_by_auth_id(external_id).await;
 
         match user_exists {
             Ok(user) => {
@@ -75,8 +71,7 @@ impl AuthService for AuthServiceImpl {
                 // Create new user
                 let new_user = NewUser {
                     full_name: Some(&login_dto.full_name),
-                    google_id: google_id,
-                    custom_id: data.custom_id.as_ref().map(|s: &String| s.as_str()),
+                    external_id: &data.external_id,
                     user_name: &generate_username(),
                     created_at: now,
                     updated_at: now,

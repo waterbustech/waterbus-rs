@@ -15,14 +15,14 @@ diesel::table! {
 }
 
 diesel::table! {
-    meetings (id) {
+    rooms (id) {
         id -> Int4,
         title -> Varchar,
-        password -> Varchar,
+        password -> Nullable<Varchar>,
         avatar -> Nullable<Varchar>,
         #[sql_name = "latestMessageCreatedAt"]
         latest_message_created_at -> Nullable<Timestamp>,
-        code -> Int4,
+        code -> Varchar,
         #[sql_name = "createdAt"]
         created_at -> Timestamp,
         #[sql_name = "updatedAt"]
@@ -32,6 +32,8 @@ diesel::table! {
         #[sql_name = "latestMessageId"]
         latest_message_id -> Nullable<Int4>,
         status -> Int4,
+        #[sql_name = "type"]
+        type_ -> Int4,
     }
 }
 
@@ -46,10 +48,9 @@ diesel::table! {
         soft_deleted_at -> Nullable<Timestamp>,
         #[sql_name = "userId"]
         user_id -> Nullable<Int4>,
-        #[sql_name = "meetingId"]
-        meeting_id -> Nullable<Int4>,
+        #[sql_name = "roomId"]
+        room_id -> Nullable<Int4>,
         role -> Int4,
-        status -> Int4,
     }
 }
 
@@ -65,8 +66,8 @@ diesel::table! {
         deleted_at -> Nullable<Timestamp>,
         #[sql_name = "createdById"]
         created_by_id -> Nullable<Int4>,
-        #[sql_name = "meetingId"]
-        meeting_id -> Nullable<Int4>,
+        #[sql_name = "roomId"]
+        room_id -> Nullable<Int4>,
         #[sql_name = "type"]
         type_ -> Int4,
         status -> Int4,
@@ -82,8 +83,8 @@ diesel::table! {
         deleted_at -> Nullable<Timestamp>,
         #[sql_name = "userId"]
         user_id -> Nullable<Int4>,
-        #[sql_name = "meetingId"]
-        meeting_id -> Nullable<Int4>,
+        #[sql_name = "roomId"]
+        room_id -> Nullable<Int4>,
         #[sql_name = "ccuId"]
         ccu_id -> Nullable<Int4>,
         status -> Int4,
@@ -98,10 +99,8 @@ diesel::table! {
         #[sql_name = "userName"]
         user_name -> Varchar,
         bio -> Nullable<Varchar>,
-        #[sql_name = "googleId"]
-        google_id -> Nullable<Varchar>,
-        #[sql_name = "customId"]
-        custom_id -> Nullable<Varchar>,
+        #[sql_name = "externalId"]
+        external_id -> Varchar,
         avatar -> Nullable<Varchar>,
         #[sql_name = "createdAt"]
         created_at -> Timestamp,
@@ -115,18 +114,11 @@ diesel::table! {
 }
 
 diesel::joinable!(ccus -> users (user_id));
-diesel::joinable!(members -> meetings (meeting_id));
+diesel::joinable!(members -> rooms (room_id));
 diesel::joinable!(members -> users (user_id));
 diesel::joinable!(messages -> users (created_by_id));
 diesel::joinable!(participants -> ccus (ccu_id));
-diesel::joinable!(participants -> meetings (meeting_id));
+diesel::joinable!(participants -> rooms (room_id));
 diesel::joinable!(participants -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(
-    ccus,
-    meetings,
-    members,
-    messages,
-    participants,
-    users,
-);
+diesel::allow_tables_to_appear_in_same_query!(ccus, rooms, members, messages, participants, users,);

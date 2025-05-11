@@ -1,14 +1,14 @@
 use serde::Serialize;
 
-use crate::core::entities::models::{Meeting, Member, Participant, User};
+use crate::core::entities::models::{Member, Participant, Room, User};
 
 use super::message_response::MessageResponse;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MeetingResponse {
+pub struct RoomResponse {
     #[serde(flatten)]
-    pub meeting: Meeting,
+    pub room: Room,
     pub members: Vec<MemberResponse>,
     pub participants: Vec<ParticipantResponse>,
     pub latest_message: Option<MessageResponse>,

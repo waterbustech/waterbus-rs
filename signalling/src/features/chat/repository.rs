@@ -7,8 +7,8 @@ use diesel::{
 use salvo::async_trait;
 
 use crate::core::{
-    database::schema::{meetings, messages, users},
-    entities::models::{Meeting, Message, MessagesStatusEnum, NewMessage, User},
+    database::schema::{messages, rooms, users},
+    entities::models::{Message, MessagesStatusEnum, NewMessage, Room, User},
     types::{
         errors::{chat_error::ChatError, general::GeneralError},
         res::message_response::MessageResponse,
@@ -17,9 +17,9 @@ use crate::core::{
 
 #[async_trait]
 pub trait ChatRepository: Send + Sync {
-    async fn get_messages_by_meeting(
+    async fn get_messages_by_room(
         &self,
-        meeting_id: i32,
+        room_id: i32,
         deleted_at: chrono::NaiveDateTime,
         skip: i64,
         limit: i64,
@@ -51,9 +51,9 @@ impl ChatRepositoryImpl {
 
 #[async_trait]
 impl ChatRepository for ChatRepositoryImpl {
-    async fn get_messages_by_meeting(
+    async fn get_messages_by_room(
         &self,
-        meeting_id: i32,
+        room_id: i32,
         deleted_at: chrono::NaiveDateTime,
         skip: i64,
         limit: i64,
@@ -61,27 +61,27 @@ impl ChatRepository for ChatRepositoryImpl {
         let mut conn = self.get_conn()?;
 
         let result = messages::table
-            .filter(messages::meeting_id.eq(meeting_id))
+            .filter(messages::room_id.eq(room_id))
             .filter(messages::created_at.gt(deleted_at))
-            .left_join(meetings::table.on(messages::meeting_id.eq(meetings::id.nullable())))
+            .left_join(rooms::table.on(messages::room_id.eq(rooms::id.nullable())))
             .left_join(users::table.on(messages::created_by_id.eq(users::id.nullable())))
             .select((
                 Message::as_select(),
-                Option::<Meeting>::as_select(),
+                Option::<Room>::as_select(),
                 Option::<User>::as_select(),
             ))
             .order(messages::created_at.desc())
             .offset(skip)
             .limit(limit)
-            .load::<(Message, Option<Meeting>, Option<User>)>(&mut conn)
+            .load::<(Message, Option<Room>, Option<User>)>(&mut conn)
             .map_err(|_| ChatError::UnexpectedError("Failed to get messages".to_string()))?;
 
         let response = result
             .into_iter()
-            .map(|(message, meeting, user)| MessageResponse {
+            .map(|(message, room, user)| MessageResponse {
                 message,
                 created_by: user,
-                meeting,
+                room,
             })
             .collect::<Vec<_>>();
 
@@ -93,25 +93,25 @@ impl ChatRepository for ChatRepositoryImpl {
 
         let result = messages::table
             .filter(messages::id.eq(message_id))
-            .left_join(meetings::table.on(messages::meeting_id.eq(meetings::id.nullable())))
+            .left_join(rooms::table.on(messages::room_id.eq(rooms::id.nullable())))
             .left_join(users::table.on(messages::created_by_id.eq(users::id.nullable())))
             .select((
                 Message::as_select(),
-                Option::<Meeting>::as_select(),
+                Option::<Room>::as_select(),
                 Option::<User>::as_select(),
             ))
-            .first::<(Message, Option<Meeting>, Option<User>)>(&mut conn)
+            .first::<(Message, Option<Room>, Option<User>)>(&mut conn)
             .map_err(|err| match err {
                 diesel::result::Error::NotFound => ChatError::MessageNotFound(message_id),
                 _ => ChatError::UnexpectedError("Failed to get message".into()),
             })?;
 
-        let (message, meeting, user) = result;
+        let (message, room, user) = result;
 
         Ok(MessageResponse {
             message,
             created_by: user,
-            meeting,
+            room,
         })
     }
 

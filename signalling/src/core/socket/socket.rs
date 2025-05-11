@@ -30,7 +30,7 @@ use waterbus_proto::{
 use crate::{
     core::{
         dtos::socket::socket_dto::{
-            AnswerSubscribeDto, CandidateDto, JoinRoomDto, MsgDto, PublisherRenegotiationDto,
+            AnswerSubscribeDto, CandidateDto, JoinRoomDto, PublisherRenegotiationDto,
             SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto, SetScreenSharingDto, SubscribeDto,
             SubscriberCandidateDto,
         },
@@ -40,8 +40,8 @@ use crate::{
             enums::ws_event::WsEvent,
             res::socket_response::{
                 CameraTypeResponse, EnabledResponse, HandleRaisingResponse, IceCandidate,
-                MeetingJoinResponse, MeetingSubscribeResponse, ParticipantHasLeftResponse,
-                ScreenSharingResponse, SubscribeResponse, SubscriberRenegotiationResponse,
+                JoinRoomResponse, ParticipantHasLeftResponse, ScreenSharingResponse,
+                SubscribeParticipantResponse, SubscribeResponse, SubscriberRenegotiationResponse,
                 SubsriberCandidateResponse,
             },
         },
@@ -284,14 +284,14 @@ pub async fn handle_message_update(
     while let Ok(msg) = receiver.recv().await {
         match msg {
             AppEvent::SendMessage(msg) => {
-                if let Some(meeting) = msg.clone().meeting {
+                if let Some(room) = msg.clone().room {
                     let io = io.clone();
                     let msg = msg.clone();
-                    let meeting_code = meeting.code.to_string();
+                    let room_id = room.id.to_string();
                     tokio::spawn(async move {
                         let _ = io
                             .broadcast()
-                            .to(meeting_code)
+                            .to(room_id)
                             .emit(WsEvent::ChatSend.to_str(), &msg)
                             .await
                             .ok();
@@ -299,14 +299,14 @@ pub async fn handle_message_update(
                 }
             }
             AppEvent::UpdateMessage(msg) => {
-                if let Some(meeting) = msg.clone().meeting {
+                if let Some(room) = msg.clone().room {
                     let io = io.clone();
                     let msg = msg.clone();
-                    let meeting_code = meeting.code.to_string();
+                    let room_id = room.id.to_string();
                     tokio::spawn(async move {
                         let _ = io
                             .broadcast()
-                            .to(meeting_code)
+                            .to(room_id)
                             .emit(WsEvent::ChatUpdate.to_str(), &msg)
                             .await
                             .ok();
@@ -314,14 +314,14 @@ pub async fn handle_message_update(
                 }
             }
             AppEvent::DeleteMessage(msg) => {
-                if let Some(meeting) = msg.clone().meeting {
+                if let Some(room) = msg.clone().room {
                     let io = io.clone();
                     let msg = msg.clone();
-                    let meeting_code = meeting.code.to_string();
+                    let room_id = room.id.to_string();
                     tokio::spawn(async move {
                         let _ = io
                             .broadcast()
-                            .to(meeting_code)
+                            .to(room_id)
                             .emit(WsEvent::ChatDelete.to_str(), &msg)
                             .await
                             .ok();
@@ -380,8 +380,6 @@ async fn on_connect<A: Adapter>(
 
     _handle_on_connection(user_id_parsed, &socket_id, sfu_service.0).await;
 
-    socket.on("message", handle_msg);
-
     socket.on(WsEvent::RoomReconnect.to_str(), on_reconnect);
     socket.on(WsEvent::RoomPublish.to_str(), handle_join_room);
     socket.on(WsEvent::RoomSubscribe.to_str(), handle_subscribe);
@@ -429,17 +427,6 @@ async fn on_disconnect<A: Adapter>(
     let _ = _handle_leave_room(socket, dispatcher_manager.0.clone(), sfu_service.0, true).await;
 }
 
-async fn handle_msg<A: Adapter>(socket: SocketRef<A>, Data(data): Data<MsgDto>) {
-    socket.join("lambiengcode");
-    socket.emit("message", &data).ok();
-    socket
-        .broadcast()
-        .to("lambiengcode")
-        .emit("message", &data)
-        .await
-        .ok();
-}
-
 async fn on_reconnect<A: Adapter>(_: SocketRef<A>) {}
 
 async fn handle_join_room<A: Adapter>(
@@ -466,7 +453,7 @@ async fn handle_join_room<A: Adapter>(
         Ok(res) => {
             socket.join(room_id.clone());
 
-            let response = MeetingJoinResponse {
+            let response = JoinRoomResponse {
                 sdp: res.sdp,
                 is_recording: res.is_recording,
             };
@@ -498,7 +485,7 @@ async fn handle_subscribe<A: Adapter>(
         let _ = socket
             .emit(
                 WsEvent::RoomAnswerSubscriber.to_str(),
-                &MeetingSubscribeResponse {
+                &SubscribeParticipantResponse {
                     subscribe_response: SubscribeResponse {
                         offer: res.offer,
                         camera_type: res.camera_type as u8,

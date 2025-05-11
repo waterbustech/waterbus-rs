@@ -10,18 +10,25 @@ use crate::core::database::schema::*;
 
 #[repr(i32)]
 #[derive(Debug)]
-pub enum MeetingsStatusEnum {
-    Active,
-    Archived,
+pub enum RoomType {
+    Conferencing,
+    LiveStreaming,
 }
 
-impl TryFrom<i32> for MeetingsStatusEnum {
+#[repr(i32)]
+#[derive(Debug)]
+pub enum RoomStatusEnum {
+    Active,
+    Inactive,
+}
+
+impl TryFrom<i32> for RoomStatusEnum {
     type Error = ();
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(MeetingsStatusEnum::Active),
-            1 => Ok(MeetingsStatusEnum::Archived),
+            0 => Ok(RoomStatusEnum::Active),
+            1 => Ok(RoomStatusEnum::Inactive),
             _ => Err(()),
         }
     }
@@ -32,27 +39,6 @@ impl TryFrom<i32> for MeetingsStatusEnum {
 pub enum MembersRoleEnum {
     Host,
     Attendee,
-}
-
-#[repr(i32)]
-#[derive(Debug)]
-pub enum MembersStatusEnum {
-    Inviting,
-    Invisible,
-    Joined,
-}
-
-impl TryFrom<i32> for MembersStatusEnum {
-    type Error = ();
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(MembersStatusEnum::Inviting),
-            1 => Ok(MembersStatusEnum::Invisible),
-            2 => Ok(MembersStatusEnum::Joined),
-            _ => Err(()),
-        }
-    }
 }
 
 #[repr(i32)]
@@ -101,22 +87,23 @@ pub struct Ccu {
 #[derive(
     Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
 )]
-#[diesel(table_name = meetings)]
+#[diesel(table_name = rooms)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Meeting {
+pub struct Room {
     pub id: i32,
     pub title: String,
     #[serde(skip_serializing)]
-    pub password: String,
+    pub password: Option<String>,
     pub avatar: Option<String>,
     pub status: i32,
     pub latest_message_created_at: Option<NaiveDateTime>,
-    pub code: i32,
+    pub code: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub latest_message_id: Option<i32>,
+    pub type_: i32,
 }
 
 #[derive(
@@ -131,19 +118,18 @@ pub struct Meeting {
     Identifiable,
 )]
 #[diesel(table_name = members)]
-#[diesel(belongs_to(Meeting))]
+#[diesel(belongs_to(Room))]
 #[diesel(belongs_to(User))]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Member {
     pub id: i32,
     pub role: i32,
-    pub status: i32,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub soft_deleted_at: Option<NaiveDateTime>,
     pub user_id: Option<i32>,
-    pub meeting_id: Option<i32>,
+    pub room_id: Option<i32>,
 }
 
 #[derive(
@@ -158,7 +144,7 @@ pub struct Member {
     Identifiable,
 )]
 #[diesel(table_name = messages)]
-#[diesel(belongs_to(Meeting, foreign_key = meeting_id))]
+#[diesel(belongs_to(Room, foreign_key = room_id))]
 #[diesel(belongs_to(User, foreign_key = created_by_id))]
 #[serde(rename_all = "camelCase")]
 #[diesel(primary_key(id))]
@@ -172,7 +158,7 @@ pub struct Message {
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub created_by_id: Option<i32>,
-    pub meeting_id: Option<i32>,
+    pub room_id: Option<i32>,
 }
 
 #[derive(
@@ -188,7 +174,7 @@ pub struct Message {
 )]
 #[diesel(table_name = participants)]
 #[serde(rename_all = "camelCase")]
-#[diesel(belongs_to(Meeting))]
+#[diesel(belongs_to(Room))]
 #[diesel(belongs_to(User))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Participant {
@@ -197,7 +183,7 @@ pub struct Participant {
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub user_id: Option<i32>,
-    pub meeting_id: Option<i32>,
+    pub room_id: Option<i32>,
     pub ccu_id: Option<i32>,
 }
 
@@ -212,10 +198,7 @@ pub struct User {
     pub full_name: Option<String>,
     pub user_name: String,
     pub bio: Option<String>,
-    #[serde(skip_serializing)]
-    pub google_id: Option<String>,
-    #[serde(skip_serializing)]
-    pub custom_id: Option<String>,
+    pub external_id: String,
     pub avatar: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -229,8 +212,7 @@ pub struct NewUser<'a> {
     pub full_name: Option<&'a str>,
     pub user_name: &'a str,
     pub bio: Option<&'a str>,
-    pub google_id: Option<&'a str>,
-    pub custom_id: Option<&'a str>,
+    pub external_id: &'a str,
     pub avatar: Option<&'a str>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -241,7 +223,7 @@ pub struct NewUser<'a> {
 pub struct NewMessage<'a> {
     pub data: &'a str,
     pub created_by_id: Option<&'a i32>,
-    pub meeting_id: Option<&'a i32>,
+    pub room_id: Option<&'a i32>,
     pub status: &'a i32,
     pub type_: &'a i32,
     pub created_at: NaiveDateTime,
@@ -249,31 +231,31 @@ pub struct NewMessage<'a> {
 }
 
 #[derive(Insertable)]
-#[diesel(table_name = meetings)]
-pub struct NewMeeting<'a> {
+#[diesel(table_name = rooms)]
+pub struct NewRoom<'a> {
     pub title: &'a str,
     pub password: &'a str,
-    pub code: &'a i32,
+    pub code: &'a str,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub latest_message_created_at: NaiveDateTime,
     pub status: i32,
+    pub type_: i32,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name = members)]
 pub struct NewMember<'a> {
-    pub meeting_id: &'a i32,
+    pub room_id: &'a i32,
     pub created_at: NaiveDateTime,
     pub user_id: Option<i32>,
-    pub status: i32,
     pub role: i32,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name = participants)]
 pub struct NewParticipant<'a> {
-    pub meeting_id: &'a i32,
+    pub room_id: &'a i32,
     pub user_id: Option<i32>,
     pub created_at: NaiveDateTime,
     pub status: i32,

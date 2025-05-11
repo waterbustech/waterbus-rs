@@ -9,14 +9,14 @@ pub struct ParticipantHasLeftResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MeetingJoinResponse {
+pub struct JoinRoomResponse {
     pub sdp: String,
     pub is_recording: bool,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MeetingSubscribeResponse {
+pub struct SubscribeParticipantResponse {
     pub target_id: String,
     #[serde(flatten)]
     pub subscribe_response: SubscribeResponse,
