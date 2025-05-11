@@ -46,14 +46,20 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let ttl = 5;
 
-    let etcd_node =
-        EtcdNode::register(app_env.etcd_addr, app_env.node_id, app_env.node_ip, ttl).await?;
+    let etcd_node = EtcdNode::register(
+        app_env.etcd_addr,
+        app_env.node_id.clone(),
+        app_env.node_ip,
+        ttl,
+    )
+    .await?;
 
     GrpcServer::start(
         app_env.grpc_configs.sfu_port,
         app_env.grpc_configs.dispatcher_host,
         app_env.grpc_configs.dispatcher_port,
         webrtc_configs,
+        app_env.node_id,
     );
 
     tokio::signal::ctrl_c().await?;

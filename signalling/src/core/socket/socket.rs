@@ -47,7 +47,7 @@ use crate::{
         },
         utils::jwt_utils::JwtUtils,
     },
-    features::sfu::service::{SfuService, SfuServiceImpl},
+    features::room::service::{RoomService, RoomServiceImpl},
 };
 
 #[derive(Clone)]
@@ -85,7 +85,7 @@ impl RemoteUserCnt {
 pub async fn get_socket_router(
     env: &AppEnv,
     jwt_utils: JwtUtils,
-    sfu_service: SfuServiceImpl,
+    room_service: RoomServiceImpl,
     message_receiver: Receiver<AppEvent>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let client = redis::Client::open(env.clone().redis_uri.0)?;
@@ -109,7 +109,7 @@ pub async fn get_socket_router(
     let (layer, io) = SocketIo::builder()
         .with_state(RemoteUserCnt::new(conn))
         .with_state(jwt_utils.clone())
-        .with_state(sfu_service.clone())
+        .with_state(room_service.clone())
         .with_state(dispatcher)
         .with_adapter::<RedisAdapter<_>>(adapter)
         .with_parser(ParserConfig::msgpack())
@@ -129,7 +129,7 @@ pub async fn get_socket_router(
     tokio::spawn(handle_dispatcher_callback(
         io_clone,
         dispatcher_receiver,
-        sfu_service,
+        room_service,
     ));
 
     let io_clone = io.clone();
@@ -141,17 +141,18 @@ pub async fn get_socket_router(
 pub async fn handle_dispatcher_callback(
     io: SocketIo<CustomRedisAdapter<Emitter, RedisDriver>>,
     receiver: Receiver<DispatcherCallback>,
-    sfu_service: SfuServiceImpl,
+    room_service: RoomServiceImpl,
 ) {
     // Non-blocking check for any new messages on the channel
     while let Ok(msg) = receiver.recv().await {
         match msg {
             DispatcherCallback::NewUserJoined(info) => {
                 let io = io.clone();
-                let sfu_service = sfu_service.clone();
+                let room_service = room_service.clone();
                 let room_id = info.room_id;
                 let participant_id = info.participant_id;
                 let client_id = info.client_id;
+                let node_id = info.node_id;
 
                 let participant_id_parsed = match participant_id.parse::<i32>() {
                     Ok(id) => id,
@@ -166,8 +167,8 @@ pub async fn handle_dispatcher_callback(
                 if let Ok(sid) = sid {
                     if let Some(socket) = io.get_socket(sid) {
                         tokio::spawn(async move {
-                            let participant = sfu_service
-                                .update_participant(participant_id_parsed, &client_id)
+                            let participant = room_service
+                                .update_participant(participant_id_parsed, &node_id)
                                 .await;
 
                             if let Ok(participant) = participant {
@@ -360,25 +361,8 @@ async fn authenticate_middleware<A: Adapter>(
     }
 }
 
-async fn on_connect<A: Adapter>(
-    socket: SocketRef<A>,
-    sfu_service: State<SfuServiceImpl>,
-    user_id: Extension<UserId>,
-) {
+async fn on_connect<A: Adapter>(socket: SocketRef<A>, user_id: Extension<UserId>) {
     info!("user {:?} connected", user_id.0.0);
-
-    let socket_id = socket.id.to_string();
-    let user_id = user_id.0.0;
-
-    let user_id_parsed = match user_id.parse::<i32>() {
-        Ok(id) => id,
-        Err(e) => {
-            warn!("Failed to parse user_id as i32: {:?}", e);
-            return;
-        }
-    };
-
-    _handle_on_connection(user_id_parsed, &socket_id, sfu_service.0).await;
 
     socket.on(WsEvent::RoomReconnect.to_str(), on_reconnect);
     socket.on(WsEvent::RoomPublish.to_str(), handle_join_room);
@@ -420,11 +404,11 @@ async fn on_disconnect<A: Adapter>(
     socket: SocketRef<A>,
     user_cnt: State<RemoteUserCnt>,
     dispatcher_manager: State<DispatcherManager>,
-    sfu_service: State<SfuServiceImpl>,
+    room_service: State<RoomServiceImpl>,
 ) {
     let _ = user_cnt.remove_user().await.unwrap_or(0);
 
-    let _ = _handle_leave_room(socket, dispatcher_manager.0.clone(), sfu_service.0, true).await;
+    let _ = _handle_leave_room(socket, dispatcher_manager.0.clone(), room_service.0).await;
 }
 
 async fn on_reconnect<A: Adapter>(_: SocketRef<A>) {}
@@ -775,20 +759,15 @@ async fn handle_set_subscribe_subtitle<A: Adapter>(
 async fn handle_leave_room<A: Adapter>(
     socket: SocketRef<A>,
     dispatcher_manager: State<DispatcherManager>,
-    sfu_service: State<SfuServiceImpl>,
+    room_service: State<RoomServiceImpl>,
 ) {
-    let _ = _handle_leave_room(socket, dispatcher_manager.0, sfu_service.0, false).await;
-}
-
-async fn _handle_on_connection(user_id: i32, socket_id: &str, sfu_service: SfuServiceImpl) {
-    let _ = sfu_service.create_ccu(socket_id, user_id).await;
+    let _ = _handle_leave_room(socket, dispatcher_manager.0, room_service.0).await;
 }
 
 async fn _handle_leave_room<A: Adapter>(
     socket: SocketRef<A>,
     dispatcher_manager: DispatcherManager,
-    sfu_service: SfuServiceImpl,
-    is_remove_ccu: bool,
+    room_service: RoomServiceImpl,
 ) -> Result<(), anyhow::Error> {
     let client_id = socket.id.to_string();
 
@@ -815,7 +794,7 @@ async fn _handle_leave_room<A: Adapter>(
     socket.leave(room_id);
 
     match participant_id.parse::<i32>() {
-        Ok(id) => match sfu_service.delete_participant(id).await {
+        Ok(id) => match room_service.delete_participant(id).await {
             Ok(()) => {
                 info!("Participant with ID {} deleted", participant_id);
             }
@@ -827,10 +806,6 @@ async fn _handle_leave_room<A: Adapter>(
             warn!("Failed to parse participant_id as i32: {:?}", e);
         }
     };
-
-    if is_remove_ccu {
-        let _ = sfu_service.delete_ccu(&socket.id.to_string()).await;
-    }
 
     Ok(())
 }

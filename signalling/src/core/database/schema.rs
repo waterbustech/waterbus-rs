@@ -1,20 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    ccus (id) {
-        id -> Int4,
-        #[sql_name = "socketId"]
-        socket_id -> Varchar,
-        #[sql_name = "podName"]
-        pod_name -> Varchar,
-        #[sql_name = "createdAt"]
-        created_at -> Timestamp,
-        #[sql_name = "userId"]
-        user_id -> Nullable<Int4>,
-    }
-}
-
-diesel::table! {
     rooms (id) {
         id -> Int4,
         title -> Varchar,
@@ -85,8 +71,8 @@ diesel::table! {
         user_id -> Nullable<Int4>,
         #[sql_name = "roomId"]
         room_id -> Nullable<Int4>,
-        #[sql_name = "ccuId"]
-        ccu_id -> Nullable<Int4>,
+        #[sql_name = "nodeId"]
+        node_id -> Nullable<Varchar>,
         status -> Int4,
     }
 }
@@ -113,12 +99,10 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(ccus -> users (user_id));
 diesel::joinable!(members -> rooms (room_id));
 diesel::joinable!(members -> users (user_id));
 diesel::joinable!(messages -> users (created_by_id));
-diesel::joinable!(participants -> ccus (ccu_id));
 diesel::joinable!(participants -> rooms (room_id));
 diesel::joinable!(participants -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(ccus, rooms, members, messages, participants, users,);
+diesel::allow_tables_to_appear_in_same_query!(rooms, members, messages, participants, users,);

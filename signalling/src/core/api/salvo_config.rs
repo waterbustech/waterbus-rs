@@ -24,10 +24,8 @@ use crate::{
     },
     features::{
         auth::{repository::AuthRepositoryImpl, router::get_auth_router, service::AuthServiceImpl},
-        ccu::repository::CcuRepositoryImpl,
         chat::{repository::ChatRepositoryImpl, router::get_chat_router, service::ChatServiceImpl},
         room::{repository::RoomRepositoryImpl, router::get_room_router, service::RoomServiceImpl},
-        sfu::service::SfuServiceImpl,
         user::{repository::UserRepositoryImpl, router::get_user_router, service::UserServiceImpl},
     },
 };
@@ -92,9 +90,9 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
     let (message_sender, message_receiver) = async_channel::unbounded::<AppEvent>();
 
     let room_repository = RoomRepositoryImpl::new(pool.clone());
-    let ccu_repository = CcuRepositoryImpl::new(pool.clone());
-    let sfu_service = SfuServiceImpl::new(ccu_repository, room_repository);
-    let socket_router = get_socket_router(&env, jwt_utils.clone(), sfu_service, message_receiver)
+    let user_repository = UserRepositoryImpl::new(pool.clone());
+    let room_service = RoomServiceImpl::new(room_repository, user_repository);
+    let socket_router = get_socket_router(&env, jwt_utils.clone(), room_service, message_receiver)
         .await
         .expect("Failed to config socket.io");
 

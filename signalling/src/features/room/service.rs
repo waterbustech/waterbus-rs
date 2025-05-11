@@ -6,7 +6,7 @@ use crate::core::entities::models::{
     RoomType,
 };
 use crate::core::types::errors::room_error::RoomError;
-use crate::core::types::res::room_response::RoomResponse;
+use crate::core::types::res::room_response::{ParticipantResponse, RoomResponse};
 use crate::core::utils::bcrypt_utils::{hash_password, verify_password};
 use crate::core::utils::id_utils::generate_room_code;
 use crate::features::room::repository::{RoomRepository, RoomRepositoryImpl};
@@ -64,8 +64,17 @@ pub trait RoomService {
     ) -> Result<RoomResponse, RoomError>;
 
     async fn deactivate_room(&self, room_id: i32, user_id: i32) -> Result<RoomResponse, RoomError>;
+
+    async fn update_participant(
+        &self,
+        participant_id: i32,
+        node_id: &str,
+    ) -> Result<ParticipantResponse, RoomError>;
+
+    async fn delete_participant(&self, participant_id: i32) -> Result<(), RoomError>;
 }
 
+#[derive(Debug, Clone)]
 pub struct RoomServiceImpl {
     room_repository: RoomRepositoryImpl,
     user_repository: UserRepositoryImpl,
@@ -257,12 +266,11 @@ impl RoomService for RoomServiceImpl {
                 room_id: &room.room.id,
                 status: ParticipantsStatusEnum::Active as i32,
                 created_at: now,
-                ccu_id: None,
             };
 
             let participant = self.room_repository.create_participant(participant).await?;
 
-            room.participants.retain(|p| p.participant.ccu_id != None);
+            room.participants.retain(|p| p.participant.node_id != None);
             room.participants.push(participant);
         }
 
@@ -374,5 +382,33 @@ impl RoomService for RoomServiceImpl {
         let room = self.room_repository.update_room(room).await?;
 
         Ok(room)
+    }
+
+    async fn update_participant(
+        &self,
+        participant_id: i32,
+        node_id: &str,
+    ) -> Result<ParticipantResponse, RoomError> {
+        let participant = self
+            .room_repository
+            .get_participant_by_id(participant_id)
+            .await?;
+
+        let mut participant = participant.participant;
+
+        participant.node_id = Some(node_id.to_string());
+
+        let participant = self.room_repository.update_participant(participant).await?;
+
+        Ok(participant)
+    }
+
+    async fn delete_participant(&self, participant_id: i32) -> Result<(), RoomError> {
+        let _ = self
+            .room_repository
+            .delete_participant_by_id(participant_id)
+            .await?;
+
+        Ok(())
     }
 }

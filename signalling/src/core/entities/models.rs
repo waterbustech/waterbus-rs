@@ -73,20 +73,6 @@ pub enum ParticipantsStatusEnum {
 #[derive(
     Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
 )]
-#[diesel(table_name = ccus)]
-#[serde(rename_all = "camelCase")]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Ccu {
-    pub id: i32,
-    pub socket_id: String,
-    pub pod_name: String,
-    pub created_at: NaiveDateTime,
-    pub user_id: Option<i32>,
-}
-
-#[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
-)]
 #[diesel(table_name = rooms)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -184,7 +170,7 @@ pub struct Participant {
     pub deleted_at: Option<NaiveDateTime>,
     pub user_id: Option<i32>,
     pub room_id: Option<i32>,
-    pub ccu_id: Option<i32>,
+    pub node_id: Option<String>,
 }
 
 #[derive(
@@ -259,14 +245,4 @@ pub struct NewParticipant<'a> {
     pub user_id: Option<i32>,
     pub created_at: NaiveDateTime,
     pub status: i32,
-    pub ccu_id: Option<i32>,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = ccus)]
-pub struct NewCcu<'a> {
-    pub socket_id: &'a str,
-    pub pod_name: &'a str,
-    pub created_at: NaiveDateTime,
-    pub user_id: Option<i32>,
 }

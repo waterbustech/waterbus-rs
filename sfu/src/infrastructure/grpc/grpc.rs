@@ -15,11 +15,13 @@ impl GrpcServer {
         dispatcher_host: String,
         dispatcher_port: u16,
         configs: WebRTCManagerConfigs,
+        node_id: String,
     ) {
         info!("GrpcServer is running on port: {}", port);
 
         tokio::spawn(async move {
-            match Self::start_server(port, dispatcher_host, dispatcher_port, configs).await {
+            match Self::start_server(port, dispatcher_host, dispatcher_port, configs, node_id).await
+            {
                 Ok(_) => info!("GrpcServer stopped successfully"),
                 Err(e) => info!("GrpcServer stopped with an error: {:?}", e),
             }
@@ -31,12 +33,13 @@ impl GrpcServer {
         dispatcher_host: String,
         dispatcher_port: u16,
         configs: WebRTCManagerConfigs,
+        node_id: String,
     ) -> anyhow::Result<()> {
         let addr = format!("[::1]:{}", port).parse().unwrap();
 
         let dispatcher_grpc_client = DispatcherGrpcClient::new(dispatcher_host, dispatcher_port);
 
-        let sfu_grpc_service = SfuGrpcService::new(configs, dispatcher_grpc_client);
+        let sfu_grpc_service = SfuGrpcService::new(configs, dispatcher_grpc_client, node_id);
 
         let shutdown_signal = async {
             tokio::signal::ctrl_c()

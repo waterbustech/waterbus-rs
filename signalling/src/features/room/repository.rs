@@ -458,7 +458,7 @@ impl RoomRepository for RoomRepositoryImpl {
             .filter(participants::id.eq(participant.id))
             .set((
                 participants::status.eq(participant.status),
-                participants::ccu_id.eq(participant.ccu_id),
+                participants::node_id.eq(participant.node_id),
             ))
             .returning(Participant::as_select())
             .get_result(&mut conn)

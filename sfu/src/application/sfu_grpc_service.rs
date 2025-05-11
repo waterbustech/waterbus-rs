@@ -24,18 +24,21 @@ use super::dispacher_grpc_client::DispatcherGrpcClient;
 pub struct SfuGrpcService {
     webrtc_manager: Arc<RwLock<WebRTCManager>>,
     dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
+    node_id: String,
 }
 
 impl SfuGrpcService {
     pub fn new(
         configs: WebRTCManagerConfigs,
         dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
+        node_id: String,
     ) -> Self {
         let webrtc_manager = Arc::new(RwLock::new(WebRTCManager::new(configs)));
 
         Self {
             webrtc_manager,
             dispatcher_grpc_client,
+            node_id,
         }
     }
 }
@@ -77,11 +80,14 @@ impl SfuService for SfuGrpcService {
         let participant_id = req.participant_id.clone();
         let room_id = req.room_id.clone();
         let client_id = req.client_id.clone();
+        let node_id = self.node_id.clone();
+
         let joined_callback: JoinedCallback = Arc::new(move || {
             let dispatcher = Arc::clone(&dispatcher);
             let participant_id = participant_id.clone();
             let room_id = room_id.clone();
             let client_id = client_id.clone();
+            let node_id = node_id.clone();
 
             Box::pin(async move {
                 let mut dispatcher = dispatcher.lock().await;
@@ -91,6 +97,7 @@ impl SfuService for SfuGrpcService {
                         participant_id,
                         room_id,
                         client_id,
+                        node_id,
                     })
                     .await;
             })
