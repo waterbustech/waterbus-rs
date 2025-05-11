@@ -72,6 +72,8 @@ pub trait RoomService {
     ) -> Result<ParticipantResponse, RoomError>;
 
     async fn delete_participant(&self, participant_id: i32) -> Result<(), RoomError>;
+
+    async fn generate_unique_room_code(&self, max_attempts: usize) -> Result<String, RoomError>;
 }
 
 #[derive(Debug, Clone)]
@@ -97,13 +99,14 @@ impl RoomService for RoomServiceImpl {
         user_id: i32,
     ) -> Result<RoomResponse, RoomError> {
         let now = Utc::now().naive_utc();
-
         let password_hashed = hash_password(&data.password);
 
+        let code = self.generate_unique_room_code(10).await?;
+
         let new_room = NewRoom {
-            title: &*data.title,
+            title: &data.title,
             password: &password_hashed,
-            code: &generate_room_code(),
+            code: &code,
             status: RoomStatusEnum::Active as i32,
             created_at: now,
             updated_at: now,
@@ -111,7 +114,7 @@ impl RoomService for RoomServiceImpl {
             type_: RoomType::Conferencing as i32,
         };
 
-        let mut new_room = self.room_repository.create_room(new_room).await.unwrap();
+        let mut new_room = self.room_repository.create_room(new_room).await?;
 
         let new_member = NewMember {
             room_id: &new_room.room.id,
@@ -120,13 +123,9 @@ impl RoomService for RoomServiceImpl {
             created_at: now,
         };
 
-        let new_member = self
-            .room_repository
-            .create_member(new_member)
-            .await
-            .unwrap();
+        let new_member = self.room_repository.create_member(new_member).await?;
 
-        new_room.members = Vec::from([new_member]);
+        new_room.members = vec![new_member];
 
         Ok(new_room)
     }
@@ -259,20 +258,20 @@ impl RoomService for RoomServiceImpl {
             if !is_password_correct {
                 return Err(RoomError::PasswordIncorrect);
             }
-
-            let now = Utc::now().naive_utc();
-            let participant = NewParticipant {
-                user_id: Some(user_id),
-                room_id: &room.room.id,
-                status: ParticipantsStatusEnum::Active as i32,
-                created_at: now,
-            };
-
-            let participant = self.room_repository.create_participant(participant).await?;
-
-            room.participants.retain(|p| p.participant.node_id != None);
-            room.participants.push(participant);
         }
+
+        let now = Utc::now().naive_utc();
+        let participant = NewParticipant {
+            user_id: Some(user_id),
+            room_id: &room.room.id,
+            status: ParticipantsStatusEnum::Active as i32,
+            created_at: now,
+        };
+
+        let participant = self.room_repository.create_participant(participant).await?;
+
+        room.participants.retain(|p| p.participant.node_id != None);
+        room.participants.push(participant);
 
         Ok(room)
     }
@@ -410,5 +409,24 @@ impl RoomService for RoomServiceImpl {
             .await?;
 
         Ok(())
+    }
+
+    async fn generate_unique_room_code(&self, max_attempts: usize) -> Result<String, RoomError> {
+        for _ in 0..max_attempts {
+            let code = generate_room_code();
+            let exists = self
+                .room_repository
+                .exists_code(&code)
+                .await
+                .map_err(|_| RoomError::UnexpectedError("Failed to check room code".into()))?;
+
+            if !exists {
+                return Ok(code);
+            }
+        }
+
+        Err(RoomError::UnexpectedError(
+            "Failed to generate unique room code".into(),
+        ))
     }
 }

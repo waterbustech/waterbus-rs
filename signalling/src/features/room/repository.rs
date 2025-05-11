@@ -35,6 +35,8 @@ pub trait RoomRepository: Send + Sync {
         limit: i64,
     ) -> Result<Vec<RoomResponse>, RoomError>;
 
+    async fn exists_code(&self, room_code: &str) -> Result<bool, RoomError>;
+
     async fn get_room_by_id(&self, room_id: i32) -> Result<RoomResponse, RoomError>;
 
     async fn get_room_by_code(&self, room_code: &str) -> Result<RoomResponse, RoomError>;
@@ -194,6 +196,24 @@ impl RoomRepository for RoomRepositoryImpl {
             .collect::<Vec<_>>();
 
         Ok(room_responses)
+    }
+
+    async fn exists_code(&self, room_code: &str) -> Result<bool, RoomError> {
+        let mut conn = self.get_conn()?;
+
+        use self::rooms::dsl::*;
+
+        match rooms
+            .filter(code.eq(room_code))
+            .select(id)
+            .first::<i32>(&mut conn)
+        {
+            Ok(_) => Ok(true),
+            Err(diesel::result::Error::NotFound) => Ok(false),
+            Err(e) => Err(RoomError::UnexpectedError(format!(
+                "DB error checking room code: {e}"
+            ))),
+        }
     }
 
     async fn get_room_by_id(&self, room_id: i32) -> Result<RoomResponse, RoomError> {

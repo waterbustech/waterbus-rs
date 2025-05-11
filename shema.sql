@@ -3,8 +3,7 @@ CREATE TABLE users (
     "fullName" VARCHAR,
     "userName" VARCHAR NOT NULL,
     bio VARCHAR,
-    "googleId" VARCHAR,
-    "customId" VARCHAR,
+    "externalId" VARCHAR NOT NULL,
     avatar VARCHAR,
     "createdAt" TIMESTAMP NOT NULL,
     "updatedAt" TIMESTAMP NOT NULL,
@@ -12,26 +11,19 @@ CREATE TABLE users (
     "lastSeenAt" TIMESTAMP
 );
 
-CREATE TABLE ccus (
-    id SERIAL PRIMARY KEY,
-    "socketId" VARCHAR NOT NULL,
-    "podName" VARCHAR NOT NULL,
-    "createdAt" TIMESTAMP NOT NULL,
-    "userId" INTEGER REFERENCES users(id)
-);
-
-CREATE TABLE meetings (
+CREATE TABLE rooms (
     id SERIAL PRIMARY KEY,
     title VARCHAR NOT NULL,
-    password VARCHAR NOT NULL,
+    password VARCHAR,
     avatar VARCHAR,
     "latestMessageCreatedAt" TIMESTAMP,
-    code INTEGER NOT NULL,
+    code VARCHAR NOT NULL UNIQUE,
     "createdAt" TIMESTAMP NOT NULL,
     "updatedAt" TIMESTAMP NOT NULL,
     "deletedAt" TIMESTAMP,
     "latestMessageId" INTEGER,
-    status INTEGER NOT NULL
+    status INTEGER NOT NULL,
+    "type" INTEGER NOT NULL
 );
 
 CREATE TABLE members (
@@ -39,10 +31,11 @@ CREATE TABLE members (
     "createdAt" TIMESTAMP NOT NULL,
     "deletedAt" TIMESTAMP,
     "softDeletedAt" TIMESTAMP,
-    "userId" INTEGER REFERENCES users(id),
-    "meetingId" INTEGER REFERENCES meetings(id),
+    "userId" INTEGER,
+    "roomId" INTEGER,
     role INTEGER NOT NULL,
-    status INTEGER NOT NULL
+    FOREIGN KEY ("userId") REFERENCES users(id),
+    FOREIGN KEY ("roomId") REFERENCES rooms(id)
 );
 
 CREATE TABLE messages (
@@ -51,49 +44,22 @@ CREATE TABLE messages (
     "createdAt" TIMESTAMP NOT NULL,
     "updatedAt" TIMESTAMP NOT NULL,
     "deletedAt" TIMESTAMP,
-    "createdById" INTEGER REFERENCES users(id),
-    "meetingId" INTEGER REFERENCES meetings(id),
+    "createdById" INTEGER,
+    "roomId" INTEGER,
     "type" INTEGER NOT NULL,
-    status INTEGER NOT NULL
+    status INTEGER NOT NULL,
+    FOREIGN KEY ("createdById") REFERENCES users(id),
+    FOREIGN KEY ("roomId") REFERENCES rooms(id)
 );
 
 CREATE TABLE participants (
     id SERIAL PRIMARY KEY,
     "createdAt" TIMESTAMP NOT NULL,
     "deletedAt" TIMESTAMP,
-    "userId" INTEGER REFERENCES users(id),
-    "meetingId" INTEGER REFERENCES meetings(id),
-    "ccuId" INTEGER REFERENCES ccus(id),
-    status INTEGER NOT NULL
-);
-
-CREATE TABLE records (
-    id SERIAL PRIMARY KEY,
-    "urlToVideo" VARCHAR,
-    thumbnail VARCHAR,
-    duration INTEGER NOT NULL,
-    "createdAt" TIMESTAMP NOT NULL,
-    "deletedAt" TIMESTAMP,
-    "meetingId" INTEGER REFERENCES meetings(id),
-    "createdById" INTEGER REFERENCES users(id),
-    status INTEGER NOT NULL
-);
-
-CREATE TABLE "record-tracks" (
-    id SERIAL PRIMARY KEY,
-    "urlToVideo" VARCHAR NOT NULL,
-    "startTime" VARCHAR NOT NULL,
-    "endTime" VARCHAR NOT NULL,
-    "createdAt" TIMESTAMP NOT NULL,
-    "deletedAt" TIMESTAMP,
-    "recordId" INTEGER REFERENCES records(id),
-    "userId" INTEGER REFERENCES users(id)
-);
-
-CREATE TABLE "white-boards" (
-    id SERIAL PRIMARY KEY,
-    paints TEXT NOT NULL,
-    "createdAt" TIMESTAMP NOT NULL,
-    "deletedAt" TIMESTAMP,
-    "meetingId" INTEGER REFERENCES meetings(id)
+    "userId" INTEGER,
+    "roomId" INTEGER,
+    "nodeId" VARCHAR,
+    status INTEGER NOT NULL,
+    FOREIGN KEY ("userId") REFERENCES users(id),
+    FOREIGN KEY ("roomId") REFERENCES rooms(id)
 );

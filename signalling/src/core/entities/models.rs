@@ -170,6 +170,7 @@ pub struct Participant {
     pub deleted_at: Option<NaiveDateTime>,
     pub user_id: Option<i32>,
     pub room_id: Option<i32>,
+    #[serde(skip_serializing)]
     pub node_id: Option<String>,
 }
 
