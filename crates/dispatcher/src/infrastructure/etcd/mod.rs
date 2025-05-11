@@ -1,8 +1,11 @@
+use async_channel::Sender;
 use etcd_client::{Client, EventType, GetOptions, WatchOptions};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
+use crate::domain::DispatcherCallback;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NodeMetadata {
@@ -18,6 +21,7 @@ pub struct EtcdDispatcher {
     nodes: Arc<RwLock<HashMap<String, NodeMetadata>>>,
     prefix: String,
     group_id: String,
+    sender: Sender<DispatcherCallback>,
 }
 
 impl EtcdDispatcher {
@@ -25,6 +29,7 @@ impl EtcdDispatcher {
         etcd_endpoints: &[&str],
         prefix: &str,
         group_id: &str,
+        sender: Sender<DispatcherCallback>,
     ) -> anyhow::Result<Self> {
         let client = Client::connect(etcd_endpoints, None).await?;
         let mut etcd = EtcdDispatcher {
@@ -32,6 +37,7 @@ impl EtcdDispatcher {
             nodes: Arc::new(RwLock::new(HashMap::new())),
             prefix: prefix.to_string(),
             group_id: group_id.to_string(),
+            sender,
         };
         etcd.sync_nodes().await?;
         etcd.start_watch();
@@ -61,6 +67,7 @@ impl EtcdDispatcher {
         let prefix = self.prefix.clone();
         let mut client = self.client.clone();
         let nodes = self.nodes.clone();
+        let sender = self.sender.clone();
 
         tokio::spawn(async move {
             let (_, mut stream) = client
@@ -86,6 +93,10 @@ impl EtcdDispatcher {
                                 let key = kv.key_str().unwrap();
                                 if let Some(id) = key.strip_prefix(&prefix) {
                                     nodes.write().unwrap().remove(id);
+
+                                    let _ = sender
+                                        .send(DispatcherCallback::NodeTerminated(id.to_owned()))
+                                        .await;
                                 }
                             }
                         }

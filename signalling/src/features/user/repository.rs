@@ -15,7 +15,7 @@ use crate::core::{
 pub trait UserRepository {
     async fn get_user_by_id(&self, user_id: i32) -> Result<User, UserError>;
     async fn update_user(&self, user: User) -> Result<User, UserError>;
-    async fn get_username(&self, username: &str) -> Result<User, UserError>;
+    async fn get_username(&self, username: &str) -> Result<String, UserError>;
     async fn update_username(&self, user_id: i32, username: &str) -> Result<User, UserError>;
 }
 
@@ -70,15 +70,16 @@ impl UserRepository for UserRepositoryImpl {
         }
     }
 
-    async fn get_username(&self, username: &str) -> Result<User, UserError> {
+    async fn get_username(&self, username: &str) -> Result<String, UserError> {
         let mut conn = self.get_conn()?;
 
-        let user = users::table
+        let user_name = users::table
             .filter(users::user_name.eq(username))
-            .first::<User>(&mut conn);
+            .select(users::user_name)
+            .first::<String>(&mut conn);
 
-        match user {
-            Ok(user) => Ok(user),
+        match user_name {
+            Ok(user_name) => Ok(user_name),
             Err(_) => Err(UserError::UserNameNotFound(username.to_string())),
         }
     }

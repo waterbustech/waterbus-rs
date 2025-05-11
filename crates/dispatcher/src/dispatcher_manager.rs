@@ -38,12 +38,16 @@ pub struct DispatcherManager {
 
 impl DispatcherManager {
     pub async fn new(configs: DispatcherConfigs) -> Self {
-        GrpcServer::start(configs.dispatcher_port, configs.sender);
+        GrpcServer::start(configs.dispatcher_port, configs.sender.clone());
 
-        let etcd_dispatcher =
-            EtcdDispatcher::new(&[&configs.etcd_uri], "/sfu/nodes", &configs.group_id)
-                .await
-                .unwrap();
+        let etcd_dispatcher = EtcdDispatcher::new(
+            &[&configs.etcd_uri],
+            "/sfu/nodes",
+            &configs.group_id,
+            configs.sender,
+        )
+        .await
+        .unwrap();
 
         let sfu_grpc_client = SfuGrpcClient::default();
         let cache_manager = CacheManager::new(configs.redis_uri);

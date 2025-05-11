@@ -8,4 +8,5 @@ pub enum DispatcherCallback {
     SubscriberRenegotiate(SubscriberRenegotiateRequest),
     PublisherCandidate(PublisherCandidateRequest),
     SubscriberCandidate(SubscriberCandidateRequest),
+    NodeTerminated(String),
 }

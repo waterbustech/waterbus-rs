@@ -147,6 +147,9 @@ pub async fn handle_dispatcher_callback(
     // Non-blocking check for any new messages on the channel
     while let Ok(msg) = receiver.recv().await {
         match msg {
+            DispatcherCallback::NodeTerminated(node_id) => {
+                let _ = room_service.delete_participants_by_node(&node_id);
+            }
             DispatcherCallback::NewUserJoined(info) => {
                 let io = io.clone();
                 let room_service = room_service.clone();

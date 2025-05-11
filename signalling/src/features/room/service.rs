@@ -73,6 +73,8 @@ pub trait RoomService {
 
     async fn delete_participant(&self, participant_id: i32) -> Result<(), RoomError>;
 
+    async fn delete_participants_by_node(&self, node_id: &str) -> Result<(), RoomError>;
+
     async fn generate_unique_room_code(&self, max_attempts: usize) -> Result<String, RoomError>;
 }
 
@@ -406,6 +408,15 @@ impl RoomService for RoomServiceImpl {
         let _ = self
             .room_repository
             .delete_participant_by_id(participant_id)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn delete_participants_by_node(&self, node_id: &str) -> Result<(), RoomError> {
+        let _ = self
+            .room_repository
+            .delete_participants_by_node(node_id)
             .await?;
 
         Ok(())

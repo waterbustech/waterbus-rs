@@ -63,12 +63,9 @@ impl UserService for UserServiceImpl {
     }
 
     async fn check_username_exists(&self, username: &str) -> bool {
-        let user = self.repository.get_username(username).await;
+        let user_name = self.repository.get_username(username).await;
 
-        match user {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        return user_name.is_ok();
     }
 
     async fn update_username(&self, user_id: i32, username: &str) -> Result<User, UserError> {

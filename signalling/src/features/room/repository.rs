@@ -69,6 +69,8 @@ pub trait RoomRepository: Send + Sync {
     ) -> Result<ParticipantResponse, RoomError>;
 
     async fn delete_participant_by_id(&self, participant_id: i32) -> Result<(), RoomError>;
+
+    async fn delete_participants_by_node(&self, node_id: &str) -> Result<(), RoomError>;
 }
 
 #[derive(Debug, Clone)]
@@ -492,7 +494,6 @@ impl RoomRepository for RoomRepositoryImpl {
     async fn delete_participant_by_id(&self, participant_id: i32) -> Result<(), RoomError> {
         let mut conn = self.get_conn()?;
 
-        // Perform the deletion
         let deleted_rows = delete(participants::table)
             .filter(participants::id.eq(participant_id))
             .execute(&mut conn)
@@ -501,7 +502,6 @@ impl RoomRepository for RoomRepositoryImpl {
                 RoomError::UnexpectedError("Failed to delete participant".to_string())
             })?;
 
-        // Check if any rows were actually deleted
         if deleted_rows == 0 {
             return Err(RoomError::UnexpectedError(
                 "No participant found to delete".to_string(),
@@ -512,10 +512,30 @@ impl RoomRepository for RoomRepositoryImpl {
 
         match participant {
             Ok(participant) => {
-                // Successfully found the participant, print or use the participant
                 warn!("Participant found: {:?}", participant);
             }
             Err(_) => {}
+        }
+
+        Ok(())
+    }
+
+    async fn delete_participants_by_node(&self, node_id: &str) -> Result<(), RoomError> {
+        let mut conn = self.get_conn()?;
+
+        let deleted_rows = delete(participants::table)
+            .filter(participants::node_id.eq(node_id))
+            .execute(&mut conn)
+            .map_err(|err| {
+                warn!(
+                    "Failed to delete participants for node {}: {:?}",
+                    node_id, err
+                );
+                RoomError::UnexpectedError("Failed to delete participants by node".into())
+            })?;
+
+        if deleted_rows == 0 {
+            warn!("No participants found for node_id: {}", node_id);
         }
 
         Ok(())
