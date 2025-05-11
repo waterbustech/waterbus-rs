@@ -13,7 +13,7 @@ use crate::core::dtos::auth::login_dto::LoginDto;
 use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
 use crate::core::env::app_env::AppEnv;
 use crate::core::types::res::failed_response::FailedResponse;
-use crate::core::utils::aws_utils::get_s3_client;
+use crate::core::utils::aws_utils::get_storage_object_client;
 use crate::core::utils::jwt_utils::JwtUtils;
 
 use super::service::{AuthService, AuthServiceImpl};
@@ -83,23 +83,22 @@ async fn get_oauth_token(res: &mut Response, data: JsonBody<OauthRequestDto>) {
     }
 }
 
-/// Get AWS-S3 presigned url
+/// Get AWS-S3 or Cloudflare-R2 presigned url
 #[endpoint(tags("auth"))]
 async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
     let env = depot.obtain::<AppEnv>().unwrap();
     let bucket_name = env.clone().aws.bucket_name;
-    let region = env.clone().aws.region;
 
     let content_type = "image/png";
     // Generate unique file key
     let extension = content_type.split('/').last().unwrap_or("jpeg");
     let key = format!("{}.{}", Uuid::new_v4(), extension);
 
-    // Create AWS S3 client
-    let s3_client = get_s3_client(Some(region)).await;
+    // Create storage object client
+    let object_client = get_storage_object_client().await;
 
     // Prepare request
-    let req = s3_client
+    let req = object_client
         .put_object()
         .bucket(&bucket_name)
         .key(&key)

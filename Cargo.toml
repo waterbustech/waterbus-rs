@@ -50,6 +50,7 @@ validator = "0.20.0"
 validator_derive = "0.20.0"
 aws-sdk-s3 = { version = "1.82.0", features = ["rt-tokio"] }
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-credential-types = "1.2.3"
 uuid = "1.16.0"
 rustls = { version = "0.23.26", features = ["ring"] }
 nanoid = "0.4.0"

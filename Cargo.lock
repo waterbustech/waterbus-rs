@@ -5892,6 +5892,7 @@ dependencies = [
  "anyhow",
  "async-channel",
  "aws-config",
+ "aws-credential-types",
  "aws-sdk-s3",
  "bcrypt",
  "chrono",
