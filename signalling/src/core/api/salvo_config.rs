@@ -9,7 +9,7 @@ use salvo::{
     cors::{Any, Cors},
     oapi::{
         Contact, Info, License, SecurityRequirement, SecurityScheme,
-        security::{Http, HttpAuthScheme},
+        security::{ApiKeyValue, Http, HttpAuthScheme},
     },
     prelude::*,
     rate_limiter::{BasicQuota, FixedGuard, MokaStore, RateLimiter, RemoteIpIssuer},
@@ -18,9 +18,11 @@ use salvo::{
 
 use crate::{
     core::{
-        database::db::establish_connection, env::app_env::AppEnv,
-        socket::socket::get_socket_router, types::app_channel::AppEvent,
-        utils::jwt_utils::JwtUtils,
+        database::db::establish_connection,
+        env::app_env::AppEnv,
+        socket::socket::get_socket_router,
+        types::app_channel::AppEvent,
+        utils::{api_key_utils::api_key_middleware, jwt_utils::JwtUtils},
     },
     features::{
         auth::{repository::AuthRepositoryImpl, router::get_auth_router, service::AuthServiceImpl},
@@ -119,6 +121,7 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
         .hoop(Compression::new().min_length(1024))
         .hoop(limiter)
         .hoop(set_services)
+        .hoop(api_key_middleware())
         .push(auth_router)
         .push(chat_router)
         .push(user_router)
@@ -143,15 +146,25 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
     )
     .license(License::new("Apache-2.0"))
     .contact(Contact::new().name("Kai").email("lambiengcode@gmail.com"));
+
+    // Security scheme cho JWT (Bearer Auth)
     let http_auth_schema = Http::new(HttpAuthScheme::Bearer)
         .bearer_format("JWT")
         .description("jsonwebtoken");
-    let security_scheme = SecurityScheme::Http(http_auth_schema);
-    let security_requirement = SecurityRequirement::new("BearerAuth", ["*"]);
+    let security_scheme_bearer = SecurityScheme::Http(http_auth_schema);
+    let security_requirement_bearer = SecurityRequirement::new("BearerAuth", ["*"]);
+
+    // Security scheme cho API Key
+    let api_key_security_scheme = SecurityScheme::ApiKey(salvo::oapi::security::ApiKey::Header(
+        ApiKeyValue::with_description("X-API-Key", "API Key for authentication"),
+    ));
+    let security_requirement_api_key = SecurityRequirement::new("ApiKeyAuth", ["*"]);
+
     let doc = OpenApi::new("[v3] Waterbus Service API", "3.0.0")
         .info(doc_info.clone())
-        .add_security_scheme("BearerAuth", security_scheme)
-        .security([security_requirement])
+        .add_security_scheme("BearerAuth", security_scheme_bearer)
+        .add_security_scheme("ApiKeyAuth", api_key_security_scheme)
+        .security([security_requirement_bearer, security_requirement_api_key])
         .merge_router(&router);
 
     let router = Router::new()

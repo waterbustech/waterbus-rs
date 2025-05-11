@@ -6,6 +6,7 @@ pub struct AppEnv {
     pub etcd_addr: String,
     pub public_ip: String,
     pub app_port: u16,
+    pub client_api_key: String,
     pub db_uri: DbUri,
     pub redis_uri: RedisUri,
     pub aws: AwsConfig,
@@ -58,6 +59,7 @@ impl AppEnv {
             etcd_addr: env::var("ETCD_URI").expect("ETCD_URI must be set"),
             public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
             app_port: Self::get_env("APP_PORT", 3000),
+            client_api_key: env::var("CLIENT_SECRET_KEY").unwrap_or_else(|_| "".to_string()),
             udp_port_range: UdpPortRange {
                 port_min: Self::get_env("PORT_MIN_UDP", 19200),
                 port_max: Self::get_env("PORT_MAX_UDP", 19250),
