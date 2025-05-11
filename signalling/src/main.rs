@@ -22,19 +22,23 @@ async fn main() -> Result<(), anyhow::Error> {
     let config = RustlsConfig::new(Keycert::new().cert(cert.as_slice()).key(key.as_slice()));
 
     let listener = TcpListener::new(http_addr.clone());
+    let acceptor = QuinnListener::new(config.build_quinn_config().unwrap(), http_addr)
+        .join(listener)
+        .bind()
+        .await;
+
+    let server = Server::new(acceptor);
+    let handle = server.handle();
 
     tokio::spawn(async move {
-        let acceptor = QuinnListener::new(config.build_quinn_config().unwrap(), http_addr)
-            .join(listener)
-            .bind()
-            .await;
-
-        Server::new(acceptor)
-            .serve(get_salvo_service(&env).await)
-            .await;
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for ctrl_c");
+        tracing::info!("Signal received, shutting down gracefully...");
+        handle.stop_graceful(None);
     });
 
-    tokio::signal::ctrl_c().await?;
+    server.serve(get_salvo_service(&env).await).await;
 
     Ok(())
 }
