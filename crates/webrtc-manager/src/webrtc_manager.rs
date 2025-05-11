@@ -83,15 +83,18 @@ impl WebRTCManager {
         &self,
         client_id: &str,
         target_id: &str,
+        participant_id: &str,
+        room_id: &str,
         renegotiation_callback: RenegotiationCallback,
         ice_candidate_callback: IceCandidateCallback,
     ) -> Result<SubscribeResponse, WebRTCError> {
-        let client = self.get_client_by_id(client_id)?;
-
-        let client = client.clone();
-
-        let room_id = &client.room_id;
-        let participant_id = &client.participant_id;
+        self._add_client(
+            client_id,
+            WClient {
+                participant_id: participant_id.to_owned(),
+                room_id: room_id.to_owned(),
+            },
+        );
 
         let room = self._get_room_by_id(room_id)?;
         let mut room = room.lock().await;

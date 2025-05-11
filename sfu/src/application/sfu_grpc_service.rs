@@ -188,6 +188,8 @@ impl SfuService for SfuGrpcService {
             .subscribe(
                 &req.client_id,
                 &req.target_id,
+                &req.participant_id,
+                &req.room_id,
                 renegotiation_callback,
                 ice_candidate_callback,
             )

@@ -457,10 +457,14 @@ async fn handle_subscribe<A: Adapter>(
 ) {
     let client_id = socket.id.to_string();
     let target_id = data.target_id;
+    let participant_id = data.participant_id.clone();
+    let room_id = data.room_id.clone();
 
     let req = SubscribeRequest {
         client_id,
         target_id: target_id.clone(),
+        participant_id,
+        room_id,
     };
 
     let res = dispatcher_manager.subscribe(req).await;

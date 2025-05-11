@@ -19,6 +19,8 @@ message JoinRoomRequest {
 message SubscribeRequest {
     string clientId = 1;
     string targetId = 2;
+    string participantId = 3;
+    string roomId = 4;
 }
 
 message SetSubscriberSdpRequest {
