@@ -20,6 +20,7 @@ use crate::{
 };
 
 pub struct DispatcherConfigs {
+    pub group_id: String,
     pub dispatcher_port: u16,
     pub sfu_port: u16,
     pub redis_uri: String,
@@ -39,9 +40,10 @@ impl DispatcherManager {
     pub async fn new(configs: DispatcherConfigs) -> Self {
         GrpcServer::start(configs.dispatcher_port, configs.sender);
 
-        let etcd_dispatcher = EtcdDispatcher::new(&[&configs.etcd_uri], "/sfu/nodes")
-            .await
-            .unwrap();
+        let etcd_dispatcher =
+            EtcdDispatcher::new(&[&configs.etcd_uri], "/sfu/nodes", &configs.group_id)
+                .await
+                .unwrap();
 
         let sfu_grpc_client = SfuGrpcClient::default();
         let cache_manager = CacheManager::new(configs.redis_uri);

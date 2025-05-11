@@ -50,6 +50,7 @@ async fn main() -> Result<(), anyhow::Error> {
         app_env.etcd_addr,
         app_env.node_id.clone(),
         app_env.node_ip,
+        app_env.group_id,
         ttl,
     )
     .await?;

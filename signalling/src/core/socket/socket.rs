@@ -101,6 +101,7 @@ pub async fn get_socket_router(
         etcd_uri: env_clone.etcd_addr,
         dispatcher_port: env_clone.grpc_configs.dispatcher_port,
         sfu_port: env_clone.grpc_configs.sfu_port,
+        group_id: env_clone.group_id,
         sender: dispacher_sender,
     };
 

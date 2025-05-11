@@ -9,6 +9,7 @@ pub struct NodeMetadata {
     pub addr: String,
     pub cpu: f32, // e.g. 0.0 to 100.0
     pub ram: f32, // e.g. 0.0 to 100.0
+    group_id: String,
 }
 
 #[derive(Clone)]
@@ -16,15 +17,21 @@ pub struct EtcdDispatcher {
     client: Client,
     nodes: Arc<RwLock<HashMap<String, NodeMetadata>>>,
     prefix: String,
+    group_id: String,
 }
 
 impl EtcdDispatcher {
-    pub async fn new(etcd_endpoints: &[&str], prefix: &str) -> anyhow::Result<Self> {
+    pub async fn new(
+        etcd_endpoints: &[&str],
+        prefix: &str,
+        group_id: &str,
+    ) -> anyhow::Result<Self> {
         let client = Client::connect(etcd_endpoints, None).await?;
         let mut etcd = EtcdDispatcher {
             client,
             nodes: Arc::new(RwLock::new(HashMap::new())),
             prefix: prefix.to_string(),
+            group_id: group_id.to_string(),
         };
         etcd.sync_nodes().await?;
         etcd.start_watch();
@@ -99,6 +106,7 @@ impl EtcdDispatcher {
         let nodes = self.nodes.read().unwrap();
         nodes
             .iter()
+            .filter(|(_, meta)| meta.group_id == self.group_id)
             .min_by(|a, b| {
                 a.1.cpu
                     .partial_cmp(&b.1.cpu)

@@ -3,6 +3,7 @@ use std::env;
 
 #[derive(Debug, Clone)]
 pub struct AppEnv {
+    pub group_id: String,
     pub etcd_addr: String,
     pub public_ip: String,
     pub app_port: u16,
@@ -56,6 +57,7 @@ impl AppEnv {
         dotenv().ok();
 
         Self {
+            group_id: env::var("GROUP_ID").unwrap_or_else(|_| "waterbus-group-1".to_string()),
             etcd_addr: env::var("ETCD_URI").expect("ETCD_URI must be set"),
             public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
             app_port: Self::get_env("APP_PORT", 3000),

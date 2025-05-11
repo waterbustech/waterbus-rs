@@ -10,6 +10,7 @@ struct NodeMetadata {
     addr: String,
     cpu: f32,
     ram: f32,
+    group_id: String,
 }
 
 pub struct EtcdNode {
@@ -23,6 +24,7 @@ impl EtcdNode {
         etcd_addr: String,
         node_id: String,
         node_ip: String,
+        group_id: String,
         ttl: i64,
     ) -> anyhow::Result<Self> {
         let mut client = Client::connect([etcd_addr], None).await?;
@@ -33,6 +35,7 @@ impl EtcdNode {
             addr: node_ip.clone(),
             cpu: 0.0,
             ram: 0.0,
+            group_id: group_id.clone(),
         };
         let value = serde_json::to_string(&metadata)?;
 
@@ -77,6 +80,7 @@ impl EtcdNode {
                             addr: node_ip.clone(),
                             cpu: cpu_free,
                             ram: ram_free,
+                            group_id: group_id.clone(),
                         };
 
                         let new_value = serde_json::to_string(&updated_metadata).unwrap();

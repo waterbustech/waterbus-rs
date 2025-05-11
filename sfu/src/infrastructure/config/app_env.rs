@@ -4,6 +4,7 @@ use std::env;
 
 #[derive(Debug, Clone)]
 pub struct AppEnv {
+    pub group_id: String,
     pub public_ip: String,
     pub node_id: String,
     pub node_ip: String,
@@ -31,6 +32,7 @@ impl AppEnv {
         dotenv().ok();
 
         Self {
+            group_id: env::var("GROUP_ID").unwrap_or_else(|_| "waterbus-group-1".to_string()),
             public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
             node_id: Self::get_node_id(),
             node_ip: env::var("NODE_IP").expect("NODE_IP must be set"),
