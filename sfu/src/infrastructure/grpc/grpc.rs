@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tracing::info;
 use waterbus_proto::sfu_service_server::SfuServiceServer;
@@ -37,7 +40,10 @@ impl GrpcServer {
     ) -> anyhow::Result<()> {
         let addr = format!("[::1]:{}", port).parse().unwrap();
 
-        let dispatcher_grpc_client = DispatcherGrpcClient::new(dispatcher_host, dispatcher_port);
+        let dispatcher_grpc_client = Arc::new(Mutex::new(DispatcherGrpcClient::new(
+            dispatcher_host,
+            dispatcher_port,
+        )));
 
         let sfu_grpc_service = SfuGrpcService::new(configs, dispatcher_grpc_client, node_id);
 

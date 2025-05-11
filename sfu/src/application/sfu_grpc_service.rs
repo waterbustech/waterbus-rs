@@ -61,7 +61,7 @@ impl SfuService for SfuGrpcService {
                 let client_id = client_id.clone();
 
                 Box::pin(async move {
-                    let mut dispatcher = dispatcher.lock().await;
+                    let dispatcher = dispatcher.lock().await;
 
                     let _ = dispatcher
                         .on_publisher_candidate(PublisherCandidateRequest {
@@ -90,7 +90,7 @@ impl SfuService for SfuGrpcService {
             let node_id = node_id.clone();
 
             Box::pin(async move {
-                let mut dispatcher = dispatcher.lock().await;
+                let dispatcher = dispatcher.lock().await;
 
                 let _ = dispatcher
                     .new_user_joined(NewUserJoinedRequest {
@@ -147,10 +147,10 @@ impl SfuService for SfuGrpcService {
             let target_id = target_id.clone();
 
             Box::pin(async move {
-                let mut dispatcher = dispatcher.lock().await;
+                let dispatcher = dispatcher.lock().await;
 
                 let _ = dispatcher
-                    .subsriber_renegotiate(SubscriberRenegotiateRequest {
+                    .subscriber_renegotiate(SubscriberRenegotiateRequest {
                         sdp,
                         client_id,
                         target_id,
@@ -168,7 +168,7 @@ impl SfuService for SfuGrpcService {
             let target_id = target_id.clone();
 
             Box::pin(async move {
-                let mut dispatcher = dispatcher.lock().await;
+                let dispatcher = dispatcher.lock().await;
 
                 let _ = dispatcher
                     .on_subscriber_candidate(SubscriberCandidateRequest {
