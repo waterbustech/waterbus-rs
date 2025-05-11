@@ -14,6 +14,7 @@ pub struct AppEnv {
     pub jwt: JwtConfig,
     pub udp_port_range: UdpPortRange,
     pub grpc_configs: GrpcConfigs,
+    pub tls_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +93,10 @@ impl AppEnv {
                 dispatcher_host: Self::get_str_env("DISPATCHER_HOST", "http://[::1]".to_owned()),
                 dispatcher_port: Self::get_env("DISPATCHER_PORT", 50052),
             },
+            tls_enabled: std::env::var("TLS_ENABLED")
+                .unwrap_or_else(|_| "false".into())
+                .to_lowercase()
+                == "true",
         }
     }
 
