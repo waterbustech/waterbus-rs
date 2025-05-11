@@ -42,6 +42,7 @@ impl MoQWriter {
                 width: 1280,
                 height: 720,
                 video_src: None,
+                codec: "h264".to_owned(),
             }],
             audio_streams: vec![AudioStream {
                 name: "audio_0".to_string(),
@@ -57,7 +58,7 @@ impl MoQWriter {
 
         let moq_url = format!("http://localhost:4443/waterbus/{}", participant_id);
 
-        println!("[moq] url: {:?}", moq_url);
+        println!("[moq] published to namespace: {:?}", moq_url);
 
         {
             let mut state_lock = state.lock().unwrap();
@@ -143,6 +144,15 @@ impl MoQWriter {
         println!("Pipeline stopped.");
 
         Ok(())
+    }
+
+    pub fn set_video_codec(&self, codec: &str) {
+        let mut state_lock = self.state.lock().unwrap();
+
+        // Use &mut to get mutable references to the streams
+        for stream in &mut state_lock.video_streams {
+            stream.set_video_codec(codec);
+        }
     }
 
     pub fn stop(&self) {

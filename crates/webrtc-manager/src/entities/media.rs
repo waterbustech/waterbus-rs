@@ -88,6 +88,30 @@ impl Media {
             return AddTrackResponse::AddSimulcastTrackSuccess(existing_track_arc.clone());
         }
 
+        if rtp_track.kind() == RTPCodecType::Video {
+            let codec = match rtp_track
+                .codec()
+                .capability
+                .mime_type
+                .to_lowercase()
+                .as_str()
+            {
+                s if s.contains("vp8") => "vp8",
+                s if s.contains("vp9") => "vp9",
+                s if s.contains("av1") => "av1",
+                s if s.contains("h264") => "h264",
+                _ => "h264",
+            };
+
+            if let Some(hls_writer) = &self.hls_writer {
+                hls_writer.set_video_codec(codec);
+            }
+
+            if let Some(moq_writer) = &self.moq_writer {
+                moq_writer.set_video_codec(codec);
+            }
+        }
+
         let new_track = Arc::new(tokio::sync::RwLock::new(Track::new(
             rtp_track.clone(),
             room_id,
