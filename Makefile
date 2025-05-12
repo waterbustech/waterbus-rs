@@ -4,5 +4,7 @@ signalling:
 	cargo run --bin signalling
 sfu:
 	cargo run --bin sfu
-build-docker:
-	sudo docker build --platform=linux/amd64 -t lambiengcode/waterbus-rs .
+build-signalling:
+	sudo docker build --platform=linux/amd64 -f docker/dockerfile.signalling -t lambiengcode/waterbus-signalling .
+build-sfu:
+	sudo docker build --platform=linux/amd64 -f docker/dockerfile.sfu -t lambiengcode/waterbus-sfu .

@@ -38,7 +38,7 @@ rand = { workspace = true }
 serde_json = { workspace = true }
 bcrypt = { workspace = true }
 async-channel = { workspace = true }
+rust-embed = { workspace = true }
+
 dispatcher = { workspace = true }
 waterbus-proto = { workspace = true }
-egress-manager = { workspace = true }
-rust-embed = { workspace = true }

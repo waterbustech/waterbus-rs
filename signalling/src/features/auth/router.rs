@@ -41,7 +41,7 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
         .post(generate_presigned_url);
     let router = Router::new()
         .path("auth")
-        .post(login_with_social)
+        .post(create_token)
         .push(Router::with_hoop(jwt_utils.refresh_token_middleware()).get(refresh_token))
         .push(token_route)
         .push(presinged_route);
@@ -125,9 +125,9 @@ async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
     }
 }
 
-/// Login
+/// Create token
 #[endpoint(tags("auth"))]
-async fn login_with_social(res: &mut Response, data: JsonBody<LoginDto>, depot: &mut Depot) {
+async fn create_token(res: &mut Response, data: JsonBody<LoginDto>, depot: &mut Depot) {
     let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
     let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
 
@@ -149,7 +149,7 @@ async fn login_with_social(res: &mut Response, data: JsonBody<LoginDto>, depot: 
     }
 }
 
-/// Refresh Token
+/// Renew Token
 #[endpoint(tags("auth"))]
 async fn refresh_token(res: &mut Response, depot: &mut Depot) {
     let user_id = depot.get::<String>("user_id").unwrap();

@@ -4,6 +4,7 @@ use egress_manager::egress::moq_writer::MoQWriter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::broadcast::Sender;
 use tracing::debug;
 use webrtc::rtp::codecs::vp9::Vp9Packet;
 use webrtc::rtp::packetizer::Depacketizer;
@@ -39,6 +40,7 @@ pub struct Track {
     remote_tracks: Vec<Arc<TrackRemote>>,
     forward_tracks: Arc<DashMap<String, Arc<ForwardTrack>>>,
     acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
+    rtp_tx: Sender<webrtc::rtp::packet::Packet>,
 }
 
 impl Track {
@@ -66,6 +68,8 @@ impl Track {
             _ => false,
         };
 
+        let (rtp_tx, _) = tokio::sync::broadcast::channel(128);
+
         let handler = Track {
             id: track.id(),
             room_id,
@@ -79,6 +83,7 @@ impl Track {
             remote_tracks: vec![track.clone()],
             forward_tracks: Arc::new(DashMap::new()),
             acceptable_map: Arc::new(DashMap::new()),
+            rtp_tx,
         };
 
         handler.rebuild_acceptable_map();
@@ -108,13 +113,17 @@ impl Track {
             return Err(WebRTCError::FailedToAddTrack);
         }
 
+        let receiver = self.rtp_tx.subscribe();
+
         let forward_track = Arc::new(ForwardTrack::new(
             self.capability.clone(),
             self.id.clone(),
             self.stream_id.clone(),
+            receiver,
         ));
 
-        self.forward_tracks.insert(id.to_owned(), forward_track.clone());
+        self.forward_tracks
+            .insert(id.to_owned(), forward_track.clone());
 
         Ok(forward_track)
     }

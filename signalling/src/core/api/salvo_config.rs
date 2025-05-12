@@ -118,7 +118,7 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
         .hoop(affix_state::inject(message_sender))
         .hoop(CatchPanic::new())
         .hoop(CachingHeaders::new())
-        .hoop(Compression::new().min_length(1024))
+        .hoop(Compression::new().min_length(2048)) // 2 KB
         .hoop(limiter)
         .hoop(set_services)
         .hoop(api_key_middleware())
