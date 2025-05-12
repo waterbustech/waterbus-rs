@@ -228,7 +228,7 @@ impl Subscriber {
             let track = remote_track
                 .read()
                 .await
-                .new_forward_track(self.user_id.clone())?;
+                .new_forward_track(&self.user_id.clone())?;
             track
         };
 

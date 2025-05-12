@@ -103,8 +103,8 @@ impl Track {
         self.forward_tracks.clear();
     }
 
-    pub fn new_forward_track(&self, id: String) -> Result<Arc<ForwardTrack>, WebRTCError> {
-        if self.forward_tracks.contains_key(&id) {
+    pub fn new_forward_track(&self, id: &str) -> Result<Arc<ForwardTrack>, WebRTCError> {
+        if self.forward_tracks.contains_key(id) {
             return Err(WebRTCError::FailedToAddTrack);
         }
 
@@ -114,7 +114,7 @@ impl Track {
             self.stream_id.clone(),
         ));
 
-        self.forward_tracks.insert(id, forward_track.clone());
+        self.forward_tracks.insert(id.to_owned(), forward_track.clone());
 
         Ok(forward_track)
     }
