@@ -17,14 +17,6 @@ use crate::core::utils::jwt_utils::JwtUtils;
 use super::service::{AuthService, AuthServiceImpl};
 
 #[derive(Serialize, Deserialize)]
-struct OauthResponse {
-    access_token: String,
-    token_type: String,
-    expires_in: u64,
-    refresh_token: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
 struct PresignedResponse {
     #[serde(rename = "presignedUrl")]
     presigned_url: String,
