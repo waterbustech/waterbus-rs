@@ -25,7 +25,6 @@ time = { workspace = true }
 jsonwebtoken = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
 validator = { workspace = true }
 validator_derive = { workspace = true }
 aws-sdk-s3 = { workspace = true, features = ["rt-tokio"] }

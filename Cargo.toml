@@ -45,7 +45,6 @@ time = "0.3.41"
 jsonwebtoken = "9.3.1"
 anyhow = "1.0.97"
 thiserror = "2.0.12"
-reqwest = { version = "0.12.15", features = ["json"] }
 validator = "0.20.0"
 validator_derive = "0.20.0"
 aws-sdk-s3 = { version = "1.82.0", features = ["rt-tokio"] }

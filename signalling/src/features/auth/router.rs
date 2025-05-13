@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::types::ObjectCannedAcl;
-use reqwest::{Client, StatusCode};
 use salvo::oapi::extract::JsonBody;
 use salvo::prelude::*;
 use salvo::{Response, Router, oapi::endpoint};
@@ -10,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::core::dtos::auth::login_dto::LoginDto;
-use crate::core::dtos::auth::oauth_dto::OauthRequestDto;
 use crate::core::env::app_env::AppEnv;
 use crate::core::types::res::failed_response::FailedResponse;
 use crate::core::utils::aws_utils::get_storage_object_client;
@@ -33,9 +31,6 @@ struct PresignedResponse {
 }
 
 pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
-    let token_route = Router::with_hoop(jwt_utils.auth_middleware())
-        .path("token")
-        .post(get_oauth_token);
     let presinged_route = Router::with_hoop(jwt_utils.auth_middleware())
         .path("presigned-url")
         .post(generate_presigned_url);
@@ -43,44 +38,9 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
         .path("auth")
         .post(create_token)
         .push(Router::with_hoop(jwt_utils.refresh_token_middleware()).get(refresh_token))
-        .push(token_route)
         .push(presinged_route);
 
     router
-}
-
-/// Get Oauth Token
-#[endpoint(tags("auth"))]
-async fn get_oauth_token(res: &mut Response, data: JsonBody<OauthRequestDto>) {
-    let oauth_req: OauthRequestDto = data.0;
-
-    let client = Client::new();
-    let resq = client
-        .post("https://oauth2.googleapis.com/token")
-        .form(&oauth_req)
-        .send()
-        .await;
-
-    match resq {
-        Ok(response) => {
-            let oauth_response: Result<OauthResponse, reqwest::Error> = response.json().await;
-
-            match oauth_response {
-                Ok(oauth) => {
-                    res.status_code(StatusCode::CREATED);
-                    res.render(Json(oauth));
-                }
-                Err(_) => {
-                    res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-                    res.render("Failed to convert response to OathResponse");
-                }
-            }
-        }
-        Err(_) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render("Failed to get OAuth token")
-        }
-    }
 }
 
 /// Get AWS-S3 or Cloudflare-R2 presigned url

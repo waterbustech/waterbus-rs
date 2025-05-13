@@ -215,7 +215,7 @@ fn update_manifest(state: &mut StreamState) {
             })
             .collect(),
         end_list: false,
-        playlist_type: None,
+        playlist_type: Some(m3u8_rs::MediaPlaylistType::Vod),
         i_frames_only: false,
         start: None,
         independent_segments: true,
@@ -349,12 +349,6 @@ fn setup_appsink(appsink: &gst_app::AppSink, name: &str, path: &Path, is_video: 
                     ))
                     .unwrap();
 
-                // println!(
-                //     "wrote segment with date time {} to {}",
-                //     date_time,
-                //     path.display()
-                // );
-
                 state.segments.push_back(Segment {
                     duration,
                     path: basename.to_string(),
@@ -377,9 +371,6 @@ fn setup_appsink(appsink: &gst_app::AppSink, name: &str, path: &Path, is_video: 
                         "AppSink for stream '{}' received EOS signal.",
                         name_clone.as_ref()
                     );
-                    // tracing::info!("AppSink for stream '{}' received EOS signal.", name_clone.as_ref()); // Using tracing macro
-                    // You might want to signal something to a higher level
-                    // or clean up resources associated with this specific stream.
                 }
             })
             .build(),

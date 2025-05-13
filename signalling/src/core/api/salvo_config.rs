@@ -2,7 +2,6 @@ use diesel::{
     PgConnection,
     r2d2::{ConnectionManager, Pool},
 };
-use reqwest::Method;
 use rust_embed::RustEmbed;
 use salvo::{
     catcher::Catcher,
@@ -100,13 +99,7 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
 
     let cors = Cors::new()
         .allow_origin(Any)
-        .allow_methods(vec![
-            Method::GET,
-            Method::POST,
-            Method::DELETE,
-            Method::PUT,
-            Method::OPTIONS,
-        ])
+        .allow_methods(Any)
         .allow_headers(vec!["Authorization", "Content-Type"])
         .into_handler();
 
