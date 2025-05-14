@@ -5,9 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::Sender;
+use tokio_util::bytes::BytesMut;
 use tracing::debug;
-use webrtc::rtp::codecs::vp9::Vp9Packet;
-use webrtc::rtp::packetizer::Depacketizer;
 use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
 use webrtc::track::track_remote::TrackRemote;
 use webrtc::util::Marshal;
@@ -15,7 +14,7 @@ use webrtc::util::Marshal;
 use crate::entities::quality::TrackQuality;
 use crate::errors::WebRTCError;
 
-use super::forward_track::ForwardTrack;
+use super::forward_track::{ForwardTrack, RtpForwardInfo};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CodecType {
@@ -40,7 +39,7 @@ pub struct Track {
     remote_tracks: Vec<Arc<TrackRemote>>,
     forward_tracks: Arc<DashMap<String, Arc<ForwardTrack>>>,
     acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
-    rtp_tx: Sender<webrtc::rtp::packet::Packet>,
+    rtp_tx: Sender<RtpForwardInfo>,
 }
 
 impl Track {
@@ -115,12 +114,12 @@ impl Track {
 
         let receiver = self.rtp_tx.subscribe();
 
-        let forward_track = Arc::new(ForwardTrack::new(
+        let forward_track = ForwardTrack::new(
             self.capability.clone(),
             self.id.clone(),
             self.stream_id.clone(),
             receiver,
-        ));
+        );
 
         self.forward_tracks
             .insert(id.to_owned(), forward_track.clone());
@@ -202,11 +201,10 @@ impl Track {
         moq_writer: Option<Arc<MoQWriter>>,
         kind: RTPCodecType,
     ) {
-        let forward_tracks = Arc::clone(&self.forward_tracks);
-        let current_quality = TrackQuality::from_str(remote_track.rid());
+        let sender = self.rtp_tx.clone();
+        let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()));
         let acceptable_map = Arc::clone(&self.acceptable_map);
         let is_svc = self.is_svc;
-        let codec_type = self.codec_type.clone();
 
         tokio::spawn(async move {
             let is_video = kind == RTPCodecType::Video;
@@ -217,89 +215,34 @@ impl Track {
 
                 match result {
                     Ok(Ok((rtp, _))) => {
+                        let rtp = Arc::new(rtp);
+
                         if !rtp.payload.is_empty() {
-                            for entry in forward_tracks.iter() {
-                                let forward_track = entry.value().clone();
-                                let desired_quality = forward_track.get_desired_quality();
+                            let _ = sender.send(RtpForwardInfo {
+                                packet: Arc::clone(&rtp),
+                                acceptable_map: acceptable_map.clone(),
+                                is_svc: is_svc,
+                                track_quality: (*current_quality).clone(),
+                            });
+                        }
 
-                                // If subscriber request to not receive rtp, let's skip it
-                                // video view in their device maybe invisible
-                                if desired_quality == TrackQuality::None {
-                                    continue;
+                        if hls_writer.is_some() || moq_writer.is_some() {
+                            if let Ok(header_bytes) = rtp.header.marshal() {
+                                let mut buf =
+                                    BytesMut::with_capacity(header_bytes.len() + rtp.payload.len());
+                                buf.extend_from_slice(&header_bytes);
+                                buf.extend_from_slice(&rtp.payload);
+
+                                if let Some(writer) = &hls_writer {
+                                    let _ = writer.write_rtp(&buf, is_video);
                                 }
 
-                                // For simulcast, use the existing quality check
-                                if !is_svc
-                                    && !is_video
-                                    && !Self::is_acceptable_track(
-                                        &acceptable_map,
-                                        current_quality.clone(),
-                                        desired_quality.clone(),
-                                    )
-                                {
-                                    continue;
+                                if let Some(writer) = &moq_writer {
+                                    let _ = writer.write_rtp(&buf, is_video);
                                 }
-
-                                // For SVC, check if we should forward this layer
-                                let should_forward = if is_svc && is_video {
-                                    match codec_type {
-                                        CodecType::VP9 => {
-                                            let mut vp9_packet = Vp9Packet::default();
-                                            let frame_fragment =
-                                                vp9_packet.depacketize(&rtp.payload);
-
-                                            match frame_fragment {
-                                                Ok(_) => {
-                                                    let should_fwd = desired_quality
-                                                        .should_forward_vp9_svc(&vp9_packet);
-
-                                                    should_fwd
-                                                }
-                                                Err(err) => {
-                                                    println!(
-                                                        "Failed to vp9_packet.depacketize: {}",
-                                                        err
-                                                    );
-
-                                                    true
-                                                }
-                                            }
-                                        }
-                                        CodecType::AV1 => true,
-                                        _ => true,
-                                    }
-                                } else {
-                                    true
-                                };
-
-                                if !should_forward {
-                                    continue;
-                                }
-
-                                let rtp_clone = rtp.clone();
-                                // Spawn a new task for each forward track to avoid blocking
-                                tokio::spawn(async move {
-                                    forward_track.write_rtp(&rtp_clone).await;
-                                });
+                            } else {
+                                debug!("Failed to marshal RTP header");
                             }
-                        }
-
-                        // If HLS writer exists, forward the RTP packet for HLS
-                        if let Some(writer) = &hls_writer {
-                            let mut rtp_packet_data = Vec::new();
-                            rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
-                            rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
-
-                            let _ = writer.write_rtp(&rtp_packet_data, is_video);
-                        }
-
-                        // If MoQ writer exists, forward the RTP packet for MoQ
-                        if let Some(writer) = &moq_writer {
-                            let mut rtp_packet_data = Vec::new();
-                            rtp_packet_data.extend_from_slice(&rtp.header.marshal().unwrap());
-                            rtp_packet_data.extend_from_slice(rtp.payload.as_ref());
-
-                            let _ = writer.write_rtp(&rtp_packet_data, is_video);
                         }
                     }
                     Ok(Err(err)) => {
@@ -319,16 +262,5 @@ impl Track {
 
             debug!("[track] exit track loop {}", remote_track.rid());
         });
-    }
-
-    fn is_acceptable_track(
-        acceptable_map: &Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
-        current: TrackQuality,
-        desired: TrackQuality,
-    ) -> bool {
-        acceptable_map
-            .get(&(current, desired))
-            .map(|v| *v)
-            .unwrap_or(false)
     }
 }

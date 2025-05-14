@@ -5,14 +5,15 @@ pub fn generate_room_code() -> String {
     let mut rng = rng();
 
     fn random_alpha_string(len: usize, rng: &mut impl Rng) -> String {
-        (0..len)
-            .map(|_| {
-                let c = rng.sample(Alphanumeric);
-                c.to_ascii_lowercase() as char
-            })
-            .filter(|c| c.is_ascii_alphabetic())
-            .take(len)
-            .collect()
+        let mut result = String::new();
+        while result.len() < len {
+            let c = rng.sample(Alphanumeric);
+            let c = (c as char).to_ascii_lowercase();
+            if c.is_ascii_alphabetic() {
+                result.push(c);
+            }
+        }
+        result
     }
 
     format!(

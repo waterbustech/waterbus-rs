@@ -9,5 +9,5 @@ pub struct CreateRoomDto {
     pub title: String,
 
     #[validate(length(min = 6))]
-    pub password: String,
+    pub password: Option<String>,
 }

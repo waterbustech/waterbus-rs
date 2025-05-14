@@ -1,5 +1,5 @@
 use diesel::{
-    BelongingToDsl, ExpressionMethods, GroupedBy, JoinOnDsl, NullableExpressionMethods,
+    BelongingToDsl, Connection, ExpressionMethods, GroupedBy, JoinOnDsl, NullableExpressionMethods,
     PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
     dsl::delete,
     insert_into,
@@ -9,9 +9,13 @@ use diesel::{
 use salvo::async_trait;
 use tracing::warn;
 
+use chrono::NaiveDateTime;
+
 use crate::core::{
     database::schema::{members, messages, participants, rooms, users},
-    entities::models::{Member, Message, NewRoom, Participant, Room, RoomStatusEnum, User},
+    entities::models::{
+        Member, MembersRoleEnum, Message, NewRoom, Participant, Room, RoomStatusEnum, User,
+    },
     types::{
         errors::{general::GeneralError, room_error::RoomError},
         res::{
@@ -42,6 +46,13 @@ pub trait RoomRepository: Send + Sync {
     async fn get_room_by_code(&self, room_code: &str) -> Result<RoomResponse, RoomError>;
 
     async fn create_room(&self, room: NewRoom<'_>) -> Result<RoomResponse, RoomError>;
+
+    async fn create_room_with_member(
+        &self,
+        room: NewRoom<'_>,
+        user: User,
+        created_at: NaiveDateTime,
+    ) -> Result<RoomResponse, RoomError>;
 
     async fn update_room(&self, room: Room) -> Result<RoomResponse, RoomError>;
 
@@ -343,6 +354,47 @@ impl RoomRepository for RoomRepositoryImpl {
         };
 
         Ok(room_response)
+    }
+
+    async fn create_room_with_member(
+        &self,
+        room: NewRoom<'_>,
+        user: User,
+        created_at: NaiveDateTime,
+    ) -> Result<RoomResponse, RoomError> {
+        let mut conn = self.get_conn()?;
+
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            let new_room = insert_into(rooms::table)
+                .values(&room)
+                .returning(Room::as_select())
+                .get_result(conn)?;
+
+            let new_member = NewMember {
+                room_id: &new_room.id,
+                user_id: Some(user.id),
+                role: MembersRoleEnum::Host as i32,
+                created_at: created_at,
+            };
+
+            let new_member = insert_into(members::table)
+                .values(&new_member)
+                .returning(Member::as_select())
+                .get_result(conn)?;
+
+            let response = RoomResponse {
+                room: new_room,
+                members: vec![MemberResponse {
+                    member: new_member,
+                    user: Some(user),
+                }],
+                participants: vec![],
+                latest_message: None,
+            };
+
+            Ok(response)
+        })
+        .map_err(|err| RoomError::UnexpectedError(err.to_string()))
     }
 
     async fn update_room(&self, room: Room) -> Result<RoomResponse, RoomError> {

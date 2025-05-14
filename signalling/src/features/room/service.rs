@@ -100,10 +100,30 @@ impl RoomService for RoomServiceImpl {
         data: CreateRoomDto,
         user_id: i32,
     ) -> Result<RoomResponse, RoomError> {
-        let now = Utc::now().naive_utc();
-        let password_hashed = hash_password(&data.password);
+        let user = self
+            .user_repository
+            .get_user_by_id(user_id)
+            .await
+            .map_err(|_| RoomError::UnexpectedError("User not found".into()))?;
 
-        let code = self.generate_unique_room_code(10).await?;
+        let (password_hashed, code) = tokio::try_join!(
+            {
+                let password = data.password.clone();
+                async move {
+                    match password {
+                        Some(pwd) => tokio::task::spawn_blocking(move || hash_password(&pwd))
+                            .await
+                            .map_err(|_| {
+                                RoomError::UnexpectedError("Failed to hash password".into())
+                            }),
+                        None => Ok("".to_string()),
+                    }
+                }
+            },
+            self.generate_unique_room_code(10),
+        )?;
+
+        let now = Utc::now().naive_utc();
 
         let new_room = NewRoom {
             title: &data.title,
@@ -116,20 +136,12 @@ impl RoomService for RoomServiceImpl {
             type_: RoomType::Conferencing as i32,
         };
 
-        let mut new_room = self.room_repository.create_room(new_room).await?;
+        let new_room = self
+            .room_repository
+            .create_room_with_member(new_room, user, now)
+            .await;
 
-        let new_member = NewMember {
-            room_id: &new_room.room.id,
-            user_id: Some(user_id),
-            role: MembersRoleEnum::Host as i32,
-            created_at: now,
-        };
-
-        let new_member = self.room_repository.create_member(new_member).await?;
-
-        new_room.members = vec![new_member];
-
-        Ok(new_room)
+        new_room
     }
 
     async fn update_room(
