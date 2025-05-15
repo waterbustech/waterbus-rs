@@ -5,7 +5,7 @@ use validator_derive::Validate;
 #[derive(Debug, Serialize, Deserialize, ToSchema, Validate, Clone)]
 #[serde(rename_all = "camelCase")]
 #[salvo(schema(example = json!({"fullName": "Kai", "externalId": "kai@waterbus"})))]
-pub struct LoginDto {
+pub struct CreateTokenDto {
     #[validate(length(min = 1))]
     pub full_name: String,
 

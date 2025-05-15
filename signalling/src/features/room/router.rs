@@ -118,7 +118,7 @@ async fn get_rooms_by_user(res: &mut Response, pagination_dto: PaginationDto, de
     }
 }
 
-/// Retrieves rooms that have been archived.
+/// Fetches rooms that have been deactivated.
 #[endpoint(tags("room"))]
 async fn get_inactive_rooms(res: &mut Response, pagination_dto: PaginationDto, depot: &mut Depot) {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
@@ -145,7 +145,7 @@ async fn get_inactive_rooms(res: &mut Response, pagination_dto: PaginationDto, d
     }
 }
 
-/// Creates a new room with specified parameters.
+/// Creates a new room
 #[endpoint(tags("room"))]
 async fn create_room(res: &mut Response, data: JsonBody<CreateRoomDto>, depot: &mut Depot) {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
@@ -170,7 +170,7 @@ async fn create_room(res: &mut Response, data: JsonBody<CreateRoomDto>, depot: &
     }
 }
 
-/// Updates an existing room’s details.
+/// Updates an existing room
 #[endpoint(tags("room"))]
 async fn update_room(
     res: &mut Response,
@@ -297,7 +297,7 @@ async fn join_room(
     }
 }
 
-/// Archives a room, marking it as completed or no longer active.
+/// Deactivates a room, marking it as completed or no longer active.
 #[endpoint(tags("room"))]
 async fn deactivate_room(res: &mut Response, room_id: PathParam<i32>, depot: &mut Depot) {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();

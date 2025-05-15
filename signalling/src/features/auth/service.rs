@@ -1,5 +1,5 @@
 use crate::core::{
-    dtos::auth::login_dto::LoginDto,
+    dtos::auth::create_token_dto::CreateTokenDto,
     entities::models::NewUser,
     types::{errors::auth_error::AuthError, res::auth_response::AuthResponse},
     utils::{id_utils::generate_username, jwt_utils::JwtUtils},
@@ -13,7 +13,7 @@ use super::repository::{AuthRepository, AuthRepositoryImpl};
 pub trait AuthService: Send + Sync {
     async fn login_with_social(
         &self,
-        data: LoginDto,
+        data: CreateTokenDto,
         jwt_utils: JwtUtils,
     ) -> Result<AuthResponse, AuthError>;
 
@@ -41,7 +41,7 @@ impl AuthServiceImpl {
 impl AuthService for AuthServiceImpl {
     async fn login_with_social(
         &self,
-        data: LoginDto,
+        data: CreateTokenDto,
         jwt_utils: JwtUtils,
     ) -> Result<AuthResponse, AuthError> {
         let login_dto = data.clone();

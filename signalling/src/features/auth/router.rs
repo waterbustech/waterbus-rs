@@ -8,7 +8,7 @@ use salvo::{Response, Router, oapi::endpoint};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::core::dtos::auth::login_dto::LoginDto;
+use crate::core::dtos::auth::create_token_dto::CreateTokenDto;
 use crate::core::env::app_env::AppEnv;
 use crate::core::types::res::failed_response::FailedResponse;
 use crate::core::utils::aws_utils::get_storage_object_client;
@@ -35,7 +35,7 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
     router
 }
 
-/// Get AWS-S3 or Cloudflare-R2 presigned url
+/// Get presigned url
 #[endpoint(tags("auth"))]
 async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
     let env = depot.obtain::<AppEnv>().unwrap();
@@ -79,7 +79,7 @@ async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
 
 /// Create token
 #[endpoint(tags("auth"))]
-async fn create_token(res: &mut Response, data: JsonBody<LoginDto>, depot: &mut Depot) {
+async fn create_token(res: &mut Response, data: JsonBody<CreateTokenDto>, depot: &mut Depot) {
     let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
     let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
 
