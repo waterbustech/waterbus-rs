@@ -49,7 +49,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let etcd_node = EtcdNode::register(
         app_env.etcd_addr,
         app_env.node_id.clone(),
-        app_env.node_ip,
+        app_env.grpc_configs.sfu_host,
         app_env.group_id,
         ttl,
     )

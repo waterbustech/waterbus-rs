@@ -7,7 +7,6 @@ pub struct AppEnv {
     pub group_id: String,
     pub public_ip: String,
     pub node_id: String,
-    pub node_ip: String,
     pub etcd_addr: String,
     pub grpc_configs: GrpcConfigs,
     pub udp_port_range: UdpPortRange,
@@ -35,7 +34,6 @@ impl AppEnv {
             group_id: env::var("GROUP_ID").unwrap_or_else(|_| "waterbus-group-1".to_string()),
             public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
             node_id: Self::get_node_id(),
-            node_ip: env::var("NODE_IP").expect("NODE_IP must be set"),
             etcd_addr: env::var("ETCD_URI").expect("ETCD_URI must be set"),
             udp_port_range: UdpPortRange {
                 port_min: Self::get_env("PORT_MIN_UDP", 19200),
