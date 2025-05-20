@@ -38,7 +38,7 @@ impl GrpcServer {
         configs: WebRTCManagerConfigs,
         node_id: String,
     ) -> anyhow::Result<()> {
-        let addr = format!("[::1]:{}", port).parse().unwrap();
+        let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
         let dispatcher_grpc_client = Arc::new(Mutex::new(DispatcherGrpcClient::new(
             dispatcher_host,

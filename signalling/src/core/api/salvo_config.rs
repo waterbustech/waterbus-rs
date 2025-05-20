@@ -100,7 +100,7 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
     let cors = Cors::new()
         .allow_origin(Any)
         .allow_methods(Any)
-        .allow_headers(vec!["Authorization", "Content-Type"])
+        .allow_headers(vec!["Authorization", "Content-Type", "X-API-Key"])
         .into_handler();
 
     let router = Router::with_path("busapi/v3")

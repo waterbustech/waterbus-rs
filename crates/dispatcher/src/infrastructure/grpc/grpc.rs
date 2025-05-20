@@ -22,7 +22,7 @@ impl GrpcServer {
     }
 
     async fn start_server(port: u16, sender: Sender<DispatcherCallback>) -> anyhow::Result<()> {
-        let addr = format!("[::1]:{}", port).parse().unwrap();
+        let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
         let dispatcher_grpc_service = DispatcherGrpcService::new(sender);
 

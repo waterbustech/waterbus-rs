@@ -30,5 +30,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=builder /usr/src/app/target/release/sfu /usr/local/bin/sfu
 
+EXPOSE 19000-20000/udp
 EXPOSE 50051
+
 CMD ["/usr/local/bin/sfu"]
