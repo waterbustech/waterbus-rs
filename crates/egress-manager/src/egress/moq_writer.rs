@@ -8,7 +8,9 @@ use anyhow::Ok;
 use gst::prelude::{ElementExt, ElementExtManual, GstBinExt, GstObjectExt, PipelineExt};
 use tokio::task;
 
-use super::gst_utils::{AudioStream, State, VideoStream};
+use crate::egress::utils::{AudioStreamExt, VideoStreamExt, init};
+
+use super::utils::{AudioStream, State, VideoStream};
 
 #[derive(Debug, Clone)]
 pub struct MoQWriter {
@@ -21,9 +23,7 @@ pub struct MoQWriter {
 
 impl MoQWriter {
     pub fn new(participant_id: &str) -> Result<Self, anyhow::Error> {
-        gst::init()?;
-        gstfmp4::plugin_register_static()?;
-        gstmoq::plugin_register_static()?;
+        init()?;
 
         let dir = "./hls/moq";
         let path = PathBuf::from(dir);

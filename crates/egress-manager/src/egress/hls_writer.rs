@@ -11,7 +11,7 @@ use gst::{
 };
 use tokio::task;
 
-use super::gst_utils::{AudioStream, State, VideoStream};
+use super::utils::{AudioStream, AudioStreamExt, State, VideoStream, VideoStreamExt};
 
 #[derive(Debug, Clone)]
 pub struct HlsWriter {
