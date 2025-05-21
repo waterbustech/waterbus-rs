@@ -31,13 +31,13 @@ pub fn get_room_router(jwt_utils: JwtUtils) -> Router {
         .path("rooms")
         .post(create_room)
         .get(get_rooms_by_user)
+        .push(Router::with_path("inactive").get(get_inactive_rooms))
         .push(Router::with_path("/{code}").get(get_room_by_code))
         .push(
             Router::with_path("/{room_id}")
                 .put(update_room)
                 .delete(leave_room),
         )
-        .push(Router::with_path("inactive").get(get_inactive_rooms))
         .push(member_router)
         .push(join_router)
         .push(deactivate_router);

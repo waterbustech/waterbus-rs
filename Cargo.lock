@@ -1770,6 +1770,9 @@ name = "egress-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
  "chrono",
  "gst-plugin-fmp4",
  "gstreamer 0.24.0",

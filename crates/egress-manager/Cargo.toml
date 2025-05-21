@@ -17,3 +17,6 @@ gst-plugin-fmp4 = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+aws-sdk-s3 = { workspace = true, features = ["rt-tokio"] }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-credential-types = { workspace = true }
