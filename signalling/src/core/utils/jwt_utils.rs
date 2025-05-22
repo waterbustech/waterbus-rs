@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::core::env::app_env::AppEnv;
-use crate::core::types::res::failed_response::FailedResponse;
+use crate::core::types::errors::auth_error::AuthError;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
@@ -104,16 +104,12 @@ impl JwtUtils {
                     }
                     Err(_) => {
                         res.status_code(StatusCode::UNAUTHORIZED);
-                        return res.render(Json(FailedResponse {
-                            message: "Failed to decode token".to_string(),
-                        }));
+                        return res.render(Json(AuthError::InvalidToken));
                     }
                 }
             } else {
                 res.status_code(StatusCode::UNAUTHORIZED);
-                return res.render(Json(FailedResponse {
-                    message: "Missing bearer token".to_string(),
-                }));
+                return res.render(Json(AuthError::InvalidToken));
             }
         }
         middleware
@@ -137,16 +133,12 @@ impl JwtUtils {
                     }
                     Err(_) => {
                         res.status_code(StatusCode::UNAUTHORIZED);
-                        return res.render(Json(FailedResponse {
-                            message: "Failed to decode token".to_string(),
-                        }));
+                        return res.render(Json(AuthError::InvalidToken));
                     }
                 }
             } else {
                 res.status_code(StatusCode::UNAUTHORIZED);
-                return res.render(Json(FailedResponse {
-                    message: "Missing bearer token".to_string(),
-                }));
+                return res.render(Json(AuthError::InvalidToken));
             }
         }
         middleware

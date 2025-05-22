@@ -4,6 +4,7 @@
 
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use salvo::oapi::ToSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::database::schema::*;
@@ -71,7 +72,15 @@ pub enum ParticipantsStatusEnum {
 }
 
 #[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
+    Queryable,
+    Selectable,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    QueryableByName,
+    Identifiable,
+    ToSchema,
 )]
 #[diesel(table_name = rooms)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +111,7 @@ pub struct Room {
     QueryableByName,
     Associations,
     Identifiable,
+    ToSchema,
 )]
 #[diesel(table_name = members)]
 #[diesel(belongs_to(Room))]
@@ -128,6 +138,7 @@ pub struct Member {
     QueryableByName,
     Associations,
     Identifiable,
+    ToSchema,
 )]
 #[diesel(table_name = messages)]
 #[diesel(belongs_to(Room, foreign_key = room_id))]
@@ -157,6 +168,7 @@ pub struct Message {
     QueryableByName,
     Associations,
     Identifiable,
+    ToSchema,
 )]
 #[diesel(table_name = participants)]
 #[serde(rename_all = "camelCase")]
@@ -175,7 +187,15 @@ pub struct Participant {
 }
 
 #[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, Deserialize, QueryableByName, Identifiable,
+    Queryable,
+    Selectable,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    QueryableByName,
+    Identifiable,
+    ToSchema,
 )]
 #[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]

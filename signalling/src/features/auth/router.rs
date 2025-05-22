@@ -5,21 +5,17 @@ use aws_sdk_s3::types::ObjectCannedAcl;
 use salvo::oapi::extract::JsonBody;
 use salvo::prelude::*;
 use salvo::{Response, Router, oapi::endpoint};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::core::dtos::auth::create_token_dto::CreateTokenDto;
-use crate::core::types::res::failed_response::FailedResponse;
+use crate::core::types::errors::auth_error::AuthError;
+use crate::core::types::responses::auth_response::AuthResponse;
+use crate::core::types::responses::failed_response::FailedResponse;
+use crate::core::types::responses::presigned_url_response::PresignedResponse;
 use crate::core::utils::aws_utils::get_storage_object_client;
 use crate::core::utils::jwt_utils::JwtUtils;
 
 use super::service::{AuthService, AuthServiceImpl};
-
-#[derive(Serialize, Deserialize)]
-struct PresignedResponse {
-    #[serde(rename = "presignedUrl")]
-    presigned_url: String,
-}
 
 pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
     let presinged_route = Router::with_hoop(jwt_utils.auth_middleware())
@@ -35,8 +31,8 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
 }
 
 /// Get presigned url
-#[endpoint(tags("auth"))]
-async fn generate_presigned_url(res: &mut Response) {
+#[endpoint(tags("auth"), status_codes(201, 400))]
+async fn generate_presigned_url(_res: &mut Response) -> Result<PresignedResponse, FailedResponse> {
     let content_type = "image/png";
     // Generate unique file key
     let extension = content_type.split('/').last().unwrap_or("jpeg");
@@ -61,62 +57,43 @@ async fn generate_presigned_url(res: &mut Response) {
                 presigned_url: uri.uri().to_string(),
             };
 
-            res.status_code(StatusCode::CREATED);
-            res.render(Json(presigned_url));
+            return Ok(presigned_url);
         }
         Err(_) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
+            return Err(FailedResponse {
                 message: "Failed to create presigned url".to_string(),
-            }));
+            });
         }
     }
 }
 
 /// Create token
-#[endpoint(tags("auth"))]
-async fn create_token(res: &mut Response, data: JsonBody<CreateTokenDto>, depot: &mut Depot) {
+#[endpoint(tags("auth"), status_codes(201, 400, 401, 500))]
+async fn create_token(
+    _res: &mut Response,
+    data: JsonBody<CreateTokenDto>,
+    depot: &mut Depot,
+) -> Result<AuthResponse, AuthError> {
     let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
     let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
 
     let auth_response = auth_service
         .login_with_social(data.0, jwt_utils.clone())
-        .await;
+        .await?;
 
-    match auth_response {
-        Ok(response) => {
-            res.status_code(StatusCode::CREATED);
-            res.render(Json(response));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(auth_response)
 }
 
 /// Renew Token
-#[endpoint(tags("auth"))]
-async fn refresh_token(res: &mut Response, depot: &mut Depot) {
+#[endpoint(tags("auth"), status_codes(200, 400, 404, 500))]
+async fn refresh_token(_res: &mut Response, depot: &mut Depot) -> Result<AuthResponse, AuthError> {
     let user_id = depot.get::<String>("user_id").unwrap();
     let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
     let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
 
     let auth_response = auth_service
         .refresh_token(jwt_utils.clone(), user_id.parse().unwrap())
-        .await;
+        .await?;
 
-    match auth_response {
-        Ok(response) => {
-            res.render(Json(response));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(auth_response)
 }

@@ -4,7 +4,11 @@ use salvo::{
 };
 
 use crate::core::{
-    dtos::user::update_user_dto::UpdateUserDto, types::res::failed_response::FailedResponse,
+    dtos::user::update_user_dto::UpdateUserDto,
+    entities::models::User,
+    types::{
+        errors::user_error::UserError, responses::check_username_response::CheckUsernameResponse,
+    },
     utils::jwt_utils::JwtUtils,
 };
 
@@ -25,85 +29,67 @@ pub fn get_user_router(jwt_utils: JwtUtils) -> Router {
 }
 
 /// Fetch user info
-#[endpoint(tags("user"))]
-async fn get_user_by_token(res: &mut Response, depot: &mut Depot) {
+#[endpoint(tags("user"), status_codes(200, 400, 404, 500))]
+async fn get_user_by_token(_res: &mut Response, depot: &mut Depot) -> Result<User, UserError> {
     let user_service = depot.obtain::<UserServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
-    let user = user_service.get_user_by_id(user_id.parse().unwrap()).await;
+    let user = user_service
+        .get_user_by_id(user_id.parse().unwrap())
+        .await?;
 
-    match user {
-        Ok(user) => {
-            res.render(Json(user));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(user)
 }
 
 /// Update user info
-#[endpoint(tags("user"))]
-async fn update_user(res: &mut Response, data: JsonBody<UpdateUserDto>, depot: &mut Depot) {
+#[endpoint(tags("user"), status_codes(200, 400, 404, 500))]
+async fn update_user(
+    _res: &mut Response,
+    data: JsonBody<UpdateUserDto>,
+    depot: &mut Depot,
+) -> Result<User, UserError> {
     let update_user_dto = data.0;
     let user_service = depot.obtain::<UserServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let user = user_service
         .update_user(user_id.parse().unwrap(), update_user_dto)
-        .await;
+        .await?;
 
-    match user {
-        Ok(user) => {
-            res.render(Json(user));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(user)
 }
 
 /// Check username whether it's already exists
-#[endpoint(tags("user"))]
+#[endpoint(tags("user"), status_codes(200))]
 async fn check_username_exists(
-    res: &mut Response,
+    _res: &mut Response,
     user_name: PathParam<String>,
     depot: &mut Depot,
-) {
+) -> CheckUsernameResponse {
     let user_service = depot.obtain::<UserServiceImpl>().unwrap();
 
     let user_name = user_name.into_inner();
 
     let is_exists = user_service.check_username_exists(&user_name).await;
 
-    res.render(Json(serde_json::json!({ "isRegistered": is_exists })));
+    CheckUsernameResponse {
+        is_registered: is_exists,
+    }
 }
 
 /// Update username
-#[endpoint(tags("user"))]
-async fn update_username(res: &mut Response, user_name: PathParam<String>, depot: &mut Depot) {
+#[endpoint(tags("user"), status_codes(200, 400, 404, 500))]
+async fn update_username(
+    _res: &mut Response,
+    user_name: PathParam<String>,
+    depot: &mut Depot,
+) -> Result<User, UserError> {
     let user_service = depot.obtain::<UserServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let user = user_service
         .update_username(user_id.parse().unwrap(), &user_name.0)
-        .await;
+        .await?;
 
-    match user {
-        Ok(user) => {
-            res.render(Json(user));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(user)
 }

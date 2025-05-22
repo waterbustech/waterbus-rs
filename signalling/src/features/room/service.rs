@@ -6,7 +6,7 @@ use crate::core::entities::models::{
     RoomType,
 };
 use crate::core::types::errors::room_error::RoomError;
-use crate::core::types::res::room_response::{ParticipantResponse, RoomResponse};
+use crate::core::types::responses::room_response::{ParticipantResponse, RoomResponse};
 use crate::core::utils::bcrypt_utils::{hash_password, verify_password};
 use crate::core::utils::id_utils::generate_room_code;
 use crate::features::room::repository::{RoomRepository, RoomRepositoryImpl};

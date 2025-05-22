@@ -4,7 +4,7 @@ use salvo::async_trait;
 use crate::{
     core::{
         entities::models::{MessagesStatusEnum, MessagesTypeEnum, NewMessage, Room},
-        types::{errors::chat_error::ChatError, res::message_response::MessageResponse},
+        types::{errors::chat_error::ChatError, responses::message_response::MessageResponse},
     },
     features::{
         room::repository::{RoomRepository, RoomRepositoryImpl},

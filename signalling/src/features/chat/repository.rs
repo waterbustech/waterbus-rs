@@ -11,7 +11,7 @@ use crate::core::{
     entities::models::{Message, MessagesStatusEnum, NewMessage, Room, User},
     types::{
         errors::{chat_error::ChatError, general::GeneralError},
-        res::message_response::MessageResponse,
+        responses::message_response::MessageResponse,
     },
 };
 

@@ -1,6 +1,6 @@
 use async_channel::{Receiver, Sender};
 
-use super::res::message_response::MessageResponse;
+use super::responses::message_response::MessageResponse;
 
 #[derive(Debug, Clone)]
 pub struct AppChannel {

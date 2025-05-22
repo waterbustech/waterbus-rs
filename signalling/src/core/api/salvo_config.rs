@@ -39,7 +39,7 @@ struct HlsAssets;
 #[folder = "../public"]
 struct PublicAssets;
 
-#[endpoint(tags("system"))]
+#[handler(tags("system"))]
 async fn health_check(res: &mut Response) {
     res.render("[v3] Waterbus Service written in Rust");
 }

@@ -12,7 +12,10 @@ use crate::core::{
         },
     },
     entities::models::RoomStatusEnum,
-    types::res::failed_response::FailedResponse,
+    types::{
+        errors::room_error::RoomError,
+        responses::{list_room_response::ListRoomResponse, room_response::RoomResponse},
+    },
     utils::jwt_utils::JwtUtils,
 };
 
@@ -46,54 +49,46 @@ pub fn get_room_router(jwt_utils: JwtUtils) -> Router {
 }
 
 /// Retrieves room details using a unique room code.
-#[endpoint(tags("room"))]
-async fn get_room_by_code(res: &mut Response, code: PathParam<String>, depot: &mut Depot) {
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
+async fn get_room_by_code(
+    _res: &mut Response,
+    code: PathParam<String>,
+    depot: &mut Depot,
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
 
     let room_code = &code.into_inner();
 
-    let room = room_service.get_room_by_code(room_code).await;
+    let room = room_service.get_room_by_code(room_code).await?;
 
-    match room {
-        Ok(room) => {
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }
 
 /// Allows a user to leave an ongoing room.
-#[endpoint(tags("room"))]
-async fn leave_room(res: &mut Response, room_id: PathParam<i32>, depot: &mut Depot) {
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
+async fn leave_room(
+    _res: &mut Response,
+    room_id: PathParam<i32>,
+    depot: &mut Depot,
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let room_id = room_id.into_inner();
 
     let room = room_service
         .leave_room(room_id, user_id.parse().unwrap())
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }
 
 /// Fetches a list of rooms filtered by user
-#[endpoint(tags("room"))]
-async fn get_rooms_by_user(res: &mut Response, pagination_dto: PaginationDto, depot: &mut Depot) {
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
+async fn get_rooms_by_user(
+    _res: &mut Response,
+    pagination_dto: PaginationDto,
+    depot: &mut Depot,
+) -> Result<ListRoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
@@ -103,24 +98,18 @@ async fn get_rooms_by_user(res: &mut Response, pagination_dto: PaginationDto, de
             user_id.parse().unwrap(),
             pagination_dto.clone(),
         )
-        .await;
+        .await?;
 
-    match rooms {
-        Ok(rooms) => {
-            res.render(Json(rooms));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(ListRoomResponse { rooms })
 }
 
 /// Fetches rooms that have been deactivated.
-#[endpoint(tags("room"))]
-async fn get_inactive_rooms(res: &mut Response, pagination_dto: PaginationDto, depot: &mut Depot) {
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
+async fn get_inactive_rooms(
+    _res: &mut Response,
+    pagination_dto: PaginationDto,
+    depot: &mut Depot,
+) -> Result<ListRoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
@@ -130,54 +119,37 @@ async fn get_inactive_rooms(res: &mut Response, pagination_dto: PaginationDto, d
             user_id.parse().unwrap(),
             pagination_dto.clone(),
         )
-        .await;
+        .await?;
 
-    match rooms {
-        Ok(rooms) => {
-            res.render(Json(rooms));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(ListRoomResponse { rooms })
 }
 
 /// Creates a new room
-#[endpoint(tags("room"))]
-async fn create_room(res: &mut Response, data: JsonBody<CreateRoomDto>, depot: &mut Depot) {
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
+async fn create_room(
+    _res: &mut Response,
+    data: JsonBody<CreateRoomDto>,
+    depot: &mut Depot,
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let create_room_dto = data.0;
 
     let room = room_service
         .create_room(create_room_dto, user_id.parse().unwrap())
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.status_code(StatusCode::CREATED);
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }
 
 /// Updates an existing room
-#[endpoint(tags("room"))]
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
 async fn update_room(
-    res: &mut Response,
+    _res: &mut Response,
     room_id: PathParam<i32>,
     data: JsonBody<UpdateRoomDto>,
     depot: &mut Depot,
-) {
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
@@ -186,29 +158,19 @@ async fn update_room(
 
     let room = room_service
         .update_room(update_room_dto, room_id, user_id.parse().unwrap())
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }
 
 /// Adds a new member to a room.
-#[endpoint(tags("room"))]
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
 async fn add_member(
-    res: &mut Response,
+    _res: &mut Response,
     room_id: PathParam<i32>,
     data: JsonBody<AddMemberDto>,
     depot: &mut Depot,
-) {
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let host_id = depot.get::<String>("user_id").unwrap();
 
@@ -217,30 +179,19 @@ async fn add_member(
 
     let room = room_service
         .add_member(room_id, host_id.parse().unwrap(), user_id)
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.status_code(StatusCode::CREATED);
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }
 
 /// Removes a member from a room.
-#[endpoint(tags("room"))]
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
 async fn delete_member(
-    res: &mut Response,
+    _res: &mut Response,
     room_id: PathParam<i32>,
     data: JsonBody<AddMemberDto>,
     depot: &mut Depot,
-) {
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let host_id = depot.get::<String>("user_id").unwrap();
 
@@ -249,29 +200,19 @@ async fn delete_member(
 
     let room = room_service
         .remove_member(room_id, host_id.parse().unwrap(), user_id)
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }
 
 /// Joins a room that will be requires a password (for Guess) and not if you're a member
-#[endpoint(tags("room"))]
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
 async fn join_room(
-    res: &mut Response,
+    _res: &mut Response,
     room_id: PathParam<i32>,
     data: JsonBody<JoinRoomDto>,
     depot: &mut Depot,
-) {
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
@@ -281,25 +222,18 @@ async fn join_room(
 
     let room = room_service
         .join_room(user_id.parse().unwrap(), room_id, password.as_deref())
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.status_code(StatusCode::CREATED);
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }
 
 /// Deactivates a room, marking it as completed or no longer active.
-#[endpoint(tags("room"))]
-async fn deactivate_room(res: &mut Response, room_id: PathParam<i32>, depot: &mut Depot) {
+#[endpoint(tags("room"), status_codes(200, 400, 401, 403, 404, 500))]
+async fn deactivate_room(
+    _res: &mut Response,
+    room_id: PathParam<i32>,
+    depot: &mut Depot,
+) -> Result<RoomResponse, RoomError> {
     let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
@@ -307,18 +241,7 @@ async fn deactivate_room(res: &mut Response, room_id: PathParam<i32>, depot: &mu
 
     let room = room_service
         .deactivate_room(room_id, user_id.parse().unwrap())
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.status_code(StatusCode::CREATED);
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(room)
 }

@@ -1,7 +1,7 @@
 use crate::core::{
     dtos::auth::create_token_dto::CreateTokenDto,
     entities::models::NewUser,
-    types::{errors::auth_error::AuthError, res::auth_response::AuthResponse},
+    types::{errors::auth_error::AuthError, responses::auth_response::AuthResponse},
     utils::{id_utils::generate_username, jwt_utils::JwtUtils},
 };
 use chrono::Utc;

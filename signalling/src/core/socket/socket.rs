@@ -38,7 +38,7 @@ use crate::{
         types::{
             app_channel::AppEvent,
             enums::ws_event::WsEvent,
-            res::socket_response::{
+            responses::socket_response::{
                 CameraTypeResponse, EnabledResponse, HandleRaisingResponse, IceCandidate,
                 JoinRoomResponse, ParticipantHasLeftResponse, ScreenSharingResponse,
                 SubscribeParticipantResponse, SubscribeResponse, SubscriberRenegotiationResponse,
@@ -53,7 +53,7 @@ use crate::{
 #[derive(Clone)]
 pub struct UserId(pub String);
 
-#[endpoint(tags("socket.io"))]
+#[handler(tags("socket.io"))]
 async fn version() -> &'static str {
     "[v3] Waterbus Service written in Rust"
 }

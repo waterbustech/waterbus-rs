@@ -18,7 +18,7 @@ use crate::core::{
     },
     types::{
         errors::{general::GeneralError, room_error::RoomError},
-        res::{
+        responses::{
             message_response::MessageResponse,
             room_response::{ParticipantResponse, RoomResponse},
         },
@@ -26,7 +26,7 @@ use crate::core::{
 };
 use crate::core::{
     entities::models::{NewMember, NewParticipant},
-    types::res::room_response::MemberResponse,
+    types::responses::room_response::MemberResponse,
 };
 
 #[async_trait]

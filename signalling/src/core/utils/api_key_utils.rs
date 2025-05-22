@@ -2,7 +2,7 @@ use salvo::Handler;
 use salvo::prelude::*;
 
 use crate::core::env::app_env::AppEnv;
-use crate::core::types::res::failed_response::FailedResponse;
+use crate::core::types::errors::auth_error::AuthError;
 
 pub fn api_key_middleware() -> impl Handler {
     #[handler]
@@ -14,15 +14,11 @@ pub fn api_key_middleware() -> impl Handler {
 
             if key != app_env.client_api_key {
                 res.status_code(StatusCode::UNAUTHORIZED);
-                return res.render(Json(FailedResponse {
-                    message: "Invalid API Key".to_string(),
-                }));
+                return res.render(Json(AuthError::InvalidAPIKey));
             }
         } else {
             res.status_code(StatusCode::UNAUTHORIZED);
-            return res.render(Json(FailedResponse {
-                message: "API Key is required".to_string(),
-            }));
+            return res.render(Json(AuthError::InvalidAPIKey));
         }
     }
     middleware

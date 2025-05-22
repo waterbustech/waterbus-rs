@@ -6,7 +6,14 @@ use salvo::{
 
 use crate::core::{
     dtos::{chat::send_message_dto::SendMessageDto, common::pagination_dto::PaginationDto},
-    types::{app_channel::AppEvent, res::failed_response::FailedResponse},
+    types::{
+        app_channel::AppEvent,
+        errors::chat_error::ChatError,
+        responses::{
+            list_message_response::ListMessageResponse, message_response::MessageResponse,
+            room_response::RoomResponse,
+        },
+    },
     utils::jwt_utils::JwtUtils,
 };
 
@@ -31,13 +38,13 @@ pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
 }
 
 /// Get messages by room
-#[endpoint(tags("chats"))]
+#[endpoint(tags("chats"), status_codes(200, 400, 500))]
 async fn get_messages_by_room(
-    res: &mut Response,
+    _res: &mut Response,
     room_id: PathParam<i32>,
     pagination_dto: PaginationDto,
     depot: &mut Depot,
-) {
+) -> Result<ListMessageResponse, ChatError> {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
@@ -51,29 +58,19 @@ async fn get_messages_by_room(
             pagination_dto.skip,
             pagination_dto.limit,
         )
-        .await;
+        .await?;
 
-    match messages {
-        Ok(messages) => {
-            res.render(Json(messages));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(ListMessageResponse { messages })
 }
 
 /// Send message
-#[endpoint(tags("chats"))]
+#[endpoint(tags("chats"), status_codes(201, 400, 403, 404, 500))]
 async fn create_message(
-    res: &mut Response,
+    _res: &mut Response,
     room_id: PathParam<i32>,
     data: JsonBody<SendMessageDto>,
     depot: &mut Depot,
-) {
+) -> Result<MessageResponse, ChatError> {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
     let app_channel_tx = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
@@ -82,33 +79,23 @@ async fn create_message(
 
     let message = chat_service
         .create_message(room_id, user_id.parse().unwrap(), &data)
+        .await?;
+
+    let _ = app_channel_tx
+        .send(AppEvent::SendMessage(message.clone()))
         .await;
 
-    match message {
-        Ok(message) => {
-            res.status_code(StatusCode::CREATED);
-            res.render(Json(message.clone()));
-            let _ = app_channel_tx
-                .send(AppEvent::SendMessage(message.clone()))
-                .await;
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(message)
 }
 
 /// Update message
-#[endpoint(tags("chats"))]
+#[endpoint(tags("chats"), status_codes(200, 400, 403, 404, 500))]
 async fn update_message(
-    res: &mut Response,
+    _res: &mut Response,
     message_id: PathParam<i32>,
     data: JsonBody<SendMessageDto>,
     depot: &mut Depot,
-) {
+) -> Result<MessageResponse, ChatError> {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
     let app_channel_tx = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
@@ -117,27 +104,22 @@ async fn update_message(
 
     let message = chat_service
         .update_message(message_id, user_id.parse().unwrap(), &data)
+        .await?;
+
+    let _ = app_channel_tx
+        .send(AppEvent::UpdateMessage(message.clone()))
         .await;
 
-    match message {
-        Ok(message) => {
-            res.render(Json(message.clone()));
-            let _ = app_channel_tx
-                .send(AppEvent::UpdateMessage(message.clone()))
-                .await;
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(message)
 }
 
 /// Delete message
-#[endpoint(tags("chats"))]
-async fn delete_message(res: &mut Response, message_id: PathParam<i32>, depot: &mut Depot) {
+#[endpoint(tags("chats"), status_codes(200, 400, 403, 404, 500))]
+async fn delete_message(
+    _res: &mut Response,
+    message_id: PathParam<i32>,
+    depot: &mut Depot,
+) -> Result<MessageResponse, ChatError> {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
     let app_channel_tx = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
@@ -145,44 +127,34 @@ async fn delete_message(res: &mut Response, message_id: PathParam<i32>, depot: &
 
     let message = chat_service
         .delete_message_by_id(message_id, user_id.parse().unwrap())
+        .await?;
+
+    let _ = app_channel_tx
+        .send(AppEvent::DeleteMessage(message.clone()))
         .await;
 
-    match message {
-        Ok(message) => {
-            res.render(Json(message.clone()));
-            let _ = app_channel_tx
-                .send(AppEvent::DeleteMessage(message.clone()))
-                .await;
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(message)
 }
 
 /// Delete conversation
-#[endpoint(tags("chats"))]
-async fn delete_conversation(res: &mut Response, room_id: PathParam<i32>, depot: &mut Depot) {
+#[endpoint(tags("chats"), status_codes(200, 400, 403, 404, 500))]
+async fn delete_conversation(
+    _res: &mut Response,
+    room_id: PathParam<i32>,
+    depot: &mut Depot,
+) -> Result<RoomResponse, ChatError> {
     let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let room_id = room_id.into_inner();
 
     let room = chat_service
         .delete_conversation(room_id, user_id.parse().unwrap())
-        .await;
+        .await?;
 
-    match room {
-        Ok(room) => {
-            res.render(Json(room));
-        }
-        Err(err) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(FailedResponse {
-                message: err.to_string(),
-            }));
-        }
-    }
+    Ok(RoomResponse {
+        room,
+        members: vec![],
+        participants: vec![],
+        latest_message: None,
+    })
 }
