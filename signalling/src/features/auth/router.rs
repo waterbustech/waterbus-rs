@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::core::dtos::auth::create_token_dto::CreateTokenDto;
-use crate::core::env::app_env::AppEnv;
 use crate::core::types::res::failed_response::FailedResponse;
 use crate::core::utils::aws_utils::get_storage_object_client;
 use crate::core::utils::jwt_utils::JwtUtils;
@@ -37,17 +36,14 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
 
 /// Get presigned url
 #[endpoint(tags("auth"))]
-async fn generate_presigned_url(res: &mut Response, depot: &mut Depot) {
-    let env = depot.obtain::<AppEnv>().unwrap();
-    let bucket_name = env.clone().aws.bucket_name;
-
+async fn generate_presigned_url(res: &mut Response) {
     let content_type = "image/png";
     // Generate unique file key
     let extension = content_type.split('/').last().unwrap_or("jpeg");
     let key = format!("{}.{}", Uuid::new_v4(), extension);
 
     // Create storage object client
-    let object_client = get_storage_object_client().await;
+    let (object_client, bucket_name) = get_storage_object_client().await;
 
     // Prepare request
     let req = object_client

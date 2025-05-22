@@ -34,8 +34,8 @@ pub trait VideoStreamExt {
     fn setup(
         &mut self,
         state: Arc<Mutex<State>>,
-        master_state: Arc<Mutex<R2MasterState>>,
-        r2_storage: Arc<R2Storage>,
+        master_state: Option<Arc<Mutex<R2MasterState>>>,
+        r2_storage: Option<Arc<R2Storage>>,
         pipeline: &gst::Pipeline,
         path: &Path,
     ) -> Result<(), Error>;
@@ -52,8 +52,8 @@ impl VideoStreamExt for VideoStream {
     fn setup(
         &mut self,
         state: Arc<Mutex<State>>,
-        master_state: Arc<Mutex<R2MasterState>>,
-        r2_storage: Arc<R2Storage>,
+        master_state: Option<Arc<Mutex<R2MasterState>>>,
+        r2_storage: Option<Arc<R2Storage>>,
         pipeline: &gst::Pipeline,
         path: &Path,
     ) -> Result<(), Error> {
@@ -155,10 +155,14 @@ impl VideoStreamExt for VideoStream {
         ])?;
 
         probe_encoder(state, enc.clone());
-        probe_encoder_with_r2(master_state, enc);
+        if let Some(master_state) = master_state {
+            probe_encoder_with_r2(master_state, enc);
+        };
 
         setup_appsink(&appsink, &self.name, path, true);
-        setup_r2_appsink(&appsink, &self.name, path, true, r2_storage);
+        if let Some(r2_storage) = r2_storage {
+            setup_r2_appsink(&appsink, &self.name, path, true, r2_storage);
+        };
 
         let video_src = src.downcast::<AppSrc>().expect("Element is not an AppSrc");
         video_src.set_is_live(true);

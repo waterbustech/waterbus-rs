@@ -10,6 +10,7 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 
+#[derive(Clone)]
 /// Configuration for Cloudflare R2 storage
 pub struct R2Config {
     pub account_id: String,

@@ -10,7 +10,6 @@ pub struct AppEnv {
     pub client_api_key: String,
     pub db_uri: DbUri,
     pub redis_uri: RedisUri,
-    pub aws: AwsConfig,
     pub jwt: JwtConfig,
     pub udp_port_range: UdpPortRange,
     pub grpc_configs: GrpcConfigs,
@@ -29,14 +28,6 @@ pub struct JwtConfig {
     pub refresh_token: String,
     pub token_expires_in_seconds: i64,
     pub refresh_token_expires_in_seconds: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct AwsConfig {
-    pub key_id: String,
-    pub access_key: String,
-    pub region: String,
-    pub bucket_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -69,14 +60,6 @@ impl AppEnv {
             },
             db_uri: DbUri(env::var("DATABASE_URI").expect("DATABASE_URI must be set")),
             redis_uri: RedisUri(env::var("REDIS_URI").expect("REDIS_URI must be set")),
-            aws: AwsConfig {
-                key_id: env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY_ID must be set"),
-                access_key: env::var("AWS_SECRET_ACCESS_KEY")
-                    .expect("AWS_SECRET_ACCESS_KEY must be set"),
-                region: env::var("AWS_REGION").expect("AWS_REGION must be set"),
-                bucket_name: env::var("AWS_S3_BUCKET_NAME")
-                    .expect("AWS_S3_BUCKET_NAME must be set"),
-            },
             jwt: JwtConfig {
                 jwt_token: env::var("AUTH_JWT_SECRET").expect("AUTH_JWT_SECRET must be set"),
                 refresh_token: env::var("AUTH_REFRESH_SECRET")

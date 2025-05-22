@@ -1,4 +1,5 @@
 use std::{
+    env,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -31,43 +32,42 @@ impl HlsWriter {
         gstfmp4::plugin_register_static()?;
 
         let path = PathBuf::from(dir);
-
         let pipeline = gst::Pipeline::default();
-
         std::fs::create_dir_all(&path).expect("failed to create directory");
 
-        let r2_config = R2Config {
-            account_id: "".to_string(),
-            bucket_name: "".to_string(),
-            custom_domain: Some("".to_string()),
-            path_prefix: Some("".to_string()),
-        };
+        let r2_config: Option<R2Config> = Self::_get_r2_config();
 
-        // Create R2 storage handler
-        let r2_storage = Arc::new(R2Storage::new(r2_config)?);
+        let (r2_storage, master_state) = if let Some(config) = r2_config {
+            let r2_storage = Arc::new(R2Storage::new(config.clone())?);
 
-        // Create cloud URL base for manifest references
-        let cloud_url_base = match &r2_storage.config.custom_domain {
-            Some(domain) => Some(format!("https://{}", domain)),
-            None => {
-                let account = r2_storage.config.account_id.clone();
-                let bucket = r2_storage.config.bucket_name.clone();
-                Some(format!(
-                    "https://{}.r2.cloudflarestorage.com/{}",
-                    account, bucket
-                ))
-            }
+            let cloud_url_base = match &r2_storage.config.custom_domain {
+                Some(domain) => Some(format!("https://{}", domain)),
+                None => {
+                    let account = r2_storage.config.account_id.clone();
+                    let bucket = r2_storage.config.bucket_name.clone();
+                    Some(format!(
+                        "https://{}.r2.cloudflarestorage.com/{}",
+                        account, bucket
+                    ))
+                }
+            };
+
+            let mut manifest_path = path.clone();
+            manifest_path.push("manifest.m3u8");
+
+            let master_state = Arc::new(std::sync::Mutex::new(R2MasterState::new(
+                manifest_path.clone(),
+                r2_storage.clone(),
+                cloud_url_base.clone(),
+            )));
+
+            (Some(r2_storage), Some(master_state))
+        } else {
+            (None, None)
         };
 
         let mut manifest_path = path.clone();
         manifest_path.push("manifest.m3u8");
-
-        // Create the master state with R2 integration
-        let master_state = Arc::new(std::sync::Mutex::new(R2MasterState::new(
-            manifest_path.clone(),
-            r2_storage.clone(),
-            cloud_url_base,
-        )));
 
         let state = Arc::new(Mutex::new(State {
             video_streams: vec![VideoStream {
@@ -91,9 +91,8 @@ impl HlsWriter {
         }));
 
         {
-            let mut state_lock = state.lock().unwrap(); // Lock mutably to iterate mutably
+            let mut state_lock = state.lock().unwrap();
 
-            // Use &mut to get mutable references to the streams
             for stream in &mut state_lock.video_streams {
                 let _ = stream.setup(
                     state.clone(),
@@ -104,7 +103,6 @@ impl HlsWriter {
                 );
             }
 
-            // Assuming audio_streams also needs mutable setup
             for stream in &mut state_lock.audio_streams {
                 stream.setup(
                     state.clone(),
@@ -221,5 +219,23 @@ impl HlsWriter {
         }
 
         Ok(())
+    }
+
+    fn _get_r2_config() -> Option<R2Config> {
+        dotenvy::dotenv().ok();
+
+        let account_id = env::var("STORAGE_ACCOUNT_ID").ok()?;
+        let bucket_name = env::var("STORAGE_BUCKET_NAME").ok()?;
+        let custom_domain = env::var("STORAGE_CUSTOM_DOMAIN").ok();
+        let path_prefix = env::var("STORAGE_PATH_PREFIX").ok();
+
+        let r2_config = R2Config {
+            account_id: account_id,
+            bucket_name: bucket_name,
+            custom_domain: custom_domain,
+            path_prefix: path_prefix,
+        };
+
+        Some(r2_config)
     }
 }

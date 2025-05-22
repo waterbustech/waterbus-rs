@@ -6,11 +6,11 @@ use std::env;
 pub async fn get_storage_object_client() -> Client {
     dotenvy::dotenv().ok();
 
-    let access_key_id = env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY_ID not set");
+    let access_key_id = env::var("STORAGE_ACCESS_KEY_ID").expect("STORAGE_ACCESS_KEY_ID not set");
     let secret_access_key =
-        env::var("AWS_SECRET_ACCESS_KEY").expect("AWS_SECRET_ACCESS_KEY not set");
-    let region = env::var("AWS_REGION").ok();
-    let endpoint_url = env::var("AWS_ENDPOINT_URL").ok();
+        env::var("STORAGE_SECRET_ACCESS_KEY").expect("STORAGE_SECRET_ACCESS_KEY not set");
+    let region = env::var("STORAGE_REGION").ok();
+    let endpoint_url = env::var("STORAGE_ENDPOINT_URL").ok();
 
     let credentials = Credentials::new(
         access_key_id,

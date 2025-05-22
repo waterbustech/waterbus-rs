@@ -3,14 +3,15 @@ use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client, config::Region};
 use std::env;
 
-pub async fn get_storage_object_client() -> Client {
+pub async fn get_storage_object_client() -> (Client, String) {
     dotenvy::dotenv().ok();
 
-    let access_key_id = env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY_ID not set");
+    let access_key_id = env::var("STORAGE_ACCESS_KEY_ID").expect("STORAGE_ACCESS_KEY_ID not set");
     let secret_access_key =
-        env::var("AWS_SECRET_ACCESS_KEY").expect("AWS_SECRET_ACCESS_KEY not set");
-    let region = env::var("AWS_REGION").ok();
-    let endpoint_url = env::var("AWS_ENDPOINT_URL").ok();
+        env::var("STORAGE_SECRET_ACCESS_KEY").expect("STORAGE_SECRET_ACCESS_KEY not set");
+    let region = env::var("STORAGE_REGION").ok();
+    let endpoint_url = env::var("STORAGE_ENDPOINT_URL").ok();
+    let bucket_name = env::var("STORAGE_BUCKET_NAME").expect("STORAGE_BUCKET_NAME must be set");
 
     let credentials = Credentials::new(
         access_key_id,
@@ -33,5 +34,5 @@ pub async fn get_storage_object_client() -> Client {
 
     let client = Client::new(&shared_config);
 
-    client
+    (client, bucket_name)
 }
