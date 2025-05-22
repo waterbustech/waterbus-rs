@@ -9,7 +9,9 @@ use tracing::error;
 
 use super::playlist::setup_appsink;
 use super::state::probe_encoder;
-use super::{State, VideoStream};
+use super::{
+    R2MasterState, R2Storage, State, VideoStream, probe_encoder_with_r2, setup_r2_appsink,
+};
 
 impl VideoStream {
     pub fn new(name: &str, bitrate: u64, width: u64, height: u64, codec: &str) -> Self {
@@ -32,6 +34,8 @@ pub trait VideoStreamExt {
     fn setup(
         &mut self,
         state: Arc<Mutex<State>>,
+        master_state: Arc<Mutex<R2MasterState>>,
+        r2_storage: Arc<R2Storage>,
         pipeline: &gst::Pipeline,
         path: &Path,
     ) -> Result<(), Error>;
@@ -48,6 +52,8 @@ impl VideoStreamExt for VideoStream {
     fn setup(
         &mut self,
         state: Arc<Mutex<State>>,
+        master_state: Arc<Mutex<R2MasterState>>,
+        r2_storage: Arc<R2Storage>,
         pipeline: &gst::Pipeline,
         path: &Path,
     ) -> Result<(), Error> {
@@ -148,9 +154,11 @@ impl VideoStreamExt for VideoStream {
             appsink.upcast_ref(),
         ])?;
 
-        probe_encoder(state, enc);
+        probe_encoder(state, enc.clone());
+        probe_encoder_with_r2(master_state, enc);
 
         setup_appsink(&appsink, &self.name, path, true);
+        setup_r2_appsink(&appsink, &self.name, path, true, r2_storage);
 
         let video_src = src.downcast::<AppSrc>().expect("Element is not an AppSrc");
         video_src.set_is_live(true);

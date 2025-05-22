@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Error;
 
-use super::{AudioStream, State};
+use super::{probe_encoder_with_r2, setup_r2_appsink, AudioStream, R2MasterState, R2Storage, State};
 
 use gst::prelude::*;
 use gst::{BufferFlags, ClockTime};
@@ -20,6 +20,8 @@ pub trait AudioStreamExt {
     fn setup(
         &mut self,
         state: Arc<Mutex<State>>,
+        master_state: Arc<Mutex<R2MasterState>>,
+        r2_storage: Arc<R2Storage>,
         pipeline: &gst::Pipeline,
         path: &Path,
     ) -> Result<(), Error>;
@@ -38,6 +40,8 @@ impl AudioStreamExt for AudioStream {
     fn setup(
         &mut self,
         state: Arc<Mutex<State>>,
+        master_state: Arc<Mutex<R2MasterState>>,
+        r2_storage: Arc<R2Storage>,
         pipeline: &gst::Pipeline,
         path: &Path,
     ) -> Result<(), Error> {
@@ -92,9 +96,11 @@ impl AudioStreamExt for AudioStream {
             appsink.upcast_ref(),
         ])?;
 
-        probe_encoder(state, aacenc);
+        probe_encoder(state, aacenc.clone());
+        probe_encoder_with_r2(master_state, aacenc.clone());
 
         setup_appsink(&appsink, &self.name, path, false);
+        setup_r2_appsink(&appsink, &self.name, path, false, r2_storage);
 
         let audio_src = src.downcast::<AppSrc>().expect("Element is not an AppSrc");
 

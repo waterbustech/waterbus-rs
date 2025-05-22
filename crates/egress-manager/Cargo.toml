@@ -20,3 +20,4 @@ tokio = { workspace = true }
 aws-sdk-s3 = { workspace = true, features = ["rt-tokio"] }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-credential-types = { workspace = true }
+dotenvy = { workspace = true }

@@ -11,7 +11,10 @@ use gst::{
 };
 use tokio::task;
 
-use super::utils::{AudioStream, AudioStreamExt, State, VideoStream, VideoStreamExt};
+use super::utils::{
+    AudioStream, AudioStreamExt, R2Config, R2MasterState, R2Storage, State, VideoStream,
+    VideoStreamExt,
+};
 
 #[derive(Debug, Clone)]
 pub struct HlsWriter {
@@ -33,8 +36,38 @@ impl HlsWriter {
 
         std::fs::create_dir_all(&path).expect("failed to create directory");
 
+        let r2_config = R2Config {
+            account_id: "".to_string(),
+            bucket_name: "".to_string(),
+            custom_domain: Some("".to_string()),
+            path_prefix: Some("".to_string()),
+        };
+
+        // Create R2 storage handler
+        let r2_storage = Arc::new(R2Storage::new(r2_config)?);
+
+        // Create cloud URL base for manifest references
+        let cloud_url_base = match &r2_storage.config.custom_domain {
+            Some(domain) => Some(format!("https://{}", domain)),
+            None => {
+                let account = r2_storage.config.account_id.clone();
+                let bucket = r2_storage.config.bucket_name.clone();
+                Some(format!(
+                    "https://{}.r2.cloudflarestorage.com/{}",
+                    account, bucket
+                ))
+            }
+        };
+
         let mut manifest_path = path.clone();
         manifest_path.push("manifest.m3u8");
+
+        // Create the master state with R2 integration
+        let master_state = Arc::new(std::sync::Mutex::new(R2MasterState::new(
+            manifest_path.clone(),
+            r2_storage.clone(),
+            cloud_url_base,
+        )));
 
         let state = Arc::new(Mutex::new(State {
             video_streams: vec![VideoStream {
@@ -62,12 +95,24 @@ impl HlsWriter {
 
             // Use &mut to get mutable references to the streams
             for stream in &mut state_lock.video_streams {
-                let _ = stream.setup(state.clone(), &pipeline, &path);
+                let _ = stream.setup(
+                    state.clone(),
+                    master_state.clone(),
+                    r2_storage.clone(),
+                    &pipeline,
+                    &path,
+                );
             }
 
             // Assuming audio_streams also needs mutable setup
             for stream in &mut state_lock.audio_streams {
-                stream.setup(state.clone(), &pipeline, &path)?;
+                stream.setup(
+                    state.clone(),
+                    master_state.clone(),
+                    r2_storage.clone(),
+                    &pipeline,
+                    &path,
+                )?;
             }
         }
 

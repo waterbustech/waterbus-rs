@@ -1774,6 +1774,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "chrono",
+ "dotenvy",
  "gst-plugin-fmp4",
  "gstreamer 0.24.0",
  "gstreamer-app 0.24.0",

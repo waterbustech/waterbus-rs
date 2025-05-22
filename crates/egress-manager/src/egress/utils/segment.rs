@@ -3,6 +3,7 @@ use gst::ClockTime;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone)]
 pub struct Segment {
     pub date_time: DateTime<Utc>,
     pub duration: ClockTime,
