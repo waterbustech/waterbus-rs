@@ -53,7 +53,6 @@ This project uses the following technologies:
 - [Rust](https://www.rust-lang.org/) `1.82+`
 - [PostgreSQL](https://www.postgresql.org/) `16+`
 - [Redis](https://redis.io/) `7+`
-- [Typesense](https://typesense.org/) `v0.27.1+` 
 
 
 ## ⚡️ Quick Start

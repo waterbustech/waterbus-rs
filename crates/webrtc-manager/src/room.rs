@@ -64,12 +64,14 @@ impl Room {
 
         let pc = self._create_pc().await?;
 
-        let media = Media::new(
+        let mut media = Media::new(
             participant_id.clone(),
             params.is_video_enabled,
             params.is_audio_enabled,
             params.is_e2ee_enabled,
         );
+
+        let _ = media.initialize_hls_writer().await;
 
         let publisher = Arc::new(Publisher::new(Arc::new(RwLock::new(media)), pc.clone()));
         self._add_publisher(&participant_id, &publisher);

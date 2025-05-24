@@ -11,7 +11,7 @@ use super::{
 };
 
 use gst::prelude::*;
-use gst::{BufferFlags, ClockTime};
+use gst::BufferFlags;
 use gst_app::{AppSrc, AppStreamType};
 use tracing::error;
 
@@ -70,7 +70,7 @@ impl AudioStreamExt for AudioStream {
         let mux = gst::ElementFactory::make("cmafmux")
             .property_from_str("header-update-mode", "update")
             .property("write-mehd", true)
-            .property("fragment-duration", 200.mseconds())
+            .property("fragment-duration", 2.seconds())
             .build()?;
         let appsink = gst_app::AppSink::builder().buffer_list(true).build();
 
@@ -112,7 +112,7 @@ impl AudioStreamExt for AudioStream {
 
         audio_src.set_is_live(true);
         audio_src.set_stream_type(AppStreamType::Stream);
-        audio_src.set_latency(ClockTime::from_mseconds(0), ClockTime::from_mseconds(200));
+        // audio_src.set_latency(ClockTime::from_mseconds(0), ClockTime::from_mseconds(200));
 
         self.audio_src = Some(audio_src);
 

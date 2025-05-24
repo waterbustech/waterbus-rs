@@ -8,7 +8,6 @@ use super::message_response::MessageResponse;
 #[derive(Debug, Serialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListMessageResponse {
-    #[serde(flatten)]
     pub messages: Vec<MessageResponse>,
 }
 

@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{fs, path::Path, sync::Arc};
 
 use dashmap::DashMap;
 use egress_manager::egress::{hls_writer::HlsWriter, moq_writer::MoQWriter};
 use parking_lot::RwLock;
 use tracing::{debug, info};
-use uuid::Uuid;
+use nanoid::nanoid;
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
 
 use crate::models::{AddTrackResponse, TrackMutexWrapper};
@@ -19,6 +19,7 @@ pub struct Media {
     pub state: Arc<RwLock<MediaState>>,
     hls_writer: Option<Arc<HlsWriter>>,
     moq_writer: Option<Arc<MoQWriter>>,
+    output_dir: String,
 }
 
 #[derive(Debug)]
@@ -40,23 +41,19 @@ impl Media {
         is_audio_enabled: bool,
         is_e2ee_enabled: bool,
     ) -> Self {
-        // let output_dir = format!("./hls/{}", publisher_id);
+        let output_dir = format!("./hls/{}", publisher_id);
 
-        // if !Path::new(&output_dir).exists() {
-        //     fs::create_dir_all(&output_dir).unwrap();
-        // }
-
-        // let hls_writer = HlsWriter::new(&output_dir).unwrap();
-        // let moq_writer = MoQWriter::new(&publisher_id).unwrap();
+        if !Path::new(&output_dir).exists() {
+            fs::create_dir_all(&output_dir).unwrap();
+        }
 
         Self {
-            media_id: format!("m_{}", Uuid::new_v4()),
+            media_id: format!("m_{}", nanoid!(12)),
             participant_id: publisher_id,
             tracks: Arc::new(DashMap::new()),
-            // hls_writer: Arc::new(hls_writer),
-            // moq_writer: Arc::new(moq_writer),
             hls_writer: None,
             moq_writer: None,
+            output_dir,
             state: Arc::new(RwLock::new(MediaState {
                 video_enabled: is_video_enabled,
                 audio_enabled: is_audio_enabled,
@@ -68,6 +65,30 @@ impl Media {
                 screen_track_id: None,
             })),
         }
+    }
+
+    // Call this after creating Media to initialize HLS writer
+    pub async fn initialize_hls_writer(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // let hls_writer = HlsWriter::new(&self.output_dir, self.participant_id.clone()).await?;
+        // self.hls_writer = Some(Arc::new(hls_writer));
+        Ok(())
+    }
+
+    // Alternative: Static method that creates and initializes everything
+    pub async fn new_with_hls(
+        publisher_id: String,
+        is_video_enabled: bool,
+        is_audio_enabled: bool,
+        is_e2ee_enabled: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut media = Self::new(
+            publisher_id,
+            is_video_enabled,
+            is_audio_enabled,
+            is_e2ee_enabled,
+        );
+        media.initialize_hls_writer().await?;
+        Ok(media)
     }
 
     pub async fn add_track(
@@ -116,10 +137,8 @@ impl Media {
             rtp_track.clone(),
             room_id,
             self.participant_id.clone(),
-            None,
-            // Some(self.hls_writer.clone()),
-            // Some(self.moq_writer.clone()),
-            None,
+            self.hls_writer.clone(),
+            self.moq_writer.clone(),
         )));
 
         if rtp_track.kind() == RTPCodecType::Video {

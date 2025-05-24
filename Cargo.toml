@@ -50,7 +50,6 @@ validator_derive = "0.20.0"
 aws-sdk-s3 = { version = "1.86.0", features = ["rt-tokio"] }
 aws-config = { version = "1.6.3", features = ["behavior-version-latest"] }
 aws-credential-types = "1.2.3"
-uuid = "1.16.0"
 rustls = { version = "0.23.27", features = ["ring"] }
 nanoid = "0.4.0"
 rand = "0.9.1"
@@ -88,6 +87,7 @@ etcd-client = "0.15.0"
 sysinfo = "0.35.1"
 futures-util = "0.3.31"
 redis = "0.31.0"
+futures = "0.3.31"
 
 # Local crates
 waterbus-proto = { path = "./crates/waterbus-proto" }

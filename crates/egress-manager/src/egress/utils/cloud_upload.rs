@@ -5,10 +5,11 @@ use aws_sdk_s3::Client;
 use aws_sdk_s3::presigning::PresigningConfig;
 use gst::prelude::{ClockExt, ElementExt, OptionCheckedSub};
 use std::path::Path;
+use std::sync::Mutex;
 use std::{path::PathBuf, sync::Arc};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
-use tokio::runtime::Runtime;
+use tokio::sync::mpsc;
 
 #[derive(Clone)]
 /// Configuration for Cloudflare R2 storage
@@ -19,62 +20,97 @@ pub struct R2Config {
     pub path_prefix: Option<String>,
 }
 
+/// Upload task message
+#[derive(Debug)]
+pub struct UploadTask {
+    pub local_path: PathBuf,
+    pub key: String,
+    pub content_type: String,
+}
+
 /// R2 storage manager for handling uploads
 pub struct R2Storage {
     client: Client,
     pub config: R2Config,
-    runtime: Runtime,
+    upload_sender: Option<mpsc::UnboundedSender<UploadTask>>,
 }
 
 impl R2Storage {
     /// Create a new R2Storage instance
-    pub fn new(config: R2Config) -> Result<Self> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()?;
+    pub async fn new(config: R2Config) -> Result<Self> {
+        let client = get_storage_object_client().await;
 
-        let client = runtime.block_on(async {
-            let object_client = get_storage_object_client().await;
-
-            object_client
-        });
+        println!("client ok!");
 
         Ok(Self {
             client,
             config,
-            runtime,
+            upload_sender: None,
         })
     }
 
-    /// Upload a file to R2 storage
-    pub fn upload_file(&self, local_path: &Path, key: &str, content_type: &str) -> Result<String> {
-        let path = local_path.to_path_buf();
+    /// Create a new R2Storage instance with background upload worker
+    pub async fn new_with_worker(
+        config: R2Config,
+    ) -> Result<(Self, mpsc::UnboundedReceiver<UploadTask>)> {
+        let client = get_storage_object_client().await;
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        let storage = Self {
+            client,
+            config,
+            upload_sender: Some(tx),
+        };
+
+        Ok((storage, rx))
+    }
+
+    /// Start the upload worker task
+    pub fn start_upload_worker(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<UploadTask>) {
+        tokio::spawn(async move {
+            while let Some(task) = receiver.recv().await {
+                match self
+                    .upload_file_internal(&task.local_path, &task.key, &task.content_type)
+                    .await
+                {
+                    Ok(url) => {
+                        println!("Successfully uploaded {} to R2: {}", task.key, url);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to upload {}: {}", task.key, e);
+                    }
+                }
+            }
+        });
+    }
+
+    /// Internal upload method
+    async fn upload_file_internal(
+        &self,
+        local_path: &Path,
+        key: &str,
+        content_type: &str,
+    ) -> Result<String> {
         let key = if let Some(prefix) = &self.config.path_prefix {
             format!("{}/{}", prefix, key)
         } else {
             key.to_string()
         };
-        let bucket = self.config.bucket_name.clone();
-        let content_type = content_type.to_string();
 
-        self.runtime.block_on(async {
-            // Read file content
-            let mut file = File::open(&path).await?;
-            let mut contents = Vec::new();
-            file.read_to_end(&mut contents).await?;
+        // Read file content
+        let mut file = File::open(local_path).await?;
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents).await?;
 
-            // Upload to R2
-            self.client
-                .put_object()
-                .bucket(&bucket)
-                .key(&key)
-                .body(contents.into())
-                .content_type(content_type)
-                .send()
-                .await?;
-
-            Ok::<_, anyhow::Error>(())
-        })?;
+        // Upload to R2
+        self.client
+            .put_object()
+            .bucket(&self.config.bucket_name)
+            .key(&key)
+            .body(contents.into())
+            .content_type(content_type)
+            .send()
+            .await?;
 
         // Generate the URL for the uploaded file
         let url = if let Some(domain) = &self.config.custom_domain {
@@ -89,31 +125,54 @@ impl R2Storage {
         Ok(url)
     }
 
-    /// Get a pre-signed URL for a file in R2 storage
-    pub fn get_presigned_url(&self, key: &str, expires_in_secs: u64) -> Result<String> {
+    /// Upload a file to R2 storage (non-blocking via message queue)
+    pub fn upload_file(&self, local_path: &Path, key: &str, content_type: &str) -> Result<()> {
+        if let Some(sender) = &self.upload_sender {
+            let task = UploadTask {
+                local_path: local_path.to_path_buf(),
+                key: key.to_string(),
+                content_type: content_type.to_string(),
+            };
+            sender
+                .send(task)
+                .map_err(|_| anyhow::anyhow!("Upload worker channel closed"))?;
+        } else {
+            return Err(anyhow::anyhow!("Upload worker not initialized"));
+        }
+        Ok(())
+    }
+
+    /// Upload a file to R2 storage asynchronously
+    pub async fn upload_file_async(
+        &self,
+        local_path: &Path,
+        key: &str,
+        content_type: &str,
+    ) -> Result<String> {
+        self.upload_file_internal(local_path, key, content_type)
+            .await
+    }
+
+    /// Get a pre-signed URL for a file in R2 storage asynchronously
+    pub async fn get_presigned_url_async(&self, key: &str, expires_in_secs: u64) -> Result<String> {
         let key = if let Some(prefix) = &self.config.path_prefix {
             format!("{}/{}", prefix, key)
         } else {
             key.to_string()
         };
-        let bucket = self.config.bucket_name.clone();
 
-        let url = self.runtime.block_on(async {
-            let presigner =
-                PresigningConfig::expires_in(std::time::Duration::from_secs(expires_in_secs))?;
+        let presigner =
+            PresigningConfig::expires_in(std::time::Duration::from_secs(expires_in_secs))?;
 
-            let presigned_req = self
-                .client
-                .get_object()
-                .bucket(&bucket)
-                .key(&key)
-                .presigned(presigner)
-                .await?;
+        let presigned_req = self
+            .client
+            .get_object()
+            .bucket(&self.config.bucket_name)
+            .key(&key)
+            .presigned(presigner)
+            .await?;
 
-            Ok::<_, anyhow::Error>(presigned_req.uri().to_string())
-        })?;
-
-        Ok(url)
+        Ok(presigned_req.uri().to_string())
     }
 }
 
@@ -136,12 +195,12 @@ impl R2StreamState {
         }
     }
 
-    /// Add a segment and upload it to R2
+    /// Add a segment and queue it for upload to R2
     pub fn add_segment(&mut self, segment: Segment) -> Result<()> {
         // Add segment to local state
         self.state.add_segment(segment.clone());
 
-        // Upload segment to R2
+        // Queue segment for upload to R2
         let mut path = self.state.path.clone();
         path.push(&segment.path);
 
@@ -157,44 +216,100 @@ impl R2StreamState {
             "application/octet-stream"
         };
 
-        let url = self
-            .r2_storage
+        self.r2_storage
             .upload_file(&path, &segment.path, content_type)?;
-        self.uploaded_segments.push(url);
 
         Ok(())
     }
 
+    /// Add a segment and upload it to R2 asynchronously (spawned task)
+    pub fn add_segment_async(&mut self, segment: Segment) {
+        // Add segment to local state
+        self.state.add_segment(segment.clone());
+
+        // Upload segment to R2 in background
+        let mut path = self.state.path.clone();
+        path.push(&segment.path);
+
+        let content_type = if segment.path.ends_with(".cmfv") {
+            "video/mp4"
+        } else if segment.path.ends_with(".cmfa") {
+            "audio/mp4"
+        } else if segment.path.ends_with(".m3u8") {
+            "application/vnd.apple.mpegurl"
+        } else if segment.path.ends_with(".cmfi") {
+            "video/mp4"
+        } else {
+            "application/octet-stream"
+        };
+
+        let r2_storage = Arc::clone(&self.r2_storage);
+        let segment_path = segment.path.clone();
+
+        // Use the message queue instead of tokio::spawn
+        if let Err(e) = r2_storage.upload_file(&path, &segment_path, content_type) {
+            eprintln!("Failed to queue segment upload {}: {}", segment_path, e);
+        }
+    }
+
     /// Upload the initialization segment to R2
-    pub fn upload_init_segment(&mut self) -> Result<String> {
+    pub fn upload_init_segment(&mut self) -> Result<()> {
         let mut path = self.state.path.clone();
         path.push("init.cmfi");
 
         if path.exists() {
-            let url = self
-                .r2_storage
+            self.r2_storage
                 .upload_file(&path, "init.cmfi", "video/mp4")?;
-            Ok(url)
+            Ok(())
         } else {
             Err(anyhow::anyhow!("Initialization segment not found"))
         }
     }
 
+    /// Upload the initialization segment to R2 asynchronously
+    pub fn upload_init_segment_async(&mut self) {
+        let mut path = self.state.path.clone();
+        path.push("init.cmfi");
+
+        if path.exists() {
+            if let Err(e) = self.r2_storage.upload_file(&path, "init.cmfi", "video/mp4") {
+                eprintln!("Failed to queue init segment upload: {}", e);
+            }
+        } else {
+            eprintln!("Initialization segment not found");
+        }
+    }
+
     /// Update and upload the manifest to R2
-    pub fn update_manifest(&mut self) -> Result<String> {
+    pub fn update_manifest(&mut self) -> Result<()> {
         // First update the local manifest
         super::playlist::update_manifest(&mut self.state);
 
-        // Then upload it to R2
+        // Then queue it for upload to R2
         let mut path = self.state.path.clone();
         path.push("manifest.m3u8");
 
-        let url =
-            self.r2_storage
-                .upload_file(&path, "manifest.m3u8", "application/vnd.apple.mpegurl")?;
+        self.r2_storage
+            .upload_file(&path, "manifest.m3u8", "application/vnd.apple.mpegurl")?;
 
-        self.manifest_url = Some(url.clone());
-        Ok(url)
+        Ok(())
+    }
+
+    /// Update and upload the manifest to R2 asynchronously
+    pub fn update_manifest_async(&mut self) {
+        // First update the local manifest
+        super::playlist::update_manifest(&mut self.state);
+
+        // Then queue it for upload to R2
+        let mut path = self.state.path.clone();
+        path.push("manifest.m3u8");
+
+        if let Err(e) =
+            self.r2_storage
+                .upload_file(&path, "manifest.m3u8", "application/vnd.apple.mpegurl")
+        {
+            eprintln!("Failed to queue manifest upload: {}", e);
+        }
     }
 
     /// Perform cleanup of old segments both locally and in R2
@@ -223,9 +338,9 @@ pub fn setup_r2_appsink(
     // Create directories if they don't exist
     std::fs::create_dir_all(&path).expect("Failed to create directories");
 
-    let name_arc = std::sync::Arc::new(name.to_string());
+    let name_arc = Arc::new(name.to_string());
 
-    let state = std::sync::Arc::new(std::sync::Mutex::new(R2StreamState::new(path, r2_storage)));
+    let state = Arc::new(Mutex::new(R2StreamState::new(path, r2_storage)));
 
     appsink.set_callbacks(
         gst_app::AppSinkCallbacks::builder()
@@ -256,12 +371,8 @@ pub fn setup_r2_appsink(
                     let map = first.map_readable().unwrap();
                     std::fs::write(&path, &map).expect("failed to write header");
 
-                    // After writing the init segment locally, upload it to R2
-                    if let Err(e) = state_guard.upload_init_segment() {
-                        eprintln!("Failed to upload init segment: {}", e);
-                    } else {
-                        println!("Successfully uploaded init segment to R2");
-                    }
+                    // After writing the init segment locally, upload it to R2 asynchronously
+                    state_guard.upload_init_segment_async();
 
                     drop(map);
 
@@ -347,15 +458,11 @@ pub fn setup_r2_appsink(
                     date_time,
                 };
 
-                // Add segment and upload it to R2
-                if let Err(e) = state_guard.add_segment(segment) {
-                    eprintln!("Failed to upload segment: {}", e);
-                }
+                // Add segment and upload it to R2 asynchronously
+                state_guard.add_segment_async(segment);
 
-                // Update and upload the manifest
-                if let Err(e) = state_guard.update_manifest() {
-                    eprintln!("Failed to update and upload manifest: {}", e);
-                }
+                // Update and upload the manifest asynchronously
+                state_guard.update_manifest_async();
 
                 // Clean up old segments
                 if let Err(e) = state_guard.cleanup_old_segments() {

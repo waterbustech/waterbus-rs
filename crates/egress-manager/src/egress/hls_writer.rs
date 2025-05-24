@@ -14,7 +14,7 @@ use tokio::task;
 
 use super::utils::{
     AudioStream, AudioStreamExt, R2Config, R2MasterState, R2Storage, State, VideoStream,
-    VideoStreamExt,
+    VideoStreamExt, init,
 };
 
 #[derive(Debug, Clone)]
@@ -27,18 +27,23 @@ pub struct HlsWriter {
 }
 
 impl HlsWriter {
-    pub fn new(dir: &str) -> Result<Self, anyhow::Error> {
-        gst::init()?;
-        gstfmp4::plugin_register_static()?;
+    pub async fn new(dir: &str, prefix_path: String) -> Result<Self, anyhow::Error> {
+        init()?;
 
         let path = PathBuf::from(dir);
         let pipeline = gst::Pipeline::default();
         std::fs::create_dir_all(&path).expect("failed to create directory");
 
-        let r2_config: Option<R2Config> = Self::_get_r2_config();
+        let r2_config: Option<R2Config> = Self::_get_r2_config(prefix_path);
 
         let (r2_storage, master_state) = if let Some(config) = r2_config {
-            let r2_storage = Arc::new(R2Storage::new(config.clone())?);
+            // Use new_with_worker instead of new
+            let (r2_storage, upload_receiver) = R2Storage::new_with_worker(config.clone()).await?;
+            let r2_storage = Arc::new(r2_storage);
+
+            // Start the upload worker
+            let worker_storage = r2_storage.clone();
+            worker_storage.start_upload_worker(upload_receiver);
 
             let cloud_url_base = match &r2_storage.config.custom_domain {
                 Some(domain) => Some(format!("https://{}", domain)),
@@ -114,7 +119,7 @@ impl HlsWriter {
             }
         }
 
-        pipeline.set_latency(ClockTime::from_nseconds(0));
+        // pipeline.set_latency(ClockTime::from_nseconds(0));
         pipeline.auto_clock();
         pipeline.set_delay(ClockTime::from_nseconds(0));
 
@@ -186,14 +191,7 @@ impl HlsWriter {
         Ok(())
     }
 
-    pub fn set_video_codec(&self, codec: &str) {
-        let mut state_lock = self.state.lock().unwrap();
-
-        // Use &mut to get mutable references to the streams
-        for stream in &mut state_lock.video_streams {
-            stream.set_video_codec(codec);
-        }
-    }
+    pub fn set_video_codec(&self, _codec: &str) {}
 
     pub fn stop(&self) {
         let _ = self.pipeline.set_state(gst::State::Null);
@@ -221,19 +219,18 @@ impl HlsWriter {
         Ok(())
     }
 
-    fn _get_r2_config() -> Option<R2Config> {
+    fn _get_r2_config(path_prefix: String) -> Option<R2Config> {
         dotenvy::dotenv().ok();
 
         let account_id = env::var("STORAGE_ACCOUNT_ID").ok()?;
         let bucket_name = env::var("STORAGE_BUCKET_NAME").ok()?;
         let custom_domain = env::var("STORAGE_CUSTOM_DOMAIN").ok();
-        let path_prefix = env::var("STORAGE_PATH_PREFIX").ok();
 
         let r2_config = R2Config {
             account_id: account_id,
             bucket_name: bucket_name,
             custom_domain: custom_domain,
-            path_prefix: path_prefix,
+            path_prefix: Some(path_prefix),
         };
 
         Some(r2_config)

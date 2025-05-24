@@ -8,7 +8,6 @@ use super::room_response::RoomResponse;
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListRoomResponse {
-    #[serde(flatten)]
     pub rooms: Vec<RoomResponse>,
 }
 

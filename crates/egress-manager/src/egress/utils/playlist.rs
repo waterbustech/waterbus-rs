@@ -30,7 +30,7 @@ pub fn update_manifest(state: &mut StreamState) {
     let playlist = MediaPlaylist {
         version: Some(7),
         server_control,
-        target_duration: 1,
+        target_duration: 2,
         media_sequence: state.media_sequence,
         segments: state
             .segments
@@ -108,7 +108,7 @@ pub fn setup_appsink(
                     std::fs::create_dir_all(&path).expect("failed to create directory");
                     path.push("init.cmfi");
 
-                    println!("writing header to {}", path.display());
+                    tracing::debug!("writing header to {}", path.display());
                     let map = first.map_readable().unwrap();
                     std::fs::write(path, &map).expect("failed to write header");
                     drop(map);

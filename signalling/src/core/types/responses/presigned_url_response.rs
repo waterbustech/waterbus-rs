@@ -4,9 +4,10 @@ use salvo::prelude::*;
 use serde::Serialize;
 
 #[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PresignedResponse {
-    #[serde(rename = "presignedUrl")]
     pub presigned_url: String,
+    pub source_url: String,
 }
 
 #[async_trait]

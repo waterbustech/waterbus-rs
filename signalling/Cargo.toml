@@ -30,7 +30,6 @@ validator_derive = { workspace = true }
 aws-sdk-s3 = { workspace = true, features = ["rt-tokio"] }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-credential-types = { workspace = true }
-uuid = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 nanoid = { workspace = true }
 rand = { workspace = true }

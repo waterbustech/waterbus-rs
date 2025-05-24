@@ -1775,6 +1775,7 @@ dependencies = [
  "aws-sdk-s3",
  "chrono",
  "dotenvy",
+ "futures",
  "gst-plugin-fmp4",
  "gstreamer 0.24.0",
  "gstreamer-app 0.24.0",
@@ -3188,7 +3189,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.61.1",
 ]
 
 [[package]]
@@ -4460,7 +4461,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -5826,7 +5827,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "uuid",
  "validator",
  "validator_derive",
  "waterbus-proto",
@@ -7280,6 +7280,7 @@ dependencies = [
  "dashmap",
  "egress-manager",
  "mockall",
+ "nanoid",
  "parking_lot",
  "rand 0.9.1",
  "serde",
@@ -7287,7 +7288,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "uuid",
  "webrtc",
 ]
 

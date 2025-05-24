@@ -87,7 +87,7 @@ impl State {
             ..Default::default()
         };
 
-        println!("Writing master manifest to {}", self.path.display());
+        tracing::debug!("Writing master manifest to {}", self.path.display());
 
         let mut file = std::fs::File::create(&self.path).unwrap();
         playlist

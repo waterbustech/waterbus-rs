@@ -13,7 +13,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
-uuid = { workspace = true }
+nanoid = { workspace = true }
 webrtc = { workspace = true }
 egress-manager = { workspace = true }
 

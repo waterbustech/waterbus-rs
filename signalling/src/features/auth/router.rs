@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::types::ObjectCannedAcl;
+use nanoid::nanoid;
 use salvo::oapi::extract::JsonBody;
 use salvo::prelude::*;
 use salvo::{Response, Router, oapi::endpoint};
-use uuid::Uuid;
 
 use crate::core::dtos::auth::create_token_dto::CreateTokenDto;
 use crate::core::types::errors::auth_error::AuthError;
@@ -36,10 +36,10 @@ async fn generate_presigned_url(_res: &mut Response) -> Result<PresignedResponse
     let content_type = "image/png";
     // Generate unique file key
     let extension = content_type.split('/').last().unwrap_or("jpeg");
-    let key = format!("{}.{}", Uuid::new_v4(), extension);
+    let key = format!("{}.{}", nanoid!(), extension);
 
     // Create storage object client
-    let (object_client, bucket_name) = get_storage_object_client().await;
+    let (object_client, bucket_name, custom_domain) = get_storage_object_client().await;
 
     // Prepare request
     let req = object_client
@@ -53,8 +53,14 @@ async fn generate_presigned_url(_res: &mut Response) -> Result<PresignedResponse
 
     match req {
         Ok(uri) => {
+            let source_url = match custom_domain {
+                Some(domain) => format!("https://{}/{}/{}", domain, bucket_name, key),
+                None => uri.uri().to_string(),
+            };
+
             let presigned_url = PresignedResponse {
                 presigned_url: uri.uri().to_string(),
+                source_url,
             };
 
             return Ok(presigned_url);

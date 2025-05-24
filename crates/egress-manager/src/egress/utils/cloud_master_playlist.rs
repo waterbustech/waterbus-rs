@@ -22,8 +22,8 @@ impl R2MasterState {
         }
     }
 
-    /// Write the master playlist and upload it to R2
-    pub fn maybe_write_and_upload_manifest(&mut self) -> Result<Option<String>> {
+    /// Write the master playlist and upload it to R2 (queued upload)
+    pub fn maybe_write_and_upload_manifest(&mut self) -> Result<Option<()>> {
         if self.state.wrote_manifest {
             return Ok(None);
         }
@@ -114,16 +114,16 @@ impl R2MasterState {
         // Mark as written in local state
         self.state.wrote_manifest = true;
 
-        // Now upload to R2
-        let url = self.r2_storage.upload_file(
+        // Now queue upload to R2
+        self.r2_storage.upload_file(
             &self.state.path,
             "master.m3u8",
             "application/vnd.apple.mpegurl",
         )?;
 
-        println!("Uploaded master manifest to R2: {}", url);
+        println!("Queued master manifest for upload to R2");
 
-        Ok(Some(url))
+        Ok(Some(()))
     }
 
     pub fn add_video_stream(&mut self, video_stream: VideoStream) {
@@ -134,7 +134,7 @@ impl R2MasterState {
         self.state.add_audio_stream(audio_stream);
     }
 
-    pub fn add_mime(&mut self, mime: String) -> Result<Option<String>> {
+    pub fn add_mime(&mut self, mime: String) -> Result<Option<()>> {
         self.state.add_mime(mime);
         self.maybe_write_and_upload_manifest()
     }

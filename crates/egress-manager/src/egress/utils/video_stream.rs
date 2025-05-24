@@ -59,6 +59,8 @@ impl VideoStreamExt for VideoStream {
     ) -> Result<(), Error> {
         let caps = gst::Caps::builder("application/x-rtp")
             .field("media", "video")
+            .field("encoding-name", "H264")
+            .field("payload", 96i32)
             .field("clock-rate", 90000i32)
             .build();
 
@@ -66,38 +68,21 @@ impl VideoStreamExt for VideoStream {
             .property("is-live", true)
             .property("format", gst::Format::Time)
             .property("do-timestamp", true)
-            .property("caps", caps)
+            .property("caps", &caps)
             .build()?;
 
-        // Decoder part based on codec, encoding still to H.264
-        let depay;
-        let decoder;
+        let rtp_depay = gst::ElementFactory::make("rtph264depay").build()?;
+        let h264_parse = gst::ElementFactory::make("h264parse").build()?;
+        let decoder = gst::ElementFactory::make("avdec_h264").build()?;
 
-        match self.codec.as_str() {
-            "h264" => {
-                depay = gst::ElementFactory::make("rtph264depay").build()?;
-                decoder = gst::ElementFactory::make("avdec_h264").build()?;
-            }
-            "vp8" => {
-                depay = gst::ElementFactory::make("rtpvp8depay").build()?;
-                decoder = gst::ElementFactory::make("vp8dec").build()?;
-            }
-            "vp9" => {
-                depay = gst::ElementFactory::make("rtpvp9depay").build()?;
-                decoder = gst::ElementFactory::make("vp9dec").build()?;
-            }
-            "av1" => {
-                depay = gst::ElementFactory::make("rtpav1depay").build()?;
-                decoder = gst::ElementFactory::make("av1dec").build()?;
-            }
-            _ => return Err(anyhow::anyhow!("Unsupported codec")),
-        }
+        let raw_capsfilter_pre = gst::ElementFactory::make("capsfilter")
+            .property("caps", gst::Caps::builder("video/x-raw").build())
+            .build()?;
 
         let videoscale = gst::ElementFactory::make("videoscale").build()?;
         let videorate = gst::ElementFactory::make("videorate").build()?;
 
-        // Encoding to H.264
-        let raw_capsfilter = gst::ElementFactory::make("capsfilter")
+        let raw_capsfilter_post = gst::ElementFactory::make("capsfilter")
             .property(
                 "caps",
                 gst_video::VideoCapsBuilder::new()
@@ -108,12 +93,14 @@ impl VideoStreamExt for VideoStream {
                     .build(),
             )
             .build()?;
+
         let enc = gst::ElementFactory::make("x264enc")
             .property("bframes", 0u32)
             .property("bitrate", self.bitrate as u32 / 1000u32)
             .property_from_str("tune", "zerolatency")
             .property_from_str("speed-preset", "ultrafast")
             .build()?;
+
         let h264_capsfilter = gst::ElementFactory::make("capsfilter")
             .property(
                 "caps",
@@ -122,32 +109,39 @@ impl VideoStreamExt for VideoStream {
                     .build(),
             )
             .build()?;
+
         let mux = gst::ElementFactory::make("cmafmux")
-            .property("fragment-duration", 200.mseconds())
+            .property("fragment-duration", 2.seconds())
             .property("write-mehd", true)
             .build()?;
+
         let appsink = gst_app::AppSink::builder().buffer_list(true).build();
 
-        pipeline.add_many([
+        pipeline.add_many(&[
             &src,
-            &depay,
+            &rtp_depay,
+            &h264_parse,
             &decoder,
+            &raw_capsfilter_pre,
             &videoscale,
             &videorate,
-            &raw_capsfilter,
+            &raw_capsfilter_post,
             &enc,
             &h264_capsfilter,
             &mux,
             appsink.upcast_ref(),
         ])?;
 
-        gst::Element::link_many([
-            &src,
-            &depay,
+        gst::Element::link_many(&[&src, &rtp_depay, &h264_parse, &decoder])?;
+        gst::Element::link_many(&[
             &decoder,
+            &raw_capsfilter_pre,
             &videoscale,
             &videorate,
-            &raw_capsfilter,
+            &raw_capsfilter_post,
+        ])?;
+        gst::Element::link_many(&[
+            &raw_capsfilter_post,
             &enc,
             &h264_capsfilter,
             &mux,
@@ -175,13 +169,13 @@ impl VideoStreamExt for VideoStream {
     }
 
     fn moq_setup(&mut self, pipeline: &gst::Pipeline) -> Result<(), Error> {
-        // RTP Caps
         let caps = gst::Caps::builder("application/x-rtp")
             .field("media", "video")
+            .field("encoding-name", "H264")
+            .field("payload", 96i32)
             .field("clock-rate", 90000i32)
             .build();
 
-        // AppSrc to push incoming video frames
         let src = gst::ElementFactory::make("appsrc")
             .property("is-live", true)
             .property("format", gst::Format::Time)
@@ -189,40 +183,17 @@ impl VideoStreamExt for VideoStream {
             .property("caps", caps)
             .build()?;
 
-        // Decoder elements based on codec selection
-        let depay;
-        let decoder;
-
-        match self.codec.as_str() {
-            "h264" => {
-                depay = gst::ElementFactory::make("rtph264depay").build()?;
-                decoder = gst::ElementFactory::make("h264parse").build()?;
-            }
-            "vp8" => {
-                depay = gst::ElementFactory::make("rtpvp8depay").build()?;
-                decoder = gst::ElementFactory::make("vp8dec").build()?;
-            }
-            "vp9" => {
-                depay = gst::ElementFactory::make("rtpvp9depay").build()?;
-                decoder = gst::ElementFactory::make("vp9dec").build()?;
-            }
-            "av1" => {
-                depay = gst::ElementFactory::make("rtpav1depay").build()?;
-                decoder = gst::ElementFactory::make("av1dec").build()?;
-            }
-            _ => return Err(anyhow::anyhow!("Unsupported codec")),
-        }
-
+        let rtp_depay = gst::ElementFactory::make("rtph264depay").build()?;
+        let h264_parse = gst::ElementFactory::make("h264parse").build()?;
         let queue = gst::ElementFactory::make("queue").name("v_queue").build()?;
         let identity = gst::ElementFactory::make("identity")
             .property("sync", true)
             .build()?;
 
-        pipeline.add_many([&src, &depay, &decoder, &queue, &identity])?;
+        pipeline.add_many([&src, &rtp_depay, &h264_parse, &queue, &identity])?;
 
-        gst::Element::link_many([&src, &depay, &decoder, &queue, &identity])?;
+        gst::Element::link_many([&src, &rtp_depay, &h264_parse, &queue, &identity])?;
 
-        // Set up the muxer to write output to MP4
         let mux = gst::ElementFactory::make("isofmp4mux")
             .name("mux")
             .property("fragment-duration", 1.nseconds())
@@ -241,7 +212,6 @@ impl VideoStreamExt for VideoStream {
 
         identity_pad.link(&mux_sink_pad)?;
 
-        // Configure appsrc for live streaming
         let video_src = src.downcast::<AppSrc>().expect("Element is not an AppSrc");
         video_src.set_is_live(true);
         video_src.set_stream_type(AppStreamType::Stream);
@@ -305,7 +275,7 @@ impl VideoStreamExt for VideoStream {
                     }
                     Err(err) => {
                         // Handle errors during buffer push
-                        error!("Failed to push RTP packet to video_src: {:?}", err);
+                        // error!("Failed to push RTP packet to video_src: {:?}", err);
                         Err(anyhow::Error::from(err))
                     }
                 }

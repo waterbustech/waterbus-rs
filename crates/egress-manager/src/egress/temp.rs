@@ -125,7 +125,6 @@ pub struct VideoStream {
     pub width: u64,
     pub height: u64,
     pub video_src: Option<AppSrc>,
-    pub codec: String,
 }
 
 #[derive(Debug)]
@@ -215,7 +214,7 @@ fn update_manifest(state: &mut StreamState) {
             })
             .collect(),
         end_list: false,
-        playlist_type: Some(m3u8_rs::MediaPlaylistType::Vod),
+        playlist_type: None,
         i_frames_only: false,
         start: None,
         independent_segments: true,
@@ -349,6 +348,12 @@ fn setup_appsink(appsink: &gst_app::AppSink, name: &str, path: &Path, is_video: 
                     ))
                     .unwrap();
 
+                // println!(
+                //     "wrote segment with date time {} to {}",
+                //     date_time,
+                //     path.display()
+                // );
+
                 state.segments.push_back(Segment {
                     duration,
                     path: basename.to_string(),
@@ -371,6 +376,9 @@ fn setup_appsink(appsink: &gst_app::AppSink, name: &str, path: &Path, is_video: 
                         "AppSink for stream '{}' received EOS signal.",
                         name_clone.as_ref()
                     );
+                    // tracing::info!("AppSink for stream '{}' received EOS signal.", name_clone.as_ref()); // Using tracing macro
+                    // You might want to signal something to a higher level
+                    // or clean up resources associated with this specific stream.
                 }
             })
             .build(),
@@ -400,10 +408,6 @@ fn probe_encoder(state: Arc<Mutex<State>>, enc: gst::Element) {
 }
 
 impl VideoStream {
-    pub fn set_video_codec(&mut self, codec: &str) {
-        self.codec = codec.to_owned();
-    }
-
     pub fn setup(
         &mut self,
         state: Arc<Mutex<State>>,
@@ -412,6 +416,8 @@ impl VideoStream {
     ) -> Result<(), Error> {
         let caps = gst::Caps::builder("application/x-rtp")
             .field("media", "video")
+            .field("encoding-name", "H264")
+            .field("payload", 96i32)
             .field("clock-rate", 90000i32)
             .build();
 
@@ -422,34 +428,13 @@ impl VideoStream {
             .property("caps", caps)
             .build()?;
 
-        // Decoder part based on codec, encoding still to H.264
-        let depay;
-        let decoder;
-
-        match self.codec.as_str() {
-            "h264" => {
-                depay = gst::ElementFactory::make("rtph264depay").build()?;
-                decoder = gst::ElementFactory::make("avdec_h264").build()?;
-            }
-            "vp8" => {
-                depay = gst::ElementFactory::make("rtpvp8depay").build()?;
-                decoder = gst::ElementFactory::make("vp8dec").build()?;
-            }
-            "vp9" => {
-                depay = gst::ElementFactory::make("rtpvp9depay").build()?;
-                decoder = gst::ElementFactory::make("vp9dec").build()?;
-            }
-            "av1" => {
-                depay = gst::ElementFactory::make("rtpav1depay").build()?;
-                decoder = gst::ElementFactory::make("av1dec").build()?;
-            }
-            _ => return Err(anyhow::anyhow!("Unsupported codec")),
-        }
+        let rtp_depay = gst::ElementFactory::make("rtph264depay").build()?;
+        let h264_parse = gst::ElementFactory::make("h264parse").build()?;
+        let decoder = gst::ElementFactory::make("avdec_h264").build()?;
 
         let videoscale = gst::ElementFactory::make("videoscale").build()?;
         let videorate = gst::ElementFactory::make("videorate").build()?;
 
-        // Encoding to H.264
         let raw_capsfilter = gst::ElementFactory::make("capsfilter")
             .property(
                 "caps",
@@ -483,7 +468,8 @@ impl VideoStream {
 
         pipeline.add_many([
             &src,
-            &depay,
+            &rtp_depay,
+            &h264_parse,
             &decoder,
             &videoscale,
             &videorate,
@@ -496,7 +482,8 @@ impl VideoStream {
 
         gst::Element::link_many([
             &src,
-            &depay,
+            &rtp_depay,
+            &h264_parse,
             &decoder,
             &videoscale,
             &videorate,
@@ -522,13 +509,13 @@ impl VideoStream {
     }
 
     pub fn moq_setup(&mut self, pipeline: &gst::Pipeline) -> Result<(), Error> {
-        // RTP Caps
         let caps = gst::Caps::builder("application/x-rtp")
             .field("media", "video")
+            .field("encoding-name", "H264")
+            .field("payload", 96i32)
             .field("clock-rate", 90000i32)
             .build();
 
-        // AppSrc to push incoming video frames
         let src = gst::ElementFactory::make("appsrc")
             .property("is-live", true)
             .property("format", gst::Format::Time)
@@ -536,40 +523,17 @@ impl VideoStream {
             .property("caps", caps)
             .build()?;
 
-        // Decoder elements based on codec selection
-        let depay;
-        let decoder;
-
-        match self.codec.as_str() {
-            "h264" => {
-                depay = gst::ElementFactory::make("rtph264depay").build()?;
-                decoder = gst::ElementFactory::make("h264parse").build()?;
-            }
-            "vp8" => {
-                depay = gst::ElementFactory::make("rtpvp8depay").build()?;
-                decoder = gst::ElementFactory::make("vp8dec").build()?;
-            }
-            "vp9" => {
-                depay = gst::ElementFactory::make("rtpvp9depay").build()?;
-                decoder = gst::ElementFactory::make("vp9dec").build()?;
-            }
-            "av1" => {
-                depay = gst::ElementFactory::make("rtpav1depay").build()?;
-                decoder = gst::ElementFactory::make("av1dec").build()?;
-            }
-            _ => return Err(anyhow::anyhow!("Unsupported codec")),
-        }
-
+        let rtp_depay = gst::ElementFactory::make("rtph264depay").build()?;
+        let h264_parse = gst::ElementFactory::make("h264parse").build()?;
         let queue = gst::ElementFactory::make("queue").name("v_queue").build()?;
         let identity = gst::ElementFactory::make("identity")
             .property("sync", true)
             .build()?;
 
-        pipeline.add_many([&src, &depay, &decoder, &queue, &identity])?;
+        pipeline.add_many([&src, &rtp_depay, &h264_parse, &queue, &identity])?;
 
-        gst::Element::link_many([&src, &depay, &decoder, &queue, &identity])?;
+        gst::Element::link_many([&src, &rtp_depay, &h264_parse, &queue, &identity])?;
 
-        // Set up the muxer to write output to MP4
         let mux = gst::ElementFactory::make("isofmp4mux")
             .name("mux")
             .property("fragment-duration", 1.nseconds())
@@ -588,7 +552,9 @@ impl VideoStream {
 
         identity_pad.link(&mux_sink_pad)?;
 
-        // Configure appsrc for live streaming
+        // let appsink = gst_app::AppSink::builder().buffer_list(true).build();
+        // setup_appsink(&appsink, &self.name, path, true);
+
         let video_src = src.downcast::<AppSrc>().expect("Element is not an AppSrc");
         video_src.set_is_live(true);
         video_src.set_stream_type(AppStreamType::Stream);
