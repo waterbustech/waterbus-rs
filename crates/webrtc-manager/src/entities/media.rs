@@ -67,10 +67,15 @@ impl Media {
         }
     }
 
-    // Call this after creating Media to initialize HLS writer
     pub async fn initialize_hls_writer(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // let hls_writer = HlsWriter::new(&self.output_dir, self.participant_id.clone()).await?;
-        // self.hls_writer = Some(Arc::new(hls_writer));
+        let hls_writer = HlsWriter::new(&self.output_dir, self.participant_id.clone()).await?;
+        self.hls_writer = Some(Arc::new(hls_writer));
+        Ok(())
+    }
+
+    pub fn initialize_moq_writer(&mut self) -> Result<(), anyhow::Error> {
+        let moq_writer = MoQWriter::new(&self.participant_id.clone())?;
+        self.moq_writer = Some(Arc::new(moq_writer));
         Ok(())
     }
 

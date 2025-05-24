@@ -205,6 +205,7 @@ impl Track {
         let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()));
         let acceptable_map = Arc::clone(&self.acceptable_map);
         let is_svc = self.is_svc;
+        let this = self.clone();
 
         tokio::spawn(async move {
             let is_video = kind == RTPCodecType::Video;
@@ -222,6 +223,7 @@ impl Track {
                                 packet: Arc::clone(&rtp),
                                 acceptable_map: acceptable_map.clone(),
                                 is_svc: is_svc,
+                                is_simulcast: this.is_simulcast,
                                 track_quality: (*current_quality).clone(),
                             });
                         }

@@ -20,11 +20,12 @@ use webrtc::{
 
 use super::quality::TrackQuality;
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct RtpForwardInfo {
     pub packet: Arc<Packet>,
     pub acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
     pub is_svc: bool,
+    pub is_simulcast: bool,
     pub track_quality: TrackQuality,
 }
 
@@ -76,6 +77,7 @@ impl ForwardTrack {
             while let Ok(info) = receiver.recv().await {
                 let rtp = &info.packet;
                 let is_svc = info.is_svc;
+                let is_simulcast = info.is_simulcast;
                 let current_quality = info.track_quality.clone();
                 let acceptable_map = info.acceptable_map.clone();
 
@@ -93,6 +95,7 @@ impl ForwardTrack {
                         &acceptable_map,
                         current_quality.clone(),
                         desired_quality.clone(),
+                        is_simulcast,
                     )
                 {
                     continue;
@@ -150,7 +153,12 @@ impl ForwardTrack {
         acceptable_map: &Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
         current: TrackQuality,
         desired: TrackQuality,
+        is_simulcast: bool,
     ) -> bool {
+        if !is_simulcast {
+            return true;
+        }
+
         acceptable_map
             .get(&(current, desired))
             .map(|v| *v)
