@@ -10,8 +10,8 @@ use super::{
     AudioStream, R2MasterState, R2Storage, State, probe_encoder_with_r2, setup_r2_appsink,
 };
 
-use gst::prelude::*;
 use gst::BufferFlags;
+use gst::prelude::*;
 use gst_app::{AppSrc, AppStreamType};
 use tracing::error;
 
@@ -70,7 +70,7 @@ impl AudioStreamExt for AudioStream {
         let mux = gst::ElementFactory::make("cmafmux")
             .property_from_str("header-update-mode", "update")
             .property("write-mehd", true)
-            .property("fragment-duration", 2.seconds())
+            .property("fragment-duration", 500.mseconds())
             .build()?;
         let appsink = gst_app::AppSink::builder().buffer_list(true).build();
 

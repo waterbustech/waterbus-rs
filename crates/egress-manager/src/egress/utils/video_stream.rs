@@ -111,7 +111,7 @@ impl VideoStreamExt for VideoStream {
             .build()?;
 
         let mux = gst::ElementFactory::make("cmafmux")
-            .property("fragment-duration", 2.seconds())
+            .property("fragment-duration", 500.mseconds())
             .property("write-mehd", true)
             .build()?;
 

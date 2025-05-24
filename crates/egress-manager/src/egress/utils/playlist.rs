@@ -30,7 +30,7 @@ pub fn update_manifest(state: &mut StreamState) {
     let playlist = MediaPlaylist {
         version: Some(7),
         server_control,
-        target_duration: 2,
+        target_duration: 1,
         media_sequence: state.media_sequence,
         segments: state
             .segments
