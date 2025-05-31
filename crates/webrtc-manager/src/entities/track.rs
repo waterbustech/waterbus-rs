@@ -3,6 +3,7 @@ use egress_manager::egress::hls_writer::HlsWriter;
 use egress_manager::egress::moq_writer::MoQWriter;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::broadcast::Sender;
 use tokio_util::bytes::BytesMut;
@@ -30,7 +31,7 @@ pub struct Track {
     pub id: String,
     pub room_id: String,
     pub participant_id: String,
-    pub is_simulcast: bool,
+    pub is_simulcast: Arc<AtomicBool>,
     pub is_svc: bool,
     pub codec_type: CodecType,
     pub stream_id: String,
@@ -73,7 +74,7 @@ impl Track {
             id: track.id(),
             room_id,
             participant_id,
-            is_simulcast: false,
+            is_simulcast: Arc::new(AtomicBool::new(false)),
             is_svc,
             codec_type,
             stream_id: track.stream_id().to_string(),
@@ -99,7 +100,7 @@ impl Track {
 
         self._forward_rtp(track, None, None, self.kind);
 
-        self.is_simulcast = true;
+        self.is_simulcast.store(true, Ordering::Relaxed);
     }
 
     pub fn stop(&mut self) {
@@ -205,7 +206,7 @@ impl Track {
         let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()));
         let acceptable_map = Arc::clone(&self.acceptable_map);
         let is_svc = self.is_svc;
-        let this = self.clone();
+        let is_simulcast = Arc::clone(&self.is_simulcast);
 
         tokio::spawn(async move {
             let is_video = kind == RTPCodecType::Video;
@@ -223,7 +224,7 @@ impl Track {
                                 packet: Arc::clone(&rtp),
                                 acceptable_map: acceptable_map.clone(),
                                 is_svc: is_svc,
-                                is_simulcast: this.is_simulcast,
+                                is_simulcast: is_simulcast.load(Ordering::Relaxed),
                                 track_quality: (*current_quality).clone(),
                             });
                         }

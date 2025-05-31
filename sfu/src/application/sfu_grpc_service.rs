@@ -4,16 +4,16 @@ use tokio::sync::{Mutex, RwLock};
 use tonic::{Request, Response, Status};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
-    LeaveRoomRequest, LeaveRoomResponse, NewUserJoinedRequest, PublisherCandidateRequest,
-    PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType,
-    SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest, StatusResponse,
-    SubscribeRequest, SubscribeResponse, SubscriberCandidateRequest, SubscriberRenegotiateRequest,
-    sfu_service_server::SfuService,
+    LeaveRoomRequest, LeaveRoomResponse, MigratePublisherRequest, MigratePublisherResponse,
+    NewUserJoinedRequest, PublisherCandidateRequest, PublisherRenegotiationRequest,
+    PublisherRenegotiationResponse, SetCameraType, SetEnabledRequest, SetScreenSharingRequest,
+    SetSubscriberSdpRequest, StatusResponse, SubscribeRequest, SubscribeResponse,
+    SubscriberCandidateRequest, SubscriberRenegotiateRequest, sfu_service_server::SfuService,
 };
 use webrtc_manager::{
     models::{
         IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback,
-        WebRTCManagerConfigs,
+        WebRTCManagerConfigs, connection_type::ConnectionType,
     },
     webrtc_manager::{JoinRoomReq, WebRTCManager},
 };
@@ -82,7 +82,7 @@ impl SfuService for SfuGrpcService {
         let client_id = req.client_id.clone();
         let node_id = self.node_id.clone();
 
-        let joined_callback: JoinedCallback = Arc::new(move || {
+        let joined_callback: JoinedCallback = Arc::new(move |is_migrate| {
             let dispatcher = Arc::clone(&dispatcher);
             let participant_id = participant_id.clone();
             let room_id = room_id.clone();
@@ -98,6 +98,7 @@ impl SfuService for SfuGrpcService {
                         room_id,
                         client_id,
                         node_id,
+                        is_migrate,
                     })
                     .await;
             })
@@ -113,19 +114,29 @@ impl SfuService for SfuGrpcService {
                 is_audio_enabled: req.is_audio_enabled,
                 is_e2ee_enabled: req.is_e2ee_enabled,
                 total_tracks: req.total_tracks as u8,
+                connection_type: req.connection_type as u8,
                 callback: joined_callback,
                 ice_candidate_callback: ice_candidate_callback,
             })
             .await;
 
         match response {
-            Ok(response) => {
-                let join_room_response = JoinRoomResponse {
-                    sdp: response.sdp,
-                    is_recording: response.is_recording,
-                };
-                Ok(Response::new(join_room_response))
-            }
+            Ok(response) => match response {
+                Some(response) => {
+                    let join_room_response = JoinRoomResponse {
+                        sdp: response.sdp,
+                        is_recording: response.is_recording,
+                    };
+                    Ok(Response::new(join_room_response))
+                }
+                None => {
+                    let join_room_response = JoinRoomResponse {
+                        sdp: "".to_string(),
+                        is_recording: false,
+                    };
+                    Ok(Response::new(join_room_response))
+                }
+            },
             Err(err) => Err(Status::internal(format!("Failed to join room: {}", err))),
         }
     }
@@ -253,6 +264,31 @@ impl SfuService for SfuGrpcService {
 
         match response {
             Ok(sdp) => Ok(Response::new(PublisherRenegotiationResponse { sdp })),
+            Err(err) => Err(Status::internal(format!(
+                "Failed to handle publisher renegotiate: {}",
+                err
+            ))),
+        }
+    }
+
+    async fn migrate_publisher_connection(
+        &self,
+        req: Request<MigratePublisherRequest>,
+    ) -> Result<Response<MigratePublisherResponse>, Status> {
+        let req = req.into_inner();
+
+        let writer = self.webrtc_manager.write().await;
+
+        let response = writer
+            .handle_migrate_connection(
+                &req.client_id,
+                &req.sdp,
+                ConnectionType::from(req.connection_type as u8),
+            )
+            .await;
+
+        match response {
+            Ok(sdp) => Ok(Response::new(MigratePublisherResponse { sdp })),
             Err(err) => Err(Status::internal(format!(
                 "Failed to handle publisher renegotiate: {}",
                 err

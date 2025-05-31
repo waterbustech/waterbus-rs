@@ -8,6 +8,7 @@ use crate::{
     models::{
         IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
         RenegotiationCallback, SubscribeParams, SubscribeResponse, WClient, WebRTCManagerConfigs,
+        connection_type::ConnectionType,
     },
     room::Room,
 };
@@ -21,6 +22,7 @@ pub struct JoinRoomReq {
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
     pub total_tracks: u8,
+    pub connection_type: u8,
     pub callback: JoinedCallback,
     pub ice_candidate_callback: IceCandidateCallback,
 }
@@ -41,7 +43,10 @@ impl WebRTCManager {
         }
     }
 
-    pub async fn join_room(&self, req: JoinRoomReq) -> Result<JoinRoomResponse, WebRTCError> {
+    pub async fn join_room(
+        &self,
+        req: JoinRoomReq,
+    ) -> Result<Option<JoinRoomResponse>, WebRTCError> {
         let client_id = &req.client_id;
         let room_id = &req.room_id;
         let participant_id = &req.participant_id;
@@ -69,6 +74,7 @@ impl WebRTCManager {
             is_video_enabled: req.is_video_enabled,
             is_e2ee_enabled: req.is_e2ee_enabled,
             total_tracks: req.total_tracks,
+            connection_type: ConnectionType::from(req.connection_type),
             callback: req.callback,
             on_candidate: req.ice_candidate_callback,
         };
@@ -153,6 +159,29 @@ impl WebRTCManager {
             .await?;
 
         Ok(sdp)
+    }
+
+    pub async fn handle_migrate_connection(
+        &self,
+        client_id: &str,
+        sdp: &str,
+        connection_type: ConnectionType,
+    ) -> Result<Option<String>, WebRTCError> {
+        let client = self.get_client_by_id(client_id)?;
+
+        let client = client.clone();
+
+        let room_id = &client.room_id;
+        let participant_id = &client.participant_id;
+
+        let room = self._get_room_by_id(room_id)?;
+        let room = room.lock().await;
+
+        let sdp = room
+            .handle_migrate_connection(participant_id, sdp, connection_type)
+            .await?;
+
+        return Ok(sdp);
     }
 
     pub async fn add_publisher_candidate(

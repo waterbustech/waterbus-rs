@@ -10,6 +10,7 @@ pub struct JoinRoomDto {
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
     pub total_tracks: u8,
+    pub connection_type: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,14 +24,27 @@ pub struct SubscribeDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnswerSubscribeDto {
+    pub room_id: String,
     pub target_id: String,
     pub sdp: String,
+    pub connection_type: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublisherRenegotiationDto {
     pub sdp: String,
+    pub room_id: String,
+    pub connection_type: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrateConnectionDto {
+    pub sdp: String,
+    pub room_id: String,
+    pub participant_id: String,
+    pub connection_type: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,9 +57,19 @@ pub struct CandidateDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PublisherCandidateDto {
+    pub connection_type: u8,
+    pub candidate: CandidateDto,
+    pub room_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubscriberCandidateDto {
     pub target_id: String,
+    pub connection_type: u8,
     pub candidate: CandidateDto,
+    pub room_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

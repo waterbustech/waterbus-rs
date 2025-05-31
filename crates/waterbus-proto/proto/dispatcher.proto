@@ -9,6 +9,7 @@ message NewUserJoinedRequest {
     string participantId = 2;
     string roomId = 3;
     string nodeId = 4;
+    bool is_migrate = 5;
 }
 
 message SubscriberRenegotiateRequest {

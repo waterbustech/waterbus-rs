@@ -1,4 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
+    time::Duration,
+};
 
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -7,20 +13,28 @@ use webrtc::{
     rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication,
 };
 
+use crate::models::connection_type::ConnectionType;
+
 use super::media::Media;
 
 #[derive(Debug)]
 pub struct Publisher {
     pub media: Arc<RwLock<Media>>,
     pub peer_connection: Arc<RTCPeerConnection>,
+    pub connection_type: AtomicU8,
     cancel_token: CancellationToken,
 }
 
 impl Publisher {
-    pub fn new(media: Arc<RwLock<Media>>, peer_connection: Arc<RTCPeerConnection>) -> Self {
+    pub fn new(
+        media: Arc<RwLock<Media>>,
+        peer_connection: Arc<RTCPeerConnection>,
+        connection_type: ConnectionType,
+    ) -> Self {
         let this = Self {
             media,
             peer_connection,
+            connection_type: AtomicU8::new(connection_type.into()),
             cancel_token: CancellationToken::new(),
         };
 
@@ -55,6 +69,15 @@ impl Publisher {
                 };
             }
         });
+    }
+
+    pub fn set_connection_type(&self, connection_type: ConnectionType) {
+        self.connection_type
+            .store(connection_type.into(), Ordering::Relaxed);
+    }
+
+    pub fn get_connection_type(&self) -> ConnectionType {
+        self.connection_type.load(Ordering::Relaxed).into()
     }
 
     pub fn close(&self) {

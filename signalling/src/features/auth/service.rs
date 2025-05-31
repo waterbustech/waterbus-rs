@@ -109,7 +109,6 @@ impl AuthService for AuthServiceImpl {
         jwt_utils: JwtUtils,
         user_id: i32,
     ) -> Result<AuthResponse, AuthError> {
-        println!("user_id: {}", user_id);
         let token = jwt_utils.clone().generate_token(&user_id.to_string());
         let refresh_token = jwt_utils
             .clone()

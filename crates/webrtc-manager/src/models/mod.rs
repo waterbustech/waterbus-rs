@@ -1,15 +1,19 @@
 use std::{pin::Pin, sync::Arc};
 
+use connection_type::ConnectionType;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
 use crate::entities::track::Track;
 
+pub mod connection_type;
+
 pub type IceCandidateCallback =
     Arc<dyn Fn(IceCandidate) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 pub type RenegotiationCallback =
     Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-pub type JoinedCallback = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+pub type JoinedCallback =
+    Arc<dyn Fn(bool) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct WebRTCManagerConfigs {
@@ -32,6 +36,7 @@ pub struct JoinRoomParams {
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
     pub total_tracks: u8,
+    pub connection_type: ConnectionType,
     pub callback: JoinedCallback,
     pub on_candidate: IceCandidateCallback,
 }

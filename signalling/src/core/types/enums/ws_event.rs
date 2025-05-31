@@ -5,6 +5,7 @@ pub enum WsEvent {
     RoomAnswerSubscriber,
     RoomLeave,
     RoomReconnect,
+    RoomMigrate,
 
     RoomPublisherRenegotiation,
     RoomSubscriberRenegotiation,
@@ -40,6 +41,7 @@ impl WsEvent {
             WsEvent::RoomAnswerSubscriber => "room.answer_subscriber",
             WsEvent::RoomLeave => "room.leave",
             WsEvent::RoomReconnect => "room.reconnect",
+            WsEvent::RoomMigrate => "room.migrate",
 
             WsEvent::RoomPublisherRenegotiation => "room.publisher_renegotiation",
             WsEvent::RoomSubscriberRenegotiation => "room.subscriber_renegotiation",

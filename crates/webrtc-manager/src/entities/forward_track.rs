@@ -83,6 +83,11 @@ impl ForwardTrack {
 
                 let desired_quality = this._get_desired_quality();
 
+                // if !is_simulcast {
+                //     println!("======> this is not simulcast");
+                //     println!("{:?}", acceptable_map);
+                // }
+
                 if desired_quality == TrackQuality::None {
                     continue;
                 }

@@ -2,9 +2,9 @@ use std::{fs, path::Path, sync::Arc};
 
 use dashmap::DashMap;
 use egress_manager::egress::{hls_writer::HlsWriter, moq_writer::MoQWriter};
+use nanoid::nanoid;
 use parking_lot::RwLock;
 use tracing::{debug, info};
-use nanoid::nanoid;
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
 
 use crate::models::{AddTrackResponse, TrackMutexWrapper};
@@ -20,6 +20,7 @@ pub struct Media {
     hls_writer: Option<Arc<HlsWriter>>,
     moq_writer: Option<Arc<MoQWriter>>,
     output_dir: String,
+    sdp: Option<String>,
 }
 
 #[derive(Debug)]
@@ -54,6 +55,7 @@ impl Media {
             hls_writer: None,
             moq_writer: None,
             output_dir,
+            sdp: None,
             state: Arc::new(RwLock::new(MediaState {
                 video_enabled: is_video_enabled,
                 audio_enabled: is_audio_enabled,
@@ -77,6 +79,18 @@ impl Media {
         let moq_writer = MoQWriter::new(&self.participant_id.clone())?;
         self.moq_writer = Some(Arc::new(moq_writer));
         Ok(())
+    }
+
+    pub fn cache_sdp(&mut self, sdp: String) {
+        self.sdp = Some(sdp);
+    }
+
+    pub fn get_sdp(&mut self) -> Option<String> {
+        let sdp = self.sdp.clone();
+
+        self.sdp = None;
+
+        sdp
     }
 
     // Alternative: Static method that creates and initializes everything
@@ -202,6 +216,15 @@ impl Media {
     }
 
     pub fn remove_all_tracks(&self) {
+        for entry in self.tracks.iter() {
+            let track_mutex = entry.value().clone();
+
+            tokio::spawn(async move {
+                let mut track = track_mutex.write().await;
+                track.stop();
+            });
+        }
+
         self.tracks.clear();
     }
 
@@ -222,15 +245,6 @@ impl Media {
     }
 
     pub fn stop(&self) {
-        for entry in self.tracks.iter() {
-            let track_mutex = entry.value().clone();
-
-            tokio::spawn(async move {
-                let mut track = track_mutex.write().await;
-                track.stop();
-            });
-        }
-
         self.remove_all_tracks();
 
         if let Some(writer) = &self.hls_writer {
@@ -261,7 +275,7 @@ impl Media {
             rtp_track.rid()
         };
 
-        debug!(
+        info!(
             "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
             rtp_track.id(),
             rtp_track.kind(),

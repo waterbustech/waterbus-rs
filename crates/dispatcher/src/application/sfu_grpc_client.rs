@@ -1,10 +1,10 @@
 use tonic::{Request, Status, transport::Channel};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
-    LeaveRoomRequest, LeaveRoomResponse, PublisherRenegotiationRequest,
-    PublisherRenegotiationResponse, SetCameraType, SetEnabledRequest, SetScreenSharingRequest,
-    SetSubscriberSdpRequest, StatusResponse, SubscribeRequest, SubscribeResponse,
-    sfu_service_client::SfuServiceClient,
+    LeaveRoomRequest, LeaveRoomResponse, MigratePublisherRequest, MigratePublisherResponse,
+    PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType,
+    SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest, StatusResponse,
+    SubscribeRequest, SubscribeResponse, sfu_service_client::SfuServiceClient,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -69,6 +69,21 @@ impl SfuGrpcClient {
             .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
         let response = client
             .publisher_renegotiation(Request::new(request))
+            .await?;
+        Ok(response)
+    }
+
+    pub async fn migrate_connection(
+        &self,
+        server_address: String,
+        request: MigratePublisherRequest,
+    ) -> Result<tonic::Response<MigratePublisherResponse>, tonic::Status> {
+        let mut client = self
+            .get_client(server_address)
+            .await
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+        let response = client
+            .migrate_publisher_connection(Request::new(request))
             .await?;
         Ok(response)
     }

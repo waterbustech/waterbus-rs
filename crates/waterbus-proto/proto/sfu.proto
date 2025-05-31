@@ -14,6 +14,7 @@ message JoinRoomRequest {
     bool isAudioEnabled = 6;
     bool isE2eeEnabled = 7;
     int32 totalTracks = 8;
+    int32 connectionType = 9;
 }
 
 message SubscribeRequest {
@@ -34,15 +35,23 @@ message PublisherRenegotiationRequest {
     string sdp = 2;
 }
 
+message MigratePublisherRequest {
+    string clientId = 1;
+    string sdp = 2;
+    int32 connectionType = 3;
+}
+
 message AddPublisherCandidateRequest {
     string clientId = 1;
     common.IceCandidate candidate = 2;
+    int32 connectionType = 3;
 }
 
 message AddSubscriberCandidateRequest {
     string clientId = 1;
     string targetId = 2;
     common.IceCandidate candidate = 3;
+    int32 connectionType = 4;
 }
 
 message LeaveRoomRequest {
@@ -87,6 +96,10 @@ message PublisherRenegotiationResponse {
     string sdp = 1;
 }
 
+message MigratePublisherResponse {
+    optional string sdp = 1;
+}
+
 message LeaveRoomResponse {
     string participantId = 1;
     string roomId = 2;
@@ -102,6 +115,7 @@ service SfuService {
     rpc setSubscriberSdp(SetSubscriberSdpRequest) returns (StatusResponse) {}
     rpc publisherRenegotiation(PublisherRenegotiationRequest) returns (PublisherRenegotiationResponse) {}
     rpc addPublisherCandidate(AddPublisherCandidateRequest) returns (StatusResponse) {}
+    rpc migratePublisherConnection(MigratePublisherRequest) returns (MigratePublisherResponse) {}
     rpc addSubscriberCandidate(AddSubscriberCandidateRequest) returns (StatusResponse) {}
     rpc leaveRoom(LeaveRoomRequest) returns (LeaveRoomResponse) {}
     rpc setVideoEnabled(SetEnabledRequest) returns (StatusResponse) {}

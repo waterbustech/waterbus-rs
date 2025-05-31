@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use super::room_response::ParticipantResponse;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 
@@ -7,11 +9,25 @@ pub struct ParticipantHasLeftResponse {
     pub target_id: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+
+pub struct NewUserJoinedResponse {
+    pub participant: ParticipantResponse,
+    pub is_migrate: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JoinRoomResponse {
     pub sdp: String,
     pub is_recording: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenegotiateResponse {
+    pub sdp: String,
 }
 
 #[derive(Serialize)]

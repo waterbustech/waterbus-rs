@@ -36,6 +36,7 @@ use crate::{
     models::{
         AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse, SubscribeParams,
         SubscribeResponse, TrackMutexWrapper, WebRTCManagerConfigs,
+        connection_type::ConnectionType,
     },
 };
 
@@ -59,22 +60,32 @@ impl Room {
         &mut self,
         params: JoinRoomParams,
         room_id: &str,
-    ) -> Result<JoinRoomResponse, WebRTCError> {
+    ) -> Result<Option<JoinRoomResponse>, WebRTCError> {
         let participant_id = params.participant_id;
 
         let pc = self._create_pc().await?;
 
-        let media = Media::new(
+        let mut media = Media::new(
             participant_id.clone(),
             params.is_video_enabled,
             params.is_audio_enabled,
             params.is_e2ee_enabled,
         );
 
+        if params.connection_type == ConnectionType::P2P {
+            media.cache_sdp(params.sdp.clone());
+        }
+
         // let _ = media.initialize_hls_writer().await;
 
-        let publisher = Arc::new(Publisher::new(Arc::new(RwLock::new(media)), pc.clone()));
+        let publisher = Arc::new(Publisher::new(
+            Arc::new(RwLock::new(media)),
+            pc.clone(),
+            params.connection_type.clone(),
+        ));
         self._add_publisher(&participant_id, &publisher);
+
+        let is_migrate = params.connection_type == ConnectionType::P2P;
 
         // === Peer Connection Callbacks ===
         // If total tracks is 0 -> execute joined callback when pc connected
@@ -84,6 +95,7 @@ impl Room {
                 let peer_clone = pc.clone();
                 let callback = params.callback.clone();
                 let has_emitted = has_emitted.clone();
+                let is_migrate = is_migrate.clone();
 
                 pc.on_peer_connection_state_change(Box::new(move |_| {
                     let peer = peer_clone.clone();
@@ -97,7 +109,7 @@ impl Room {
                             if !*emitted {
                                 *emitted = true;
                                 tokio::spawn(async move {
-                                    (callback)().await;
+                                    (callback)(is_migrate).await;
                                 });
                             }
                         }
@@ -120,6 +132,8 @@ impl Room {
             let track_counter = Arc::clone(&track_counter);
             let callback_called = Arc::clone(&callback_called);
             let callback = params.callback.clone();
+
+            let is_migrate = params.connection_type == ConnectionType::P2P;
 
             pc.on_track(Box::new(move |track, _, _| {
                 let media = Arc::clone(&media);
@@ -167,7 +181,8 @@ impl Room {
                                     let mut called = callback_called.lock().await;
                                     if !*called {
                                         *called = true;
-                                        tokio::spawn((callback)());
+
+                                        tokio::spawn((callback)(is_migrate));
                                     }
                                 }
                             }
@@ -198,26 +213,35 @@ impl Room {
         }
 
         // === SDP Exchange ===
-        let sdp = RTCSessionDescription::offer(params.sdp.clone())
-            .map_err(|_| WebRTCError::FailedToCreateOffer)?;
+        if params.connection_type == ConnectionType::SFU {
+            let sdp = RTCSessionDescription::offer(params.sdp.clone())
+                .map_err(|_| WebRTCError::FailedToCreateOffer)?;
 
-        pc.set_remote_description(sdp)
-            .await
-            .map_err(|_| WebRTCError::FailedToSetSdp)?;
+            pc.set_remote_description(sdp)
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
 
-        let answer = pc
-            .create_answer(None)
-            .await
-            .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+            let answer = pc
+                .create_answer(None)
+                .await
+                .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
 
-        pc.set_local_description(answer.clone())
-            .await
-            .map_err(|_| WebRTCError::FailedToSetSdp)?;
+            pc.set_local_description(answer.clone())
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
 
-        Ok(JoinRoomResponse {
-            sdp: answer.sdp.clone(),
-            is_recording: false,
-        })
+            return Ok(Some(JoinRoomResponse {
+                sdp: answer.sdp.clone(),
+                is_recording: false,
+            }));
+        } else {
+            let callback = params.callback.clone();
+            tokio::spawn(async move {
+                (callback)(false).await;
+            });
+        }
+
+        Ok(None)
     }
 
     pub async fn subscribe(
@@ -227,78 +251,102 @@ impl Room {
         let target_id = &params.target_id;
         let participant_id = &params.participant_id;
 
-        let peer_id = self._get_subscriber_peer_id(target_id, participant_id);
-
-        let pc = self._create_pc().await?;
-
-        self._add_subscriber(&peer_id, &pc, participant_id.clone());
-
         let media_arc = self._get_media(target_id)?;
 
         let subscribe_response = self._extract_subscribe_response(&media_arc).await;
 
-        // Clone for callbacks
-        let peer_clone = pc.clone();
-        let media_clone = Arc::clone(&media_arc);
-        let renegotiation_callback = params.on_negotiation_needed.clone();
-        pc.on_negotiation_needed(Box::new(move || {
-            let peer = peer_clone.clone();
-            let media = media_clone.clone();
-            let callback = renegotiation_callback.clone();
-            Box::pin(async move {
-                let media = media.read().await;
-                if media.tracks.len() < 3 {
-                    warn!("Not enough tracks, skipping renegotiation");
-                    return;
+        let sdp_cached = {
+            let mut writer = media_arc.write().await;
+            writer.get_sdp()
+        };
+
+        match sdp_cached {
+            Some(sdp) => {
+                return Ok(SubscribeResponse {
+                    offer: sdp,
+                    ..subscribe_response
+                });
+            }
+            None => {
+                let connection_type = match self._get_publisher(&target_id) {
+                    Ok(publisher) => publisher.get_connection_type().clone(),
+                    Err(_) => ConnectionType::P2P,
+                };
+
+                if connection_type == ConnectionType::P2P {
+                    return Err(WebRTCError::PeerNotFound);
                 }
 
-                if let Ok(desc) = peer.create_offer(None).await {
-                    let _ = peer.set_local_description(desc.clone()).await;
-                    tokio::spawn((callback)(desc.sdp));
-                }
-            })
-        }));
+                let peer_id = self._get_subscriber_peer_id(target_id, participant_id);
 
-        let on_candidate = params.on_candidate.clone();
-        pc.on_ice_candidate(Box::new(move |cand| {
-            let callback = on_candidate.clone();
-            Box::pin(async move {
-                if let Some(candidate) = cand {
-                    if let Ok(init) = candidate.to_json() {
-                        let ice = IceCandidate {
-                            candidate: init.candidate,
-                            sdp_mid: init.sdp_mid,
-                            sdp_m_line_index: init.sdp_mline_index,
-                        };
-                        tokio::spawn((callback)(ice));
-                    } else {
-                        warn!("Failed to convert ICE candidate");
-                    }
-                }
-            })
-        }));
+                let pc = self._create_pc().await?;
 
-        let subscriber = self._get_subscriber(target_id, participant_id)?;
-        let _ = self._forward_all_tracks(subscriber, &media_arc).await;
+                self._add_subscriber(&peer_id, &pc, participant_id.clone());
 
-        // Create and set offer
-        let offer_desc = pc
-            .create_offer(None)
-            .await
-            .map_err(|_| WebRTCError::FailedToCreateOffer)?;
-        pc.set_local_description(offer_desc.clone())
-            .await
-            .map_err(|_| WebRTCError::FailedToSetSdp)?;
+                // Clone for callbacks
+                let peer_clone = pc.clone();
+                let media_clone = Arc::clone(&media_arc);
+                let renegotiation_callback = params.on_negotiation_needed.clone();
+                pc.on_negotiation_needed(Box::new(move || {
+                    let peer = peer_clone.clone();
+                    let media = media_clone.clone();
+                    let callback = renegotiation_callback.clone();
+                    Box::pin(async move {
+                        let media = media.read().await;
+                        if media.tracks.len() < 3 {
+                            warn!("Not enough tracks, skipping renegotiation");
+                            return;
+                        }
 
-        let local_desc = pc
-            .local_description()
-            .await
-            .ok_or(WebRTCError::FailedToGetSdp)?;
+                        if let Ok(desc) = peer.create_offer(None).await {
+                            let _ = peer.set_local_description(desc.clone()).await;
+                            tokio::spawn((callback)(desc.sdp));
+                        }
+                    })
+                }));
 
-        Ok(SubscribeResponse {
-            offer: local_desc.sdp.clone(),
-            ..subscribe_response
-        })
+                let on_candidate = params.on_candidate.clone();
+                pc.on_ice_candidate(Box::new(move |cand| {
+                    let callback = on_candidate.clone();
+                    Box::pin(async move {
+                        if let Some(candidate) = cand {
+                            if let Ok(init) = candidate.to_json() {
+                                let ice = IceCandidate {
+                                    candidate: init.candidate,
+                                    sdp_mid: init.sdp_mid,
+                                    sdp_m_line_index: init.sdp_mline_index,
+                                };
+                                tokio::spawn((callback)(ice));
+                            } else {
+                                warn!("Failed to convert ICE candidate");
+                            }
+                        }
+                    })
+                }));
+
+                let subscriber = self._get_subscriber(target_id, participant_id)?;
+                let _ = self._forward_all_tracks(subscriber, &media_arc).await;
+
+                // Create and set offer
+                let offer_desc = pc
+                    .create_offer(None)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToCreateOffer)?;
+                pc.set_local_description(offer_desc.clone())
+                    .await
+                    .map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+                let local_desc = pc
+                    .local_description()
+                    .await
+                    .ok_or(WebRTCError::FailedToGetSdp)?;
+
+                return Ok(SubscribeResponse {
+                    offer: local_desc.sdp.clone(),
+                    ..subscribe_response
+                });
+            }
+        }
     }
 
     pub async fn set_subscriber_remote_sdp(
@@ -345,6 +393,49 @@ impl Room {
             .map_err(|_| WebRTCError::FailedToSetSdp)?;
 
         Ok(answer_desc.clone().sdp)
+    }
+
+    pub async fn handle_migrate_connection(
+        &self,
+        participant_id: &str,
+        sdp: &str,
+        connection_type: ConnectionType,
+    ) -> Result<Option<String>, WebRTCError> {
+        let participant = self._get_publisher(participant_id)?;
+
+        participant.set_connection_type(connection_type.clone());
+
+        if connection_type == ConnectionType::SFU {
+            let peer = &participant.peer_connection;
+
+            let offer_desc = RTCSessionDescription::offer(sdp.to_string())
+                .map_err(|_| WebRTCError::FailedToCreateOffer)?;
+
+            peer.set_remote_description(offer_desc)
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+            let answer_desc = peer
+                .create_answer(None)
+                .await
+                .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+
+            peer.set_local_description(answer_desc.clone())
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+            Ok(Some(answer_desc.clone().sdp))
+        } else {
+            let media = self._get_media(participant_id)?;
+
+            let mut writer = media.write().await;
+
+            writer.remove_all_tracks();
+
+            writer.cache_sdp(sdp.to_owned());
+
+            Ok(None)
+        }
     }
 
     pub async fn add_publisher_candidate(

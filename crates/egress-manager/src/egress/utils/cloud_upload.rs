@@ -40,8 +40,6 @@ impl R2Storage {
     pub async fn new(config: R2Config) -> Result<Self> {
         let client = get_storage_object_client().await;
 
-        println!("client ok!");
-
         Ok(Self {
             client,
             config,

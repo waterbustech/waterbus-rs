@@ -23,16 +23,16 @@ use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, LeaveRoomRequest,
-    PublisherRenegotiationRequest, SetCameraType, SetEnabledRequest, SetScreenSharingRequest,
-    SetSubscriberSdpRequest, SubscribeRequest,
+    MigratePublisherRequest, PublisherRenegotiationRequest, SetCameraType, SetEnabledRequest,
+    SetScreenSharingRequest, SetSubscriberSdpRequest, SubscribeRequest,
 };
 
 use crate::{
     core::{
         dtos::socket::socket_dto::{
-            AnswerSubscribeDto, CandidateDto, JoinRoomDto, PublisherRenegotiationDto,
-            SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto, SetScreenSharingDto, SubscribeDto,
-            SubscriberCandidateDto,
+            AnswerSubscribeDto, JoinRoomDto, MigrateConnectionDto, PublisherCandidateDto,
+            PublisherRenegotiationDto, SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto,
+            SetScreenSharingDto, SubscribeDto, SubscriberCandidateDto,
         },
         env::app_env::AppEnv,
         types::{
@@ -40,9 +40,9 @@ use crate::{
             enums::ws_event::WsEvent,
             responses::socket_response::{
                 CameraTypeResponse, EnabledResponse, HandleRaisingResponse, IceCandidate,
-                JoinRoomResponse, ParticipantHasLeftResponse, ScreenSharingResponse,
-                SubscribeParticipantResponse, SubscribeResponse, SubscriberRenegotiationResponse,
-                SubsriberCandidateResponse,
+                JoinRoomResponse, NewUserJoinedResponse, ParticipantHasLeftResponse,
+                RenegotiateResponse, ScreenSharingResponse, SubscribeParticipantResponse,
+                SubscribeResponse, SubscriberRenegotiationResponse, SubsriberCandidateResponse,
             },
         },
         utils::jwt_utils::JwtUtils,
@@ -157,6 +157,7 @@ pub async fn handle_dispatcher_callback(
                 let participant_id = info.participant_id;
                 let client_id = info.client_id;
                 let node_id = info.node_id;
+                let is_migrate = info.is_migrate;
 
                 let participant_id_parsed = match participant_id.parse::<i32>() {
                     Ok(id) => id,
@@ -179,7 +180,13 @@ pub async fn handle_dispatcher_callback(
                                 let _ = socket
                                     .broadcast()
                                     .to(room_id)
-                                    .emit(WsEvent::RoomNewParticipant.to_str(), &participant)
+                                    .emit(
+                                        WsEvent::RoomNewParticipant.to_str(),
+                                        &NewUserJoinedResponse {
+                                            participant,
+                                            is_migrate,
+                                        },
+                                    )
                                     .await
                                     .ok();
                             }
@@ -387,6 +394,8 @@ async fn on_connect<A: Adapter>(socket: SocketRef<A>, user_id: Extension<UserId>
         WsEvent::RoomSubscriberCandidate.to_str(),
         handle_subscriber_candidate,
     );
+    socket.on(WsEvent::RoomMigrate.to_str(), handle_migrate_connection);
+
     socket.on(WsEvent::RoomCameraType.to_str(), handle_set_camera_type);
     socket.on(WsEvent::RoomVideoEnabled.to_str(), handle_set_video_enabled);
     socket.on(WsEvent::RoomAudioEnabled.to_str(), handle_set_audio_enabled);
@@ -435,18 +444,21 @@ async fn handle_join_room<A: Adapter>(
         client_id,
         participant_id: participant_id.to_string(),
         room_id: room_id.clone(),
+        connection_type: data.connection_type as i32,
     };
 
     match dispatcher_manager.join_room(req).await {
         Ok(res) => {
             socket.join(room_id.clone());
 
-            let response = JoinRoomResponse {
-                sdp: res.sdp,
-                is_recording: res.is_recording,
-            };
+            if !res.sdp.is_empty() {
+                let response = JoinRoomResponse {
+                    sdp: res.sdp,
+                    is_recording: res.is_recording,
+                };
 
-            let _ = socket.emit(WsEvent::RoomPublish.to_str(), &response).ok();
+                let _ = socket.emit(WsEvent::RoomPublish.to_str(), &response).ok();
+            }
         }
         Err(err) => {
             warn!("Err: {:?}", err)
@@ -501,17 +513,31 @@ async fn handle_answer_subscribe<A: Adapter>(
     Data(data): Data<AnswerSubscribeDto>,
     dispatcher_manager: State<DispatcherManager>,
 ) {
-    let client_id = socket.id.to_string();
-    let target_id = data.target_id;
-    let sdp = data.sdp;
+    // P2P handler
+    if data.connection_type == 0 {
+        let response = JoinRoomResponse {
+            sdp: data.sdp,
+            is_recording: false,
+        };
+        let _ = socket
+            .broadcast()
+            .to(data.room_id)
+            .emit(WsEvent::RoomPublish.to_str(), &response)
+            .await
+            .ok();
+    } else {
+        let client_id = socket.id.to_string();
+        let target_id = data.target_id;
+        let sdp = data.sdp;
 
-    let req = SetSubscriberSdpRequest {
-        client_id,
-        target_id,
-        sdp,
-    };
+        let req = SetSubscriberSdpRequest {
+            client_id,
+            target_id,
+            sdp,
+        };
 
-    let _ = dispatcher_manager.set_subscribe_sdp(req).await;
+        let _ = dispatcher_manager.set_subscribe_sdp(req).await;
+    }
 }
 
 async fn handle_publisher_renegotiation<A: Adapter>(
@@ -519,21 +545,69 @@ async fn handle_publisher_renegotiation<A: Adapter>(
     Data(data): Data<PublisherRenegotiationDto>,
     dispatcher_manager: State<DispatcherManager>,
 ) {
+    // P2P handler
+    if data.connection_type == 0 {
+        let _ = socket
+            .broadcast()
+            .to(data.room_id)
+            .emit(
+                WsEvent::RoomSubscriberRenegotiation.to_str(),
+                &SubscriberRenegotiationResponse {
+                    target_id: "".to_string(),
+                    sdp: data.sdp,
+                },
+            )
+            .await
+            .ok();
+    } else {
+        let client_id = socket.id.to_string();
+        let sdp = data.sdp;
+
+        let req = PublisherRenegotiationRequest { client_id, sdp };
+
+        let sdp = dispatcher_manager.publisher_renegotiate(req).await;
+
+        match sdp {
+            Ok(sdp) => {
+                let _ = socket
+                    .emit(
+                        WsEvent::RoomPublisherRenegotiation.to_str(),
+                        &RenegotiateResponse { sdp: sdp.sdp },
+                    )
+                    .ok();
+            }
+            Err(_) => {}
+        }
+    }
+}
+
+async fn handle_migrate_connection<A: Adapter>(
+    socket: SocketRef<A>,
+    Data(data): Data<MigrateConnectionDto>,
+    dispatcher_manager: State<DispatcherManager>,
+) {
     let client_id = socket.id.to_string();
     let sdp = data.sdp;
+    let connection_type = data.connection_type as i32;
 
-    let req = PublisherRenegotiationRequest { client_id, sdp };
+    let req = MigratePublisherRequest {
+        client_id,
+        sdp,
+        connection_type,
+    };
 
-    let sdp = dispatcher_manager.publisher_renegotiate(req).await;
+    let sdp = dispatcher_manager.migrate_connection(req).await;
 
     match sdp {
         Ok(sdp) => {
-            let _ = socket
-                .emit(
-                    WsEvent::RoomPublisherRenegotiation.to_str(),
-                    &PublisherRenegotiationDto { sdp: sdp.sdp },
-                )
-                .ok();
+            if let Some(sdp) = sdp.sdp {
+                let _ = socket
+                    .emit(
+                        WsEvent::RoomMigrate.to_str(),
+                        &RenegotiateResponse { sdp: sdp },
+                    )
+                    .ok();
+            }
         }
         Err(_) => {}
     }
@@ -541,11 +615,11 @@ async fn handle_publisher_renegotiation<A: Adapter>(
 
 async fn handle_publisher_candidate<A: Adapter>(
     socket: SocketRef<A>,
-    Data(data): Data<CandidateDto>,
+    Data(data): Data<PublisherCandidateDto>,
     dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
-    let candidate = data;
+    let candidate = data.candidate;
 
     let candidate = waterbus_proto::common::IceCandidate {
         candidate: candidate.candidate,
@@ -555,10 +629,30 @@ async fn handle_publisher_candidate<A: Adapter>(
 
     let req = AddPublisherCandidateRequest {
         client_id,
-        candidate: Some(candidate),
+        candidate: Some(candidate.clone()),
+        connection_type: data.connection_type as i32,
     };
 
-    let _ = dispatcher_manager.add_publisher_candidate(req).await;
+    if data.connection_type == 0 {
+        let _ = socket
+            .broadcast()
+            .to(data.room_id)
+            .emit(
+                WsEvent::RoomSubscriberCandidate.to_str(),
+                &SubsriberCandidateResponse {
+                    candidate: IceCandidate {
+                        candidate: candidate.candidate,
+                        sdp_mid: candidate.sdp_mid,
+                        sdp_m_line_index: candidate.sdp_m_line_index.map(|v| v as u32),
+                    },
+                    target_id: "".to_string(),
+                },
+            )
+            .await
+            .ok();
+    } else {
+        let _ = dispatcher_manager.add_publisher_candidate(req).await;
+    }
 }
 
 async fn handle_subscriber_candidate<A: Adapter>(
@@ -567,7 +661,7 @@ async fn handle_subscriber_candidate<A: Adapter>(
     dispatcher_manager: State<DispatcherManager>,
 ) {
     let client_id = socket.id.to_string();
-    let candidate = data.candidate;
+    let candidate = data.candidate.clone();
     let target_id = data.target_id;
 
     let candidate = waterbus_proto::common::IceCandidate {
@@ -580,9 +674,19 @@ async fn handle_subscriber_candidate<A: Adapter>(
         client_id,
         target_id,
         candidate: Some(candidate),
+        connection_type: data.connection_type as i32,
     };
 
-    let _ = dispatcher_manager.add_subscriber_candidate(req).await;
+    if data.connection_type == 0 {
+        let _ = socket
+            .broadcast()
+            .to(data.room_id)
+            .emit(WsEvent::RoomPublisherCandidate.to_str(), &data.candidate)
+            .await
+            .ok();
+    } else {
+        let _ = dispatcher_manager.add_subscriber_candidate(req).await;
+    }
 }
 
 async fn handle_set_camera_type<A: Adapter>(

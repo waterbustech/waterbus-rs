@@ -4,7 +4,8 @@ use async_channel::Sender;
 use tokio::sync::RwLock;
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
-    LeaveRoomRequest, PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType,
+    LeaveRoomRequest, MigratePublisherRequest, MigratePublisherResponse,
+    PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType,
     SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest, SubscribeRequest,
     SubscribeResponse,
 };
@@ -194,6 +195,46 @@ impl DispatcherManager {
                     let response = self
                         .sfu_grpc_client
                         .publisher_renegotiation(server_addr, req)
+                        .await;
+
+                    match response {
+                        Ok(resp) => {
+                            return Ok(resp.into_inner());
+                        }
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
+                                "Failed to join room on node {}: {}",
+                                node_id,
+                                e
+                            ));
+                        }
+                    }
+                } else {
+                    return Err(anyhow::anyhow!("Client not found!"));
+                }
+            }
+            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+        }
+    }
+
+    pub async fn migrate_connection(
+        &self,
+        req: MigratePublisherRequest,
+    ) -> Result<MigratePublisherResponse, anyhow::Error> {
+        let cache_key = CacheKey::new(req.clone().client_id);
+        let client = self.cache_manager.get(&cache_key);
+
+        match client {
+            Ok(client) => {
+                if let Some(client) = client {
+                    let node_id = client.sfu_node_id;
+                    let node_addr = client.node_addr;
+
+                    let server_addr = format!("{}:{}", node_addr, self.sfu_port);
+
+                    let response = self
+                        .sfu_grpc_client
+                        .migrate_connection(server_addr, req)
                         .await;
 
                     match response {
