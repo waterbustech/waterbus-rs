@@ -6,9 +6,12 @@ use tokio::sync::Mutex;
 use crate::{
     errors::WebRTCError,
     models::{
-        IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
-        RenegotiationCallback, SubscribeParams, SubscribeResponse, WClient, WebRTCManagerConfigs,
         connection_type::ConnectionType,
+        params::{
+            IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
+            RenegotiationCallback, SubscribeParams, SubscribeResponse, WClient,
+            WebRTCManagerConfigs,
+        },
     },
     room::Room,
 };

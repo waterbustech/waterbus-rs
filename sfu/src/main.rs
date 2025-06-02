@@ -4,7 +4,7 @@ use tracing_subscriber::{
     EnvFilter, Layer, filter::FilterFn, fmt, layer::SubscriberExt, registry,
     util::SubscriberInitExt,
 };
-use webrtc_manager::models::WebRTCManagerConfigs;
+use webrtc_manager::models::params::WebRTCManagerConfigs;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

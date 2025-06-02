@@ -1,21 +1,18 @@
 use dashmap::DashMap;
 use egress_manager::egress::hls_writer::HlsWriter;
 use egress_manager::egress::moq_writer::MoQWriter;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use tokio::sync::broadcast::Sender;
-use tokio_util::bytes::BytesMut;
 use tracing::debug;
 use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
 use webrtc::track::track_remote::TrackRemote;
-use webrtc::util::Marshal;
 
-use crate::entities::quality::TrackQuality;
 use crate::errors::WebRTCError;
+use crate::models::quality::TrackQuality;
+use crate::models::rtp_foward_info::RtpForwardInfo;
+use crate::utils::multicast_sender::MulticastSender;
 
-use super::forward_track::{ForwardTrack, RtpForwardInfo};
+use super::forward_track::ForwardTrack;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CodecType {
@@ -40,7 +37,7 @@ pub struct Track {
     remote_tracks: Vec<Arc<TrackRemote>>,
     forward_tracks: Arc<DashMap<String, Arc<ForwardTrack>>>,
     acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
-    rtp_tx: Sender<RtpForwardInfo>,
+    rtp_multicast: MulticastSender,
 }
 
 impl Track {
@@ -68,7 +65,7 @@ impl Track {
             _ => false,
         };
 
-        let (rtp_tx, _) = tokio::sync::broadcast::channel(128);
+        let rtp_multicast = MulticastSender::new();
 
         let handler = Track {
             id: track.id(),
@@ -83,7 +80,7 @@ impl Track {
             remote_tracks: vec![track.clone()],
             forward_tracks: Arc::new(DashMap::new()),
             acceptable_map: Arc::new(DashMap::new()),
-            rtp_tx,
+            rtp_multicast,
         };
 
         handler.rebuild_acceptable_map();
@@ -113,13 +110,14 @@ impl Track {
             return Err(WebRTCError::FailedToAddTrack);
         }
 
-        let receiver = self.rtp_tx.subscribe();
+        let receiver = self.rtp_multicast.add_receiver(id.to_string());
 
         let forward_track = ForwardTrack::new(
             self.capability.clone(),
             self.id.clone(),
             self.stream_id.clone(),
             receiver,
+            id.to_string(),
         );
 
         self.forward_tracks
@@ -129,65 +127,68 @@ impl Track {
     }
 
     pub fn remove_forward_track(&self, id: &str) {
+        self.rtp_multicast.remove_receiver(id);
         self.forward_tracks.remove(id);
     }
 
     pub fn rebuild_acceptable_map(&self) {
-        let mut quality_map: HashMap<TrackQuality, bool> = HashMap::new();
-
-        for track in &self.remote_tracks {
-            let q = TrackQuality::from_str(track.rid());
-            quality_map.insert(q, true);
-        }
+        let available_qualities: Vec<TrackQuality> = self
+            .remote_tracks
+            .iter()
+            .map(|track| TrackQuality::from_str(track.rid()))
+            .collect::<std::collections::HashSet<_>>() // Remove duplicates
+            .into_iter()
+            .collect();
 
         self.acceptable_map.clear();
 
-        let available_qualities: Vec<TrackQuality> =
-            [TrackQuality::Low, TrackQuality::Medium, TrackQuality::High]
-                .iter()
-                .filter(|q| quality_map.contains_key(q))
-                .cloned()
-                .collect();
+        // Pre-calculate quality fallback mapping
+        let quality_fallback = |desired: &TrackQuality| -> TrackQuality {
+            if available_qualities.contains(desired) {
+                return desired.clone();
+            }
 
+            // Smart fallback logic
+            match desired {
+                TrackQuality::High => available_qualities
+                    .iter()
+                    .find(|&q| matches!(q, TrackQuality::Medium))
+                    .or_else(|| {
+                        available_qualities
+                            .iter()
+                            .find(|&q| matches!(q, TrackQuality::Low))
+                    })
+                    .unwrap_or(&TrackQuality::Low)
+                    .clone(),
+                TrackQuality::Medium => available_qualities
+                    .iter()
+                    .find(|&q| matches!(q, TrackQuality::Low))
+                    .or_else(|| {
+                        available_qualities
+                            .iter()
+                            .find(|&q| matches!(q, TrackQuality::High))
+                    })
+                    .unwrap_or(&TrackQuality::Low)
+                    .clone(),
+                TrackQuality::Low => available_qualities
+                    .iter()
+                    .find(|&q| matches!(q, TrackQuality::Medium))
+                    .or_else(|| {
+                        available_qualities
+                            .iter()
+                            .find(|&q| matches!(q, TrackQuality::High))
+                    })
+                    .unwrap_or(&TrackQuality::Low)
+                    .clone(),
+                _ => TrackQuality::Low,
+            }
+        };
+
+        // Build mapping more efficiently
         for current in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
             for desired in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-                let acceptable = match available_qualities.len() {
-                    3 => current == desired,
-                    1 => true,
-                    2 => {
-                        if !available_qualities.contains(desired) {
-                            // Map missing quality to the nearest available
-                            let mapped_desired = match desired {
-                                TrackQuality::Medium => {
-                                    if available_qualities.contains(&TrackQuality::Low) {
-                                        TrackQuality::Low
-                                    } else {
-                                        TrackQuality::High
-                                    }
-                                }
-                                TrackQuality::Low => {
-                                    if available_qualities.contains(&TrackQuality::Medium) {
-                                        TrackQuality::Medium
-                                    } else {
-                                        TrackQuality::High
-                                    }
-                                }
-                                TrackQuality::High => {
-                                    if available_qualities.contains(&TrackQuality::Medium) {
-                                        TrackQuality::Medium
-                                    } else {
-                                        TrackQuality::Low
-                                    }
-                                }
-                                TrackQuality::None => TrackQuality::None,
-                            };
-                            current == &mapped_desired
-                        } else {
-                            current == desired
-                        }
-                    }
-                    _ => false,
-                };
+                let target_quality = quality_fallback(desired);
+                let acceptable = current == &target_quality;
 
                 self.acceptable_map
                     .insert((current.clone(), desired.clone()), acceptable);
@@ -198,67 +199,39 @@ impl Track {
     pub fn _forward_rtp(
         &self,
         remote_track: Arc<TrackRemote>,
-        hls_writer: Option<Arc<HlsWriter>>,
-        moq_writer: Option<Arc<MoQWriter>>,
+        _hls_writer: Option<Arc<HlsWriter>>,
+        _moq_writer: Option<Arc<MoQWriter>>,
         kind: RTPCodecType,
     ) {
-        let sender = self.rtp_tx.clone();
+        let multicast = self.rtp_multicast.clone();
         let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()));
         let acceptable_map = Arc::clone(&self.acceptable_map);
         let is_svc = self.is_svc;
         let is_simulcast = Arc::clone(&self.is_simulcast);
 
         tokio::spawn(async move {
-            let is_video = kind == RTPCodecType::Video;
+            let _is_video = kind == RTPCodecType::Video;
 
             loop {
-                let result =
-                    tokio::time::timeout(Duration::from_secs(3), remote_track.read_rtp()).await;
+                let result = remote_track.read_rtp().await;
 
                 match result {
-                    Ok(Ok((rtp, _))) => {
-                        let rtp = Arc::new(rtp);
-
+                    Ok((rtp, _)) => {
                         if !rtp.payload.is_empty() {
-                            let _ = sender.send(RtpForwardInfo {
-                                packet: Arc::clone(&rtp),
+                            let info = RtpForwardInfo {
+                                packet: Arc::new(rtp),
                                 acceptable_map: acceptable_map.clone(),
-                                is_svc: is_svc,
+                                is_svc,
                                 is_simulcast: is_simulcast.load(Ordering::Relaxed),
                                 track_quality: (*current_quality).clone(),
-                            });
-                        }
+                            };
 
-                        if hls_writer.is_some() || moq_writer.is_some() {
-                            if let Ok(header_bytes) = rtp.header.marshal() {
-                                let mut buf =
-                                    BytesMut::with_capacity(header_bytes.len() + rtp.payload.len());
-                                buf.extend_from_slice(&header_bytes);
-                                buf.extend_from_slice(&rtp.payload);
-
-                                if let Some(writer) = &hls_writer {
-                                    let _ = writer.write_rtp(&buf, is_video);
-                                }
-
-                                if let Some(writer) = &moq_writer {
-                                    let _ = writer.write_rtp(&buf, is_video);
-                                }
-                            } else {
-                                debug!("Failed to marshal RTP header");
-                            }
+                            multicast.send(info);
                         }
                     }
-                    Ok(Err(err)) => {
-                        debug!("Failed to read rtp: {}", err);
+                    Err(err) => {
+                        debug!("Failed to read RTP: {}", err);
                         break;
-                    }
-                    Err(_) => {
-                        if !remote_track.rid().is_empty() {
-                            debug!(
-                                "Timeout read rtp from track with rid: {}",
-                                remote_track.rid()
-                            );
-                        }
                     }
                 }
             }

@@ -25,7 +25,7 @@ use webrtc::{
         sdp::session_description::RTCSessionDescription,
     },
     rtp_transceiver::{
-        RTCPFeedback, TYPE_RTCP_FB_GOOG_REMB, TYPE_RTCP_FB_TRANSPORT_CC,
+        RTCPFeedback, TYPE_RTCP_FB_GOOG_REMB, TYPE_RTCP_FB_NACK, TYPE_RTCP_FB_TRANSPORT_CC,
         rtp_codec::{RTCRtpHeaderExtensionCapability, RTPCodecType},
     },
 };
@@ -34,9 +34,11 @@ use crate::{
     entities::{media::Media, publisher::Publisher, subscriber::Subscriber},
     errors::WebRTCError,
     models::{
-        AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse, SubscribeParams,
-        SubscribeResponse, TrackMutexWrapper, WebRTCManagerConfigs,
         connection_type::ConnectionType,
+        params::{
+            AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse, SubscribeParams,
+            SubscribeResponse, TrackMutexWrapper, WebRTCManagerConfigs,
+        },
     },
 };
 
@@ -704,6 +706,10 @@ impl Room {
             },
             RTCPFeedback {
                 typ: TYPE_RTCP_FB_TRANSPORT_CC.to_owned(),
+                parameter: "".to_string(),
+            },
+            RTCPFeedback {
+                typ: TYPE_RTCP_FB_NACK.to_owned(),
                 parameter: "".to_string(),
             },
         ];

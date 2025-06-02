@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-salvo = { version = "0.78.0", features = [
+salvo = { version = "0.79.0", features = [
     "quinn",
     "tower-compat",
     "oapi",
@@ -58,7 +58,7 @@ bcrypt = "0.17.0"
 async-channel = "2.3.1"
 rust-embed = "8.7.2"
 dashmap = "6.1.0"
-parking_lot = "0.12.3"
+parking_lot = "0.12.4"
 webrtc = "0.13.0"
 gst = { package = "gstreamer", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
     "v1_18",
@@ -88,6 +88,7 @@ sysinfo = "0.35.1"
 futures-util = "0.3.31"
 redis = "0.31.0"
 futures = "0.3.31"
+crossbeam = "0.8.4"
 
 # Local crates
 waterbus-proto = { path = "./crates/waterbus-proto" }

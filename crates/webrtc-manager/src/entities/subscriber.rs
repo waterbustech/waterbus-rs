@@ -9,11 +9,14 @@ use std::{
 };
 use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use webrtc::{
     peer_connection::RTCPeerConnection,
     rtcp::{
-        payload_feedbacks::receiver_estimated_maximum_bitrate::ReceiverEstimatedMaximumBitrate,
+        payload_feedbacks::{
+            full_intra_request::{FirEntry, FullIntraRequest},
+            picture_loss_indication::PictureLossIndication,
+        },
         transport_feedbacks::transport_layer_cc::TransportLayerCc,
     },
     rtp_transceiver::{
@@ -22,151 +25,147 @@ use webrtc::{
     track::track_local::TrackLocal,
 };
 
-use crate::{errors::WebRTCError, models::TrackMutexWrapper};
+use crate::{
+    errors::WebRTCError,
+    models::{params::TrackMutexWrapper, quality::TrackQuality},
+};
 
-use super::{forward_track::ForwardTrack, quality::TrackQuality};
+use super::forward_track::ForwardTrack;
 
-// Configurable thresholds that can be adjusted based on network conditions
-const BWE_THRESHOLD_H: f32 = 1_000_000.0;
-const BWE_THRESHOLD_F: f32 = 2_500_000.0;
-
-// Network stability thresholds
-const JITTER_THRESHOLD_HIGH: Duration = Duration::from_millis(100);
-const DELAY_THRESHOLD_LOW: Duration = Duration::from_millis(30);
-const DELAY_THRESHOLD_MEDIUM: Duration = Duration::from_millis(150);
+// Network stability thresholds (optimized values)
+const JITTER_THRESHOLD_HIGH: Duration = Duration::from_millis(80);
+const DELAY_THRESHOLD_LOW: Duration = Duration::from_millis(25);
+const DELAY_THRESHOLD_MEDIUM: Duration = Duration::from_millis(120);
 const HIGH_JITTER_THRESHOLD_LOW: usize = 2;
-const HIGH_JITTER_THRESHOLD_MEDIUM: usize = 6;
+const HIGH_JITTER_THRESHOLD_MEDIUM: usize = 5;
 
-// Configurable time interval for monitoring RTCP
-const RTCP_MONITOR_INTERVAL: Duration = Duration::from_secs(1);
+// Optimized intervals
+const RTCP_MONITOR_INTERVAL: Duration = Duration::from_millis(500);
+const MIN_QUALITY_CHANGE_INTERVAL: Duration = Duration::from_secs(2);
+// const KEYFRAME_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 
-// Minimum time between quality changes to prevent rapid fluctuations
-const MIN_QUALITY_CHANGE_INTERVAL: Duration = Duration::from_secs(4);
+// History sizes for better stability
+const HISTORY_SIZE: usize = 10;
 
 type TrackMap = Arc<DashMap<String, Arc<ForwardTrack>>>;
 
 #[derive(Debug)]
 struct NetworkStats {
-    remb_quality: TrackQuality,
     twcc_quality: TrackQuality,
     last_quality_change: Instant,
-    // History for average calculations
-    remb_history: VecDeque<f32>,
+    // last_keyframe_request: Instant,
+    // Optimized history for faster calculations
     delay_history: VecDeque<Duration>,
     jitter_history: VecDeque<usize>,
+    packet_loss_count: u32,
 }
 
 impl Default for NetworkStats {
     fn default() -> Self {
         Self {
-            remb_quality: TrackQuality::High,
-            twcc_quality: TrackQuality::Low,
+            twcc_quality: TrackQuality::Medium, // Start with medium for better initial experience
             last_quality_change: Instant::now(),
-            remb_history: VecDeque::with_capacity(15),
-            delay_history: VecDeque::with_capacity(15),
-            jitter_history: VecDeque::with_capacity(15),
+            // last_keyframe_request: Instant::now(),
+            delay_history: VecDeque::with_capacity(HISTORY_SIZE),
+            jitter_history: VecDeque::with_capacity(HISTORY_SIZE),
+            packet_loss_count: 0,
         }
     }
 }
 
 impl NetworkStats {
-    fn update_remb(&mut self, bitrate: f32) {
-        // Add to history and maintain max size
-        self.remb_history.push_back(bitrate);
-        if self.remb_history.len() > 15 {
-            self.remb_history.pop_front();
-        }
-
-        // Calculate average bitrate (more stable than single reading)
-        let avg_bitrate: f32 =
-            self.remb_history.iter().sum::<f32>() / self.remb_history.len() as f32;
-
-        // Update REMB quality assessment
-        self.remb_quality = if avg_bitrate >= BWE_THRESHOLD_F {
-            TrackQuality::High
-        } else if avg_bitrate >= BWE_THRESHOLD_H {
-            TrackQuality::Medium
-        } else {
-            TrackQuality::Low
-        };
-    }
-
-    fn update_twcc(&mut self, avg_delay: Duration, high_jitter_count: usize) {
-        // Add to history and maintain max size
-        self.delay_history.push_back(avg_delay);
-        self.jitter_history.push_back(high_jitter_count);
-
-        if self.delay_history.len() > 15 {
+    fn update_twcc(&mut self, avg_delay: Duration, high_jitter_count: usize, packet_loss: bool) {
+        // Add to history with fixed capacity
+        if self.delay_history.len() >= HISTORY_SIZE {
             self.delay_history.pop_front();
         }
-
-        if self.jitter_history.len() > 15 {
+        if self.jitter_history.len() >= HISTORY_SIZE {
             self.jitter_history.pop_front();
         }
 
-        // Calculate averages
-        let avg_delay_ms: u64 = self
-            .delay_history
-            .iter()
-            .map(|d| d.as_millis() as u64)
-            .sum::<u64>()
-            / self.delay_history.len() as u64;
+        self.delay_history.push_back(avg_delay);
+        self.jitter_history.push_back(high_jitter_count);
 
-        let avg_jitter_count: usize =
-            self.jitter_history.iter().sum::<usize>() / self.jitter_history.len();
+        if packet_loss {
+            self.packet_loss_count += 1;
+        }
 
-        // Update TWCC quality assessment
+        // Calculate moving averages for smoother quality transitions
+        let avg_delay_ms = if !self.delay_history.is_empty() {
+            self.delay_history
+                .iter()
+                .map(|d| d.as_millis() as u64)
+                .sum::<u64>()
+                / self.delay_history.len() as u64
+        } else {
+            0
+        };
+
+        let avg_jitter_count = if !self.jitter_history.is_empty() {
+            self.jitter_history.iter().sum::<usize>() / self.jitter_history.len()
+        } else {
+            0
+        };
+
+        // More aggressive quality degradation on packet loss
+        let loss_penalty = if self.packet_loss_count > 0
+            && Instant::now().duration_since(self.last_quality_change) > Duration::from_secs(5)
+        {
+            1 // Degrade quality by one level
+        } else {
+            0
+        };
+
+        // Update TWCC quality assessment with packet loss consideration
         self.twcc_quality = if avg_delay_ms < DELAY_THRESHOLD_LOW.as_millis() as u64
             && avg_jitter_count <= HIGH_JITTER_THRESHOLD_LOW
+            && loss_penalty == 0
         {
             TrackQuality::High
         } else if avg_delay_ms < DELAY_THRESHOLD_MEDIUM.as_millis() as u64
             && avg_jitter_count <= HIGH_JITTER_THRESHOLD_MEDIUM
+            && loss_penalty <= 1
         {
             TrackQuality::Medium
         } else {
             TrackQuality::Low
         };
-    }
 
-    fn calculate_combined_quality(&self) -> TrackQuality {
-        // Take the more conservative quality between REMB and TWCC
-        // This ensures we don't overestimate network capability
-        let quality = if self.remb_quality.as_u8() < self.twcc_quality.as_u8() {
-            self.remb_quality.clone()
-        } else {
-            self.twcc_quality.clone()
-        };
-
-        // Prevent rapid quality changes by checking if enough time has passed
-        if Instant::now().duration_since(self.last_quality_change) < MIN_QUALITY_CHANGE_INTERVAL {
-            return quality; // Return without updating last_quality_change
+        // Reset packet loss counter periodically
+        if Instant::now().duration_since(self.last_quality_change) > Duration::from_secs(10) {
+            self.packet_loss_count = 0;
         }
-
-        quality
     }
 
     fn should_update_quality(&self, current_quality: TrackQuality) -> bool {
-        // Determine if a quality update is needed based on the combined assessment
-        // and anti-flapping protection
-        let combined_quality = self.calculate_combined_quality();
-
-        // If qualities match, no update needed
-        if combined_quality == current_quality {
+        // More responsive quality changes
+        if self.twcc_quality == current_quality {
             return false;
         }
 
-        // Check if enough time has passed since last change to prevent flapping
-        if Instant::now().duration_since(self.last_quality_change) < MIN_QUALITY_CHANGE_INTERVAL {
-            return false;
-        }
+        // Shorter interval for quality improvements, longer for degradation
+        let min_interval = if self.twcc_quality.as_u8() > current_quality.as_u8() {
+            Duration::from_millis(1500) // Faster upgrade
+        } else {
+            MIN_QUALITY_CHANGE_INTERVAL // Normal downgrade
+        };
 
-        true
+        Instant::now().duration_since(self.last_quality_change) >= min_interval
     }
 
     fn update_quality_timestamp(&mut self) {
         self.last_quality_change = Instant::now();
     }
+
+    // fn should_request_keyframe(&mut self) -> bool {
+    //     let now = Instant::now();
+    //     if now.duration_since(self.last_keyframe_request) >= KEYFRAME_REQUEST_INTERVAL {
+    //         self.last_keyframe_request = now;
+    //         true
+    //     } else {
+    //         false
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -195,7 +194,7 @@ impl Subscriber {
             user_id,
         };
 
-        this.spawn_remb_loop(cancel_token, tx.clone());
+        this.spawn_rtcp_monitor(cancel_token, tx.clone());
         this.spawn_track_update_loop(tx);
 
         this
@@ -213,6 +212,9 @@ impl Subscriber {
             self.tracks.insert(track_id.clone(), remote_track.clone());
             self.add_transceiver(remote_track, &track_id).await?;
         }
+
+        // Request keyframe immediately for new tracks to reduce initial delay
+        self.request_keyframe().await;
 
         Ok(())
     }
@@ -254,20 +256,25 @@ impl Subscriber {
         Ok(())
     }
 
-    fn spawn_remb_loop(&self, cancel_token: CancellationToken, tx: watch::Sender<()>) {
-        let pc2 = Arc::downgrade(&self.peer_connection);
+    fn spawn_rtcp_monitor(&self, cancel_token: CancellationToken, tx: watch::Sender<()>) {
+        let pc = Arc::downgrade(&self.peer_connection);
         let preferred_quality = Arc::clone(&self.preferred_quality);
         let network_stats = Arc::clone(&self.network_stats);
 
         tokio::spawn(async move {
+            let mut interval = tokio::time::interval(RTCP_MONITOR_INTERVAL);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => {
                         break;
                     }
-                    _ = tokio::time::sleep(RTCP_MONITOR_INTERVAL) => {
-                        if let Some(pc) = pc2.upgrade() {
-                            Self::monitor_rtcp(pc, preferred_quality.clone(), network_stats.clone(), tx.clone()).await;
+                    _ = interval.tick() => {
+                        if let Some(pc_strong) = pc.upgrade() {
+                            Self::monitor_rtcp(pc_strong, preferred_quality.clone(), network_stats.clone(), tx.clone()).await;
+                        } else {
+                            break; // PeerConnection was dropped
                         }
                     }
                 }
@@ -282,93 +289,40 @@ impl Subscriber {
         tx: watch::Sender<()>,
     ) {
         let senders = peer_connection.get_senders().await;
-        let mut remb_seen = false;
-        let mut twcc_seen = false;
+        let mut twcc_processed = false;
 
         for sender in senders {
-            let result = tokio::time::timeout(Duration::from_secs(1), sender.read_rtcp()).await;
+            let result = tokio::time::timeout(Duration::from_millis(200), sender.read_rtcp()).await;
             match result {
                 Ok(Ok((rtcp_packets, _attrs))) => {
                     for packet in rtcp_packets {
-                        // Process REMB packets
-                        if let Some(remb) = packet
-                            .as_any()
-                            .downcast_ref::<ReceiverEstimatedMaximumBitrate>()
-                        {
-                            remb_seen = true;
-                            let bitrate = remb.bitrate;
-
-                            // Update REMB stats
-                            let mut stats = network_stats.write().await;
-                            stats.update_remb(bitrate);
-
-                            debug!(
-                                "REMB bitrate: {}, quality assessment: {:?}",
-                                bitrate, stats.remb_quality
-                            );
-                        }
-
-                        // Process TWCC packets
+                        // Process TWCC packets only
                         if let Some(tcc) = packet.as_any().downcast_ref::<TransportLayerCc>() {
-                            twcc_seen = true;
-                            let deltas = &tcc.recv_deltas;
-
-                            let mut high_jitter_count = 0;
-                            let mut total_delay = Duration::ZERO;
-                            let mut valid_deltas = 0;
-
-                            for delta in deltas {
-                                if delta.delta < 0 {
-                                    continue; // skip negative deltas
-                                }
-
-                                let delta_duration = Duration::from_micros(delta.delta as u64);
-                                total_delay += delta_duration;
-                                valid_deltas += 1;
-
-                                if delta_duration > JITTER_THRESHOLD_HIGH {
-                                    high_jitter_count += 1;
-                                }
-                            }
-
-                            let avg_delay = if valid_deltas > 0 {
-                                total_delay / valid_deltas as u32
-                            } else {
-                                Duration::ZERO
-                            };
-
-                            // Update TWCC stats
-                            let mut stats = network_stats.write().await;
-                            stats.update_twcc(avg_delay, high_jitter_count);
-
-                            debug!(
-                                "TWCC avg delay: {:?}, high jitter packets: {}, quality assessment: {:?}",
-                                avg_delay, high_jitter_count, stats.twcc_quality
-                            );
+                            twcc_processed = true;
+                            Self::process_twcc_feedback(tcc, &network_stats).await;
                         }
                     }
                 }
                 Ok(Err(e)) => {
-                    warn!("Error reading RTCP: {:?}", e);
+                    debug!("Error reading RTCP: {:?}", e);
                 }
-                Err(e) => {
-                    debug!("Timeout reading RTCP: {:?}", e);
+                Err(_) => {
+                    // Timeout is normal, continue
                 }
             }
         }
 
-        // After processing all packets, determine if we need to update quality
-        if remb_seen || twcc_seen {
-            // Check if we should update quality
+        // Update quality based on TWCC analysis
+        if twcc_processed {
             let current_quality = TrackQuality::from_u8(preferred_quality.load(Ordering::Relaxed));
             let mut stats = network_stats.write().await;
 
             if stats.should_update_quality(current_quality.clone()) {
-                let new_quality = stats.calculate_combined_quality();
+                let new_quality = stats.twcc_quality.clone();
 
                 info!(
-                    "Updating quality from {:?} to {:?} (REMB: {:?}, TWCC: {:?})",
-                    current_quality, new_quality, stats.remb_quality, stats.twcc_quality
+                    "Quality change: {:?} -> {:?} (TWCC analysis)",
+                    current_quality, new_quality
                 );
 
                 preferred_quality.store(new_quality.as_u8(), Ordering::Relaxed);
@@ -380,81 +334,179 @@ impl Subscriber {
         }
     }
 
+    async fn process_twcc_feedback(
+        tcc: &TransportLayerCc,
+        network_stats: &Arc<RwLock<NetworkStats>>,
+    ) {
+        let deltas = &tcc.recv_deltas;
+        let mut high_jitter_count = 0;
+        let mut total_delay = Duration::ZERO;
+        let mut valid_deltas = 0;
+        let mut packet_loss = false;
+
+        for delta in deltas {
+            if delta.delta < 0 {
+                packet_loss = true;
+                continue;
+            }
+
+            let delta_duration = Duration::from_micros(delta.delta as u64);
+            total_delay += delta_duration;
+            valid_deltas += 1;
+
+            if delta_duration > JITTER_THRESHOLD_HIGH {
+                high_jitter_count += 1;
+            }
+        }
+
+        let avg_delay = if valid_deltas > 0 {
+            total_delay / valid_deltas as u32
+        } else {
+            Duration::ZERO
+        };
+
+        // Update network stats
+        let mut stats = network_stats.write().await;
+        stats.update_twcc(avg_delay, high_jitter_count, packet_loss);
+
+        debug!(
+            "TWCC - Avg delay: {:?}, High jitter: {}, Packet loss: {}, Quality: {:?}",
+            avg_delay, high_jitter_count, packet_loss, stats.twcc_quality
+        );
+    }
+
     fn spawn_track_update_loop(&self, tx: watch::Sender<()>) {
-        let tracks = Arc::clone(&self.tracks);
+        // let tracks = Arc::clone(&self.tracks);
         let preferred_quality = Arc::clone(&self.preferred_quality);
         let track_map = Arc::clone(&self.track_map);
         let mut rx = tx.subscribe();
 
         tokio::spawn(async move {
             while rx.changed().await.is_ok() {
-                let preferred = TrackQuality::from_u8(preferred_quality.load(Ordering::SeqCst));
+                let preferred = TrackQuality::from_u8(preferred_quality.load(Ordering::Relaxed));
 
-                for entry in tracks.iter() {
-                    let track_id = entry.key();
+                // Batch update all tracks for better performance
+                let update_tasks: Vec<_> = track_map
+                    .iter()
+                    .map(|entry| {
+                        let track_id = entry.key().clone();
+                        let forward_track = entry.value().clone();
+                        let quality = preferred.clone();
 
-                    if let Some(ctx) = track_map.get_mut(track_id) {
-                        ctx.set_effective_quality(&preferred);
-                        debug!("Setting track {} quality to {:?}", track_id, preferred);
+                        tokio::spawn(async move {
+                            forward_track.set_effective_quality(&quality);
+                            debug!("Track {} quality -> {:?}", track_id, quality);
+                        })
+                    })
+                    .collect();
+
+                // Wait for all updates to complete
+                for task in update_tasks {
+                    let _ = task.await;
+                }
+            }
+        });
+    }
+
+    // Helper method to request keyframes - crucial for P2P to SFU migration
+    async fn request_keyframe(&self) {
+        // Get all transceivers to find SSRCs
+        let transceivers = self.peer_connection.get_transceivers().await;
+
+        for transceiver in &transceivers {
+            let sender = transceiver.sender().await;
+            // Try to get SSRC from sender parameters
+            let params = sender.get_parameters().await;
+
+            for encoding in params.encodings {
+                let ssrc = encoding.ssrc;
+
+                // Send PLI (Picture Loss Indication) to request keyframe
+                let pli = PictureLossIndication {
+                    sender_ssrc: 0, // Will be filled by WebRTC stack
+                    media_ssrc: ssrc,
+                };
+
+                let rtcp_packets: Vec<Box<dyn webrtc::rtcp::packet::Packet + Send + Sync>> =
+                    vec![Box::new(pli)];
+
+                match self.peer_connection.write_rtcp(&rtcp_packets).await {
+                    Ok(_) => {
+                        debug!("PLI keyframe request sent for SSRC: {}", ssrc);
+                    }
+                    Err(e) => {
+                        debug!("Failed to send PLI for SSRC {}: {:?}", ssrc, e);
                     }
                 }
-            }
-        });
-    }
 
-    // Allows external components to adjust the quality thresholds based on external factors
-    pub fn adjust_quality_thresholds(
-        &self,
-        min_change_interval: Option<Duration>,
-        force_quality: Option<TrackQuality>,
-    ) {
-        tokio::spawn({
-            let network_stats = self.network_stats.clone();
-            let preferred_quality = self.preferred_quality.clone();
-            let tx = watch::channel(()).0;
+                // Also try FIR as backup
+                let fir = FullIntraRequest {
+                    sender_ssrc: 0,
+                    media_ssrc: ssrc,
+                    fir: vec![FirEntry {
+                        ssrc,
+                        sequence_number: 1,
+                    }],
+                };
 
-            async move {
-                let mut stats = network_stats.write().await;
+                let fir_packets: Vec<Box<dyn webrtc::rtcp::packet::Packet + Send + Sync>> =
+                    vec![Box::new(fir)];
 
-                // Update minimum change interval if provided
-                if let Some(interval) = min_change_interval {
-                    // Update logic for dynamically adjusting thresholds would go here
-                    debug!(
-                        "Adjusting minimum quality change interval to {:?}",
-                        interval
-                    );
-                }
-
-                // Force a specific quality if requested
-                if let Some(quality) = force_quality {
-                    debug!("Forcing quality to {:?}", quality);
-                    preferred_quality.store(quality.as_u8(), Ordering::Relaxed);
-                    stats.update_quality_timestamp();
-                    let _ = tx.send(());
+                if let Ok(_) = self.peer_connection.write_rtcp(&fir_packets).await {
+                    debug!("FIR keyframe request sent for SSRC: {}", ssrc);
                 }
             }
-        });
+        }
+
+        // Fallback: Send generic PLI without specific SSRC
+        if transceivers.is_empty() {
+            let generic_pli = PictureLossIndication {
+                sender_ssrc: 0,
+                media_ssrc: 0, // Generic request
+            };
+
+            let rtcp_packets: Vec<Box<dyn webrtc::rtcp::packet::Packet + Send + Sync>> =
+                vec![Box::new(generic_pli)];
+
+            if let Ok(_) = self.peer_connection.write_rtcp(&rtcp_packets).await {
+                debug!("Generic PLI keyframe request sent");
+            }
+        }
     }
 
-    // Get current network stats for monitoring/debugging
-    pub async fn get_network_stats(&self) -> (TrackQuality, TrackQuality, TrackQuality) {
+    // Force quality for migration scenarios
+    pub async fn force_quality_for_migration(&self, quality: TrackQuality) {
+        self.preferred_quality
+            .store(quality.as_u8(), Ordering::Relaxed);
+
+        let mut stats = self.network_stats.write().await;
+        stats.update_quality_timestamp();
+
+        // Immediately update all tracks
+        for entry in self.track_map.iter() {
+            entry.value().set_effective_quality(&quality);
+        }
+
+        // Request keyframe to ensure smooth transition
+        drop(stats); // Release lock before async call
+        self.request_keyframe().await;
+
+        info!("Forced quality to {:?} for migration", quality);
+    }
+
+    // Get current network stats for monitoring
+    pub async fn get_network_stats(&self) -> (TrackQuality, TrackQuality) {
         let stats = self.network_stats.read().await;
         let current = TrackQuality::from_u8(self.preferred_quality.load(Ordering::Relaxed));
 
-        (
-            current,
-            stats.remb_quality.clone(),
-            stats.twcc_quality.clone(),
-        )
+        (current, stats.twcc_quality.clone())
     }
 
     pub fn close(&self) {
         self.cancel_token.cancel();
-
         self.clear_all_forward_tracks();
 
         let pc = Arc::clone(&self.peer_connection);
-
         tokio::spawn(async move {
             let _ = pc.close().await;
         });
@@ -463,17 +515,28 @@ impl Subscriber {
     pub fn clear_all_forward_tracks(&self) {
         let user_id = self.user_id.clone();
 
-        for track in self.tracks.iter() {
-            let user_id = user_id.clone();
-            let track = track.clone();
-            tokio::spawn(async move {
-                let writer = track.write().await;
+        // Batch clear for better performance
+        let clear_tasks: Vec<_> = self
+            .tracks
+            .iter()
+            .map(|track| {
+                let user_id = user_id.clone();
+                let track = track.clone();
+                tokio::spawn(async move {
+                    let writer = track.write().await;
+                    writer.remove_forward_track(&user_id);
+                })
+            })
+            .collect();
 
-                writer.remove_forward_track(&user_id);
-            });
-        }
-
+        // Don't wait for tasks to complete, let them run in background
         self.tracks.clear();
         self.track_map.clear();
+
+        tokio::spawn(async move {
+            for task in clear_tasks {
+                let _ = task.await;
+            }
+        });
     }
 }

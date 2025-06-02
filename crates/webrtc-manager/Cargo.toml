@@ -16,6 +16,7 @@ tracing = { workspace = true }
 nanoid = { workspace = true }
 webrtc = { workspace = true }
 egress-manager = { workspace = true }
+crossbeam = { workspace = true }
 
 [dev-dependencies]
 mockall = "0.13.1"

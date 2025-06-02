@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use tracing::{debug, info};
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
 
-use crate::models::{AddTrackResponse, TrackMutexWrapper};
+use crate::models::params::{AddTrackResponse, TrackMutexWrapper};
 
 use super::track::Track;
 
@@ -275,7 +275,7 @@ impl Media {
             rtp_track.rid()
         };
 
-        info!(
+        debug!(
             "[track_added]: id: {} kind: {} codec: {}, rid: {}, stream_id: {}, ssrc: {}",
             rtp_track.id(),
             rtp_track.kind(),

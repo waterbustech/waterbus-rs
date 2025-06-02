@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tracing::info;
 use waterbus_proto::sfu_service_server::SfuServiceServer;
-use webrtc_manager::models::WebRTCManagerConfigs;
+use webrtc_manager::models::params::WebRTCManagerConfigs;
 
 use crate::application::{
     dispacher_grpc_client::DispatcherGrpcClient, sfu_grpc_service::SfuGrpcService,

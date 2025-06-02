@@ -12,8 +12,11 @@ use waterbus_proto::{
 };
 use webrtc_manager::{
     models::{
-        IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback,
-        WebRTCManagerConfigs, connection_type::ConnectionType,
+        connection_type::ConnectionType,
+        params::{
+            IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback,
+            WebRTCManagerConfigs,
+        },
     },
     webrtc_manager::{JoinRoomReq, WebRTCManager},
 };
