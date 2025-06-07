@@ -33,7 +33,7 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
 /// Get presigned url
 #[endpoint(tags("auth"), status_codes(201, 400))]
 async fn generate_presigned_url(_res: &mut Response) -> Result<PresignedResponse, FailedResponse> {
-    let content_type = "image/png";
+    let content_type = "image/webp";
     // Generate unique file key
     let extension = content_type.split('/').last().unwrap_or("jpeg");
     let key = format!("{}.{}", nanoid!(), extension);

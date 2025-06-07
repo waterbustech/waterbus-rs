@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::{Mutex, RwLock};
+use parking_lot::{Mutex, RwLock};
 use tracing::warn;
 use webrtc::{
     api::{
@@ -107,7 +107,7 @@ impl Room {
                     Box::pin(async move {
                         if peer.connection_state() == RTCPeerConnectionState::Connected {
                             drop(peer);
-                            let mut emitted = has_emitted.lock().await;
+                            let mut emitted = has_emitted.lock();
                             if !*emitted {
                                 *emitted = true;
                                 tokio::spawn(async move {
@@ -148,11 +148,11 @@ impl Room {
 
                 publisher.send_rtcp_pli(track.ssrc());
 
+                let media = media.write();
+                let add_track_response = media.add_track(track, room_id);
+
                 Box::pin(async move {
                     tokio::spawn(async move {
-                        let media = media.write().await;
-                        let add_track_response = media.add_track(track, room_id).await;
-
                         let (maybe_track, should_count) = match add_track_response {
                             AddTrackResponse::AddTrackSuccess(track) => (Some(track), true),
                             AddTrackResponse::AddSimulcastTrackSuccess(track) => {
@@ -176,11 +176,11 @@ impl Room {
                             }
 
                             if should_count {
-                                let mut count = track_counter.lock().await;
+                                let mut count = track_counter.lock();
                                 *count += 1;
 
                                 if *count == params.total_tracks {
-                                    let mut called = callback_called.lock().await;
+                                    let mut called = callback_called.lock();
                                     if !*called {
                                         *called = true;
 
@@ -258,7 +258,7 @@ impl Room {
         let subscribe_response = self._extract_subscribe_response(&media_arc).await;
 
         let sdp_cached = {
-            let mut writer = media_arc.write().await;
+            let mut writer = media_arc.write();
             writer.get_sdp()
         };
 
@@ -293,10 +293,14 @@ impl Room {
                     let peer = peer_clone.clone();
                     let media = media_clone.clone();
                     let callback = renegotiation_callback.clone();
+
+                    let need_renegotiate = {
+                        let media = media.read();
+                        media.tracks.len() > 2
+                    };
+
                     Box::pin(async move {
-                        let media = media.read().await;
-                        if media.tracks.len() < 3 {
-                            warn!("Not enough tracks, skipping renegotiation");
+                        if !need_renegotiate {
                             return;
                         }
 
@@ -351,22 +355,31 @@ impl Room {
         }
     }
 
-    pub async fn set_subscriber_remote_sdp(
+    pub fn set_subscriber_remote_sdp(
         &self,
         target_id: &str,
         participant_id: &str,
         sdp: &str,
     ) -> Result<(), WebRTCError> {
-        let peer = self._get_subscriber_peer(target_id, participant_id)?;
+        let peer = self
+            ._get_subscriber_peer(target_id, participant_id)?
+            .clone();
 
-        let answer_desc = RTCSessionDescription::answer(sdp.to_string())
-            .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+        let sdp_string = sdp.to_string();
 
-        peer.set_remote_description(answer_desc)
-            .await
-            .map_err(|_| WebRTCError::FailedToSetSdp)?;
+        tokio::task::block_in_place(move || {
+            let handle =
+                tokio::runtime::Handle::try_current().map_err(|_| WebRTCError::FailedToSetSdp)?;
 
-        Ok(())
+            handle.block_on(async move {
+                let answer_desc = RTCSessionDescription::answer(sdp_string)
+                    .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+
+                peer.set_remote_description(answer_desc)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToSetSdp)
+            })
+        })
     }
 
     pub async fn handle_publisher_renegotiation(
@@ -430,7 +443,7 @@ impl Room {
         } else {
             let media = self._get_media(participant_id)?;
 
-            let mut writer = media.write().await;
+            let mut writer = media.write();
 
             writer.remove_all_tracks();
 
@@ -440,30 +453,38 @@ impl Room {
         }
     }
 
-    pub async fn add_publisher_candidate(
+    pub fn add_publisher_candidate(
         &self,
         participant_id: &str,
         candidate: IceCandidate,
     ) -> Result<(), WebRTCError> {
         let participant = self._get_publisher(participant_id)?;
-
         let peer = &participant.peer_connection;
 
-        let candidate = RTCIceCandidateInit {
+        let candidate_init = RTCIceCandidateInit {
             candidate: candidate.candidate,
             sdp_mid: candidate.sdp_mid,
             sdp_mline_index: candidate.sdp_m_line_index,
             username_fragment: None,
         };
 
-        peer.add_ice_candidate(candidate)
-            .await
-            .map_err(|_| WebRTCError::FailedToAddCandidate)?;
+        // Clone peer và candidate để move vào async block
+        let peer = peer.clone();
+        let candidate_init = candidate_init.clone();
 
-        Ok(())
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::try_current()
+                .map_err(|_| WebRTCError::FailedToAddCandidate)?;
+
+            handle.block_on(async move {
+                peer.add_ice_candidate(candidate_init)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToAddCandidate)
+            })
+        })
     }
 
-    pub async fn add_subscriber_candidate(
+    pub fn add_subscriber_candidate(
         &self,
         target_id: &str,
         participant_id: &str,
@@ -471,18 +492,26 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let peer = self._get_subscriber_peer(target_id, participant_id)?;
 
-        let candidate = RTCIceCandidateInit {
+        let candidate_init = RTCIceCandidateInit {
             candidate: candidate.candidate,
             sdp_mid: candidate.sdp_mid,
             sdp_mline_index: candidate.sdp_m_line_index,
             username_fragment: None,
         };
 
-        peer.add_ice_candidate(candidate)
-            .await
-            .map_err(|_| WebRTCError::FailedToAddCandidate)?;
+        let peer = peer.clone();
+        let candidate_init = candidate_init.clone();
 
-        Ok(())
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::try_current()
+                .map_err(|_| WebRTCError::FailedToAddCandidate)?;
+
+            handle.block_on(async move {
+                peer.add_ice_candidate(candidate_init)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToAddCandidate)
+            })
+        })
     }
 
     pub fn leave_room(&mut self, participant_id: &str) {
@@ -493,63 +522,63 @@ impl Room {
         }
     }
 
-    pub async fn set_e2ee_enabled(
+    pub fn set_e2ee_enabled(
         &self,
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.write().await;
+        let media = media.write();
 
         media.set_e2ee_enabled(is_enabled);
 
         Ok(())
     }
 
-    pub async fn set_camera_type(
+    pub fn set_camera_type(
         &self,
         participant_id: &str,
         camera_type: u8,
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.write().await;
+        let media = media.write();
 
         media.set_camera_type(camera_type);
 
         Ok(())
     }
 
-    pub async fn set_video_enabled(
+    pub fn set_video_enabled(
         &self,
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.write().await;
+        let media = media.write();
 
         let _ = media.set_video_enabled(is_enabled);
 
         Ok(())
     }
 
-    pub async fn set_audio_enabled(
+    pub fn set_audio_enabled(
         &self,
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.write().await;
+        let media = media.write();
 
         let _ = media.set_audio_enabled(is_enabled);
 
         Ok(())
     }
 
-    pub async fn set_screen_sharing(
+    pub fn set_screen_sharing(
         &self,
         participant_id: &str,
         is_enabled: bool,
@@ -557,21 +586,21 @@ impl Room {
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.write().await;
+        let media = media.write();
 
         let _ = media.set_screen_sharing(is_enabled, screen_track_id);
 
         Ok(())
     }
 
-    pub async fn set_hand_raising(
+    pub fn set_hand_raising(
         &self,
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
         let media = self._get_media(participant_id)?;
 
-        let media = media.write().await;
+        let media = media.write();
 
         let _ = media.set_hand_rasing(is_enabled);
 
@@ -771,7 +800,7 @@ impl Room {
         &self,
         media_arc: &Arc<RwLock<Media>>,
     ) -> SubscribeResponse {
-        let media = media_arc.read().await;
+        let media = media_arc.read();
         let media_state = media.state.read();
 
         SubscribeResponse {
@@ -792,7 +821,7 @@ impl Room {
         subscriber: Arc<Subscriber>,
         media_arc: &Arc<RwLock<Media>>,
     ) -> Result<(), WebRTCError> {
-        let media = media_arc.read().await;
+        let media = media_arc.read();
         let tracks = media.tracks.clone();
 
         for entry in tracks.iter() {

@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use anyhow::anyhow;
 use async_channel::Receiver;
@@ -114,6 +114,8 @@ pub async fn get_socket_router(
         .with_state(dispatcher)
         .with_adapter::<RedisAdapter<_>>(adapter)
         .with_parser(ParserConfig::msgpack())
+        .ping_interval(Duration::from_secs(5))
+        .ping_timeout(Duration::from_secs(2))
         .build_layer();
 
     let layer = ServiceBuilder::new()
@@ -419,9 +421,9 @@ async fn on_disconnect<A: Adapter>(
     dispatcher_manager: State<DispatcherManager>,
     room_service: State<RoomServiceImpl>,
 ) {
-    let _ = user_cnt.remove_user().await.unwrap_or(0);
+    let _ = _handle_leave_room(socket, dispatcher_manager.0, room_service.0).await;
 
-    let _ = _handle_leave_room(socket, dispatcher_manager.0.clone(), room_service.0).await;
+    let _ = user_cnt.remove_user().await.unwrap_or(0);
 }
 
 async fn on_reconnect<A: Adapter>(_: SocketRef<A>) {}

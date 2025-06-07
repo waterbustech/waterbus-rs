@@ -1,7 +1,7 @@
 use std::{pin::Pin, sync::Arc};
 
+use parking_lot::RwLock;
 use serde::Serialize;
-use tokio::sync::RwLock;
 
 use crate::entities::track::Track;
 

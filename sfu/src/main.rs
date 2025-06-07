@@ -6,6 +6,11 @@ use tracing_subscriber::{
 };
 use webrtc_manager::models::params::WebRTCManagerConfigs;
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let filter = EnvFilter::new("info")

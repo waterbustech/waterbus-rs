@@ -29,6 +29,12 @@ pub enum WebRTCError {
     #[error("Failed to add candidate")]
     FailedToAddCandidate,
 
+    #[error("Failed to renegotiate")]
+    FailedToRenegotiate,
+
+    #[error("Failed to migrate connection")]
+    FailedToMigrateConnection,
+
     #[error("Peer not found")]
     PeerNotFound,
 

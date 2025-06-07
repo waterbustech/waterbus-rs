@@ -202,7 +202,7 @@ impl Subscriber {
 
     pub async fn add_track(&self, remote_track: TrackMutexWrapper) -> Result<(), WebRTCError> {
         let track_id = {
-            let track_guard = remote_track.read().await;
+            let track_guard = remote_track.read();
             track_guard.id.clone()
         };
 
@@ -229,7 +229,6 @@ impl Subscriber {
         let forward_track = {
             let track = remote_track
                 .read()
-                .await
                 .new_forward_track(&self.user_id.clone())?;
             track
         };
@@ -523,7 +522,7 @@ impl Subscriber {
                 let user_id = user_id.clone();
                 let track = track.clone();
                 tokio::spawn(async move {
-                    let writer = track.write().await;
+                    let writer = track.read();
                     writer.remove_forward_track(&user_id);
                 })
             })

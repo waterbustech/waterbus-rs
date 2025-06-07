@@ -9,6 +9,11 @@ members = [
 ]
 resolver = "2"
 
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
 [workspace.dependencies]
 salvo = { version = "0.79.0", features = [
     "quinn",
@@ -89,6 +94,7 @@ futures-util = "0.3.31"
 redis = "0.31.0"
 futures = "0.3.31"
 crossbeam = "0.8.4"
+mimalloc = "0.1.46"
 
 # Local crates
 waterbus-proto = { path = "./crates/waterbus-proto" }

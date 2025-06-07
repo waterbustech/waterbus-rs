@@ -24,3 +24,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sysinfo = { workspace = true }
 rustls = { workspace = true }
+mimalloc = { workspace = true }

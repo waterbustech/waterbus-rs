@@ -110,13 +110,9 @@ impl Media {
         Ok(media)
     }
 
-    pub async fn add_track(
-        &self,
-        rtp_track: Arc<TrackRemote>,
-        room_id: String,
-    ) -> AddTrackResponse {
+    pub fn add_track(&self, rtp_track: Arc<TrackRemote>, room_id: String) -> AddTrackResponse {
         if let Some(existing_track_arc) = self.tracks.get(&rtp_track.id()) {
-            let mut track_guard = existing_track_arc.write().await;
+            let mut track_guard = existing_track_arc.write();
             track_guard.add_track(rtp_track.clone());
 
             if rtp_track.kind() == RTPCodecType::Video {
@@ -152,7 +148,7 @@ impl Media {
             }
         }
 
-        let new_track = Arc::new(tokio::sync::RwLock::new(Track::new(
+        let new_track = Arc::new(RwLock::new(Track::new(
             rtp_track.clone(),
             room_id,
             self.participant_id.clone(),
@@ -219,10 +215,8 @@ impl Media {
         for entry in self.tracks.iter() {
             let track_mutex = entry.value().clone();
 
-            tokio::spawn(async move {
-                let mut track = track_mutex.write().await;
-                track.stop();
-            });
+            let mut track = track_mutex.write();
+            track.stop();
         }
 
         self.tracks.clear();

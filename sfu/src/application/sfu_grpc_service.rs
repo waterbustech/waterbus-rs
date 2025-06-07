@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, RwLock};
+use parking_lot::RwLock;
+use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
@@ -54,8 +55,6 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<JoinRoomResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
-
         let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
         let client_id = req.client_id.clone();
         let ice_candidate_callback: IceCandidateCallback =
@@ -107,21 +106,30 @@ impl SfuService for SfuGrpcService {
             })
         });
 
-        let response = writer
-            .join_room(JoinRoomReq {
-                client_id: req.client_id,
-                participant_id: req.participant_id,
-                room_id: req.room_id,
-                sdp: req.sdp,
-                is_video_enabled: req.is_video_enabled,
-                is_audio_enabled: req.is_audio_enabled,
-                is_e2ee_enabled: req.is_e2ee_enabled,
-                total_tracks: req.total_tracks as u8,
-                connection_type: req.connection_type as u8,
-                callback: joined_callback,
-                ice_candidate_callback: ice_candidate_callback,
+        let webrtc_manager = self.webrtc_manager.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            let writer = webrtc_manager.write();
+
+            tokio::runtime::Handle::current().block_on(async {
+                writer
+                    .join_room(JoinRoomReq {
+                        client_id: req.client_id,
+                        participant_id: req.participant_id,
+                        room_id: req.room_id,
+                        sdp: req.sdp,
+                        is_video_enabled: req.is_video_enabled,
+                        is_audio_enabled: req.is_audio_enabled,
+                        is_e2ee_enabled: req.is_e2ee_enabled,
+                        total_tracks: req.total_tracks as u8,
+                        connection_type: req.connection_type as u8,
+                        callback: joined_callback,
+                        ice_candidate_callback: ice_candidate_callback,
+                    })
+                    .await
             })
-            .await;
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
 
         match response {
             Ok(response) => match response {
@@ -149,8 +157,6 @@ impl SfuService for SfuGrpcService {
         req: Request<SubscribeRequest>,
     ) -> Result<Response<SubscribeResponse>, Status> {
         let req = req.into_inner();
-
-        let writer = self.webrtc_manager.write().await;
 
         let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
         let client_id = req.client_id.clone();
@@ -198,16 +204,26 @@ impl SfuService for SfuGrpcService {
             })
         });
 
-        let response = writer
-            .subscribe(
-                &req.client_id,
-                &req.target_id,
-                &req.participant_id,
-                &req.room_id,
-                renegotiation_callback,
-                ice_candidate_callback,
-            )
-            .await;
+        let webrtc_manager = self.webrtc_manager.clone();
+
+        let response = tokio::task::spawn_blocking(move || {
+            let writer = webrtc_manager.write();
+
+            tokio::runtime::Handle::current().block_on(async {
+                writer
+                    .subscribe(
+                        &req.client_id,
+                        &req.target_id,
+                        &req.participant_id,
+                        &req.room_id,
+                        renegotiation_callback,
+                        ice_candidate_callback,
+                    )
+                    .await
+            })
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
 
         match response {
             Ok(response) => {
@@ -234,11 +250,9 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.read();
 
-        let response = writer
-            .set_subscriber_desc(&req.client_id, &req.target_id, &req.sdp)
-            .await;
+        let response = writer.set_subscriber_desc(&req.client_id, &req.target_id, &req.sdp);
 
         match response {
             Ok(()) => {
@@ -259,11 +273,20 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<PublisherRenegotiationResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let response = tokio::task::spawn_blocking({
+            let webrtc_manager = self.webrtc_manager.clone();
+            let client_id = req.client_id.clone();
+            let sdp = req.sdp.clone();
 
-        let response = writer
-            .handle_publisher_renegotiation(&req.client_id, &req.sdp)
-            .await;
+            move || {
+                let writer = webrtc_manager.read();
+
+                tokio::runtime::Handle::current()
+                    .block_on(writer.handle_publisher_renegotiation(&client_id, &sdp))
+            }
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
 
         match response {
             Ok(sdp) => Ok(Response::new(PublisherRenegotiationResponse { sdp })),
@@ -280,15 +303,22 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<MigratePublisherResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let webrtc_manager = self.webrtc_manager.clone();
+        let client_id = req.client_id.clone();
+        let sdp = req.sdp.clone();
+        let connection_type = ConnectionType::from(req.connection_type as u8);
 
-        let response = writer
-            .handle_migrate_connection(
-                &req.client_id,
-                &req.sdp,
-                ConnectionType::from(req.connection_type as u8),
-            )
-            .await;
+        let response = tokio::task::spawn_blocking(move || {
+            let writer = webrtc_manager.read();
+
+            tokio::runtime::Handle::current().block_on(writer.handle_migrate_connection(
+                &client_id,
+                &sdp,
+                connection_type,
+            ))
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
 
         match response {
             Ok(sdp) => Ok(Response::new(MigratePublisherResponse { sdp })),
@@ -305,19 +335,17 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.read();
 
         if let Some(candidate) = req.candidate {
-            let response = writer
-                .add_publisher_candidate(
-                    &req.client_id,
-                    IceCandidate {
-                        candidate: candidate.candidate,
-                        sdp_mid: candidate.sdp_mid,
-                        sdp_m_line_index: candidate.sdp_m_line_index.map(|v| v as u16),
-                    },
-                )
-                .await;
+            let response = writer.add_publisher_candidate(
+                &req.client_id,
+                IceCandidate {
+                    candidate: candidate.candidate,
+                    sdp_mid: candidate.sdp_mid,
+                    sdp_m_line_index: candidate.sdp_m_line_index.map(|v| v as u16),
+                },
+            );
 
             match response {
                 Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
@@ -337,20 +365,18 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.read();
 
         if let Some(candidate) = req.candidate {
-            let response = writer
-                .add_subscriber_candidate(
-                    &req.client_id,
-                    &req.target_id,
-                    IceCandidate {
-                        candidate: candidate.candidate,
-                        sdp_mid: candidate.sdp_mid,
-                        sdp_m_line_index: candidate.sdp_m_line_index.map(|v| v as u16),
-                    },
-                )
-                .await;
+            let response = writer.add_subscriber_candidate(
+                &req.client_id,
+                &req.target_id,
+                IceCandidate {
+                    candidate: candidate.candidate,
+                    sdp_mid: candidate.sdp_mid,
+                    sdp_m_line_index: candidate.sdp_m_line_index.map(|v| v as u16),
+                },
+            );
 
             match response {
                 Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
@@ -370,9 +396,9 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<LeaveRoomResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.read();
 
-        let response = writer.leave_room(&req.client_id).await;
+        let response = writer.leave_room(&req.client_id);
 
         match response {
             Ok(client) => Ok(Response::new(LeaveRoomResponse {
@@ -389,11 +415,9 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.read();
 
-        let response = writer
-            .set_video_enabled(&req.client_id, req.is_enabled)
-            .await;
+        let response = writer.set_video_enabled(&req.client_id, req.is_enabled);
 
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
@@ -410,11 +434,9 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.read();
 
-        let response = writer
-            .set_audio_enabled(&req.client_id, req.is_enabled)
-            .await;
+        let response = writer.set_audio_enabled(&req.client_id, req.is_enabled);
 
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
@@ -431,11 +453,9 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.write();
 
-        let response = writer
-            .set_hand_raising(&req.client_id, req.is_enabled)
-            .await;
+        let response = writer.set_hand_raising(&req.client_id, req.is_enabled);
 
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
@@ -452,11 +472,10 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.write();
 
-        let response = writer
-            .set_screen_sharing(&req.client_id, req.is_enabled, req.screen_track_id)
-            .await;
+        let response =
+            writer.set_screen_sharing(&req.client_id, req.is_enabled, req.screen_track_id);
 
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
@@ -473,11 +492,9 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<StatusResponse>, Status> {
         let req = req.into_inner();
 
-        let writer = self.webrtc_manager.write().await;
+        let writer = self.webrtc_manager.write();
 
-        let response = writer
-            .set_camera_type(&req.client_id, req.camera_type as u8)
-            .await;
+        let response = writer.set_camera_type(&req.client_id, req.camera_type as u8);
 
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),

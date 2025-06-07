@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use tokio::sync::RwLock;
+use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 use webrtc::{
     peer_connection::RTCPeerConnection,
@@ -91,7 +91,7 @@ impl Publisher {
             drop(pc);
 
             // Stop media
-            let media = media.write().await;
+            let media = media.write();
             media.stop();
         });
     }
