@@ -1,21 +1,21 @@
 services:
   waterbus-signalling:
-    image: lambiengcode/waterbus-signalling
+    image: docker.io/lambiengcode/waterbus-signalling
     container_name: waterbus-signalling
     env_file:
       - .env
     ports:
       - "5998:5998/tcp"
       - "5998:5998/udp"
-      - "50052:50052"
+      - "50052:50052/tcp"
     restart: unless-stopped
 
   waterbus-sfu:
-    image: lambiengcode/waterbus-sfu
+    image: docker.io/lambiengcode/waterbus-sfu
     container_name: waterbus-sfu
     env_file:
       - .env
     ports:
-      - "19000-20000:19000-20000/udp"
-      - "50051:50051"
+      - "49152-65535:49152-65535/udp"
+      - "50051:50051/tcp"
     restart: unless-stopped

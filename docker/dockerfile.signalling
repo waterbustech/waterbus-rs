@@ -1,5 +1,5 @@
 # --- Build stage ---
-FROM rustlang/rust:nightly AS builder
+FROM docker.io/rustlang/rust:nightly AS builder
 
 WORKDIR /usr/src/app
 RUN apt-get update && apt-get install -y \
