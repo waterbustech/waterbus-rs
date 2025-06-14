@@ -1,5 +1,3 @@
-.PHONY: signalling sfu build-docker
-
 signalling:
 	cargo run --bin signalling --release
 sfu:
