@@ -11,18 +11,15 @@ use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 use webrtc::{
-    peer_connection::RTCPeerConnection,
-    rtcp::{
+    data_channel::{data_channel_message::DataChannelMessage, RTCDataChannel}, peer_connection::RTCPeerConnection, rtcp::{
         payload_feedbacks::{
             full_intra_request::{FirEntry, FullIntraRequest},
             picture_loss_indication::PictureLossIndication,
         },
         transport_feedbacks::transport_layer_cc::TransportLayerCc,
-    },
-    rtp_transceiver::{
-        RTCRtpTransceiverInit, rtp_transceiver_direction::RTCRtpTransceiverDirection,
-    },
-    track::track_local::TrackLocal,
+    }, rtp_transceiver::{
+        rtp_transceiver_direction::RTCRtpTransceiverDirection, RTCRtpTransceiverInit
+    }, track::track_local::TrackLocal
 };
 
 use crate::{
@@ -53,8 +50,6 @@ type TrackMap = Arc<DashMap<String, Arc<ForwardTrack>>>;
 struct NetworkStats {
     twcc_quality: TrackQuality,
     last_quality_change: Instant,
-    // last_keyframe_request: Instant,
-    // Optimized history for faster calculations
     delay_history: VecDeque<Duration>,
     jitter_history: VecDeque<usize>,
     packet_loss_count: u32,
@@ -63,9 +58,8 @@ struct NetworkStats {
 impl Default for NetworkStats {
     fn default() -> Self {
         Self {
-            twcc_quality: TrackQuality::Medium, // Start with medium for better initial experience
+            twcc_quality: TrackQuality::Medium,
             last_quality_change: Instant::now(),
-            // last_keyframe_request: Instant::now(),
             delay_history: VecDeque::with_capacity(HISTORY_SIZE),
             jitter_history: VecDeque::with_capacity(HISTORY_SIZE),
             packet_loss_count: 0,
@@ -156,19 +150,8 @@ impl NetworkStats {
     fn update_quality_timestamp(&mut self) {
         self.last_quality_change = Instant::now();
     }
-
-    // fn should_request_keyframe(&mut self) -> bool {
-    //     let now = Instant::now();
-    //     if now.duration_since(self.last_keyframe_request) >= KEYFRAME_REQUEST_INTERVAL {
-    //         self.last_keyframe_request = now;
-    //         true
-    //     } else {
-    //         false
-    //     }
-    // }
 }
 
-#[derive(Debug)]
 pub struct Subscriber {
     pub peer_connection: Arc<RTCPeerConnection>,
     cancel_token: CancellationToken,
@@ -177,6 +160,8 @@ pub struct Subscriber {
     tracks: Arc<DashMap<String, TrackMutexWrapper>>,
     track_map: TrackMap,
     user_id: String,
+    data_channel: Option<Arc<RTCDataChannel>>,
+    client_requested_quality: Arc<RwLock<Option<TrackQuality>>>,
 }
 
 impl Subscriber {
@@ -192,12 +177,98 @@ impl Subscriber {
             tracks: Arc::new(DashMap::new()),
             track_map: Arc::new(DashMap::new()),
             user_id,
+            data_channel: None,
+            client_requested_quality: Arc::new(RwLock::new(None)),
         };
 
         this.spawn_rtcp_monitor(cancel_token, tx.clone());
         this.spawn_track_update_loop(tx);
 
+        // let _ = this.create_data_channel().await;
+
         this
+    }
+
+    pub async fn create_data_channel(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let data_channel = self
+            .peer_connection
+            .create_data_channel("track_quality", None)
+            .await?;
+        
+        self.listen_data_channel(data_channel).await?;
+        
+        Ok(())
+    }
+
+    pub async fn listen_data_channel(&mut self, data_channel: Arc<RTCDataChannel>) -> Result<(), WebRTCError> {
+        let client_requested_quality = Arc::clone(&self.client_requested_quality);
+        let preferred_quality = Arc::clone(&self.preferred_quality);
+        let user_id = self.user_id.clone();
+        let track_map = Arc::clone(&self.track_map);
+        
+        let data_channel_clone = Arc::clone(&data_channel);
+        
+        tokio::spawn(async move {
+            let user_id_on_msg = user_id.clone();
+            data_channel_clone.on_message(Box::new(move |msg: DataChannelMessage| {
+                let client_quality = Arc::clone(&client_requested_quality);
+                let preferred = Arc::clone(&preferred_quality);
+                let uid = user_id_on_msg.clone();
+                let tracks = Arc::clone(&track_map);
+                
+                Box::pin(async move {
+                    let data = msg.data;
+                    let requested_quality = std::str::from_utf8(&data)
+                .map_err(|e| format!("Invalid UTF-8: {}", e))
+                .and_then(|json_str| {
+                    serde_json::from_str::<TrackQuality>(json_str)
+                        .map_err(|e| format!("JSON parse error: {}", e))
+                });
+                    
+                    if let Ok(quality) = requested_quality {
+                        info!("Received quality request from client {}: {:?}", uid, quality);
+                        let new_quality: Option<TrackQuality> = Some(quality);
+                        
+                        {
+                            let mut client_quality_guard = client_quality.write().await;
+                            *client_quality_guard = new_quality.clone();
+                        }
+                        
+                        // Apply the quality immediately if specified, otherwise use network-based quality
+                        if let Some(quality) = new_quality {
+                            preferred.store(quality.as_u8(), Ordering::Relaxed);
+                            // Update all tracks immediately
+                            for entry in tracks.iter() {
+                                entry.value().set_effective_quality(&quality);
+                            }
+                            info!("Applied client-requested quality: {:?}", quality);
+                        } else {
+                            info!("Client requested no specific quality (None) - using network-based adaptation");
+                        }
+                    } else {
+                        debug!("Received non-text data channel message");
+                    }
+                })
+            }));
+            
+            // Set up state change handlers
+            let user_id_open = user_id.clone();
+            data_channel_clone.on_open(Box::new(move || {
+                info!("Quality control data channel opened for user: {}", user_id_open);
+                Box::pin(async {})
+            }));
+            
+            let user_id_close = user_id.clone();
+            data_channel_clone.on_close(Box::new(move || {
+                info!("Quality control data channel closed for user: {}", user_id_close);
+                Box::pin(async {})
+            }));
+        });
+        
+        // Store the data channel reference
+        self.data_channel = Some(data_channel);
+        
+        Ok(())
     }
 
     pub async fn add_track(&self, remote_track: TrackMutexWrapper) -> Result<(), WebRTCError> {

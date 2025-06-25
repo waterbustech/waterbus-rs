@@ -24,7 +24,6 @@ use webrtc_manager::{
 
 use super::dispacher_grpc_client::DispatcherGrpcClient;
 
-#[derive(Debug)]
 pub struct SfuGrpcService {
     webrtc_manager: Arc<RwLock<WebRTCManager>>,
     dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,

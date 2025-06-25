@@ -4,14 +4,19 @@ use dashmap::DashMap;
 use egress_manager::egress::{hls_writer::HlsWriter, moq_writer::MoQWriter};
 use nanoid::nanoid;
 use parking_lot::RwLock;
+use tokio::sync::mpsc;
 use tracing::{debug, info};
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
 
-use crate::models::params::{AddTrackResponse, TrackMutexWrapper};
+use crate::models::{
+    data_channel_msg::TrackSubscribedMessage,
+    params::{AddTrackResponse, TrackMutexWrapper},
+};
 
 use super::track::Track;
 
-#[derive(Debug)]
+pub type TrackSubscribedCallback = Arc<dyn Fn(TrackSubscribedMessage) + Send + Sync>;
+
 pub struct Media {
     pub media_id: String,
     pub participant_id: String,
@@ -21,6 +26,8 @@ pub struct Media {
     moq_writer: Option<Arc<MoQWriter>>,
     output_dir: String,
     sdp: Option<String>,
+    pub track_subscribed_callback: Option<TrackSubscribedCallback>,
+    pub track_event_sender: Option<mpsc::UnboundedSender<TrackSubscribedMessage>>,
 }
 
 #[derive(Debug)]
@@ -56,6 +63,8 @@ impl Media {
             moq_writer: None,
             output_dir,
             sdp: None,
+            track_subscribed_callback: None,
+            track_event_sender: None,
             state: Arc::new(RwLock::new(MediaState {
                 video_enabled: is_video_enabled,
                 audio_enabled: is_audio_enabled,

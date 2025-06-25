@@ -7,22 +7,24 @@ use std::{
 };
 
 use parking_lot::RwLock;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use webrtc::{
-    peer_connection::RTCPeerConnection,
+    data_channel::RTCDataChannel, peer_connection::RTCPeerConnection,
     rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication,
 };
 
-use crate::models::connection_type::ConnectionType;
+use crate::models::{connection_type::ConnectionType, data_channel_msg::TrackSubscribedMessage};
 
 use super::media::Media;
 
-#[derive(Debug)]
 pub struct Publisher {
     pub media: Arc<RwLock<Media>>,
     pub peer_connection: Arc<RTCPeerConnection>,
     pub connection_type: AtomicU8,
-    cancel_token: CancellationToken,
+    pub cancel_token: CancellationToken,
+    pub data_channel: Option<Arc<RTCDataChannel>>,
+    pub track_event_receiver: Option<mpsc::UnboundedReceiver<TrackSubscribedMessage>>,
 }
 
 impl Publisher {
@@ -36,7 +38,13 @@ impl Publisher {
             peer_connection,
             connection_type: AtomicU8::new(connection_type.into()),
             cancel_token: CancellationToken::new(),
+            data_channel: None,
+            track_event_receiver: None,
         };
+
+        // let _ = this.create_data_channel().await;
+        // this.setup_media_communication().await;
+        // this.start_data_channel_handler().await;
 
         this
     }
@@ -87,9 +95,7 @@ impl Publisher {
 
         tokio::spawn(async move {
             let _ = pc.close().await;
-
             drop(pc);
-
             // Stop media
             let media = media.write();
             media.stop();

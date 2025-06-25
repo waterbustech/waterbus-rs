@@ -21,7 +21,6 @@ impl MulticastSender {
 
     pub fn add_receiver(&self, id: String) -> Receiver<RtpForwardInfo> {
         // Use bounded channel with reasonable buffer size
-        // Adjust buffer size based on your needs (higher = more memory, less drops)
         let (tx, rx) = channel::bounded(1024);
         self.senders.insert(id, tx);
         rx

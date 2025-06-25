@@ -30,7 +30,7 @@ pub struct JoinRoomReq {
     pub ice_candidate_callback: IceCandidateCallback,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WebRTCManager {
     rooms: Arc<DashMap<String, Arc<RwLock<Room>>>>,
     clients: Arc<DashMap<String, WClient>>,

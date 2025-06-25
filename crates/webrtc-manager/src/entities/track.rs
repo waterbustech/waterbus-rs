@@ -34,8 +34,8 @@ pub struct Track {
     pub stream_id: String,
     pub capability: RTCRtpCodecCapability,
     pub kind: RTPCodecType,
-    remote_tracks: Vec<Arc<TrackRemote>>,
-    forward_tracks: Arc<DashMap<String, Arc<ForwardTrack>>>,
+    pub remote_tracks: Vec<Arc<TrackRemote>>,
+    pub forward_tracks: Arc<DashMap<String, Arc<ForwardTrack>>>,
     acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
     rtp_multicast: MulticastSender,
 }

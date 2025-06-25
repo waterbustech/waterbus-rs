@@ -120,7 +120,7 @@ impl ForwardTrack {
             let current_quality = info.track_quality.clone();
             let acceptable_map = info.acceptable_map.clone();
 
-            let desired_quality = this._get_desired_quality();
+            let desired_quality = this.get_desired_quality();
 
             if desired_quality == TrackQuality::None {
                 continue;
@@ -162,7 +162,7 @@ impl ForwardTrack {
         }
     }
 
-    fn _get_desired_quality(&self) -> TrackQuality {
+    pub fn get_desired_quality(&self) -> TrackQuality {
         let requested = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
         let effective = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
         requested.min(effective)

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
-use tracing::warn;
+use tracing::{info, warn};
 use webrtc::{
     api::{
         APIBuilder, interceptor_registry::register_default_interceptors, media_engine::MediaEngine,
@@ -42,7 +42,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Room {
     publishers: Arc<DashMap<String, Arc<Publisher>>>,
     subscribers: Arc<DashMap<String, Arc<Subscriber>>>,
@@ -85,6 +85,9 @@ impl Room {
             pc.clone(),
             params.connection_type.clone(),
         ));
+
+        info!("added publisher");
+
         self._add_publisher(&participant_id, &publisher);
 
         let is_migrate = params.connection_type == ConnectionType::P2P;
@@ -284,6 +287,8 @@ impl Room {
                 let pc = self._create_pc().await?;
 
                 self._add_subscriber(&peer_id, &pc, participant_id.clone());
+
+                info!("added subscriber");
 
                 // Clone for callbacks
                 let peer_clone = pc.clone();

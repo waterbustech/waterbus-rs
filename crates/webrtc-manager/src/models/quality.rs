@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use webrtc::rtp::codecs::vp9::Vp9Packet;
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum TrackQuality {
     None = 0,
