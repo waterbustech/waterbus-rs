@@ -28,12 +28,12 @@ pub struct Publisher {
 }
 
 impl Publisher {
-    pub fn new(
+    pub async fn new(
         media: Arc<RwLock<Media>>,
         peer_connection: Arc<RTCPeerConnection>,
         connection_type: ConnectionType,
     ) -> Self {
-        let this = Self {
+        let mut this = Self {
             media,
             peer_connection,
             connection_type: AtomicU8::new(connection_type.into()),
@@ -42,9 +42,9 @@ impl Publisher {
             track_event_receiver: None,
         };
 
-        // let _ = this.create_data_channel().await;
-        // this.setup_media_communication().await;
-        // this.start_data_channel_handler().await;
+        let _ = this.create_data_channel().await;
+        this.setup_media_communication().await;
+        this.start_data_channel_handler().await;
 
         this
     }

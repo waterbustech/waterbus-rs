@@ -165,11 +165,11 @@ pub struct Subscriber {
 }
 
 impl Subscriber {
-    pub fn new(peer_connection: Arc<RTCPeerConnection>, user_id: String) -> Self {
+    pub async fn new(peer_connection: Arc<RTCPeerConnection>, user_id: String) -> Self {
         let cancel_token = CancellationToken::new();
         let (tx, _rx) = watch::channel(());
 
-        let this = Self {
+        let mut this = Self {
             peer_connection,
             cancel_token: cancel_token.clone(),
             preferred_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
@@ -184,7 +184,7 @@ impl Subscriber {
         this.spawn_rtcp_monitor(cancel_token, tx.clone());
         this.spawn_track_update_loop(tx);
 
-        // let _ = this.create_data_channel().await;
+        let _ = this.create_data_channel().await;
 
         this
     }

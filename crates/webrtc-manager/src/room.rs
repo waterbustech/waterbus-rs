@@ -84,7 +84,7 @@ impl Room {
             Arc::new(RwLock::new(media)),
             pc.clone(),
             params.connection_type.clone(),
-        ));
+        ).await);
 
         info!("added publisher");
 
@@ -286,7 +286,7 @@ impl Room {
 
                 let pc = self._create_pc().await?;
 
-                self._add_subscriber(&peer_id, &pc, participant_id.clone());
+                self._add_subscriber(&peer_id, &pc, participant_id.clone()).await;
 
                 info!("added subscriber");
 
@@ -627,8 +627,9 @@ impl Room {
             .insert(participant_id.to_owned(), participant.clone());
     }
 
-    fn _add_subscriber(&self, peer_id: &str, pc: &Arc<RTCPeerConnection>, user_id: String) {
-        let subscriber = Arc::new(Subscriber::new(pc.clone(), user_id));
+    async fn _add_subscriber(&self, peer_id: &str, pc: &Arc<RTCPeerConnection>, user_id: String) {
+        let subscriber = Subscriber::new(pc.clone(), user_id).await;
+        let subscriber = Arc::new(subscriber);
 
         self.subscribers.insert(peer_id.to_owned(), subscriber);
     }
