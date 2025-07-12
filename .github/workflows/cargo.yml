@@ -56,6 +56,9 @@ jobs:
       
       - name: 🏭 Cache dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: 🪣 Create empty hls folder
+        run: mkdir -p hls
       
       - name: 💬 Check formatting
         uses: actions-rs/cargo@v1
