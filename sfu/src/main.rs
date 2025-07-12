@@ -1,4 +1,4 @@
-use sfu::infrastructure::{config::app_env::AppEnv, etcd::EtcdNode, grpc::grpc::GrpcServer};
+use sfu::infrastructure::{config::app_env::AppEnv, etcd::EtcdNode, grpc::GrpcServer};
 use tracing::{Metadata, warn};
 use tracing_subscriber::{
     EnvFilter, Layer, filter::FilterFn, fmt, layer::SubscriberExt, registry,

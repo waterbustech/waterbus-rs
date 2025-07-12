@@ -21,13 +21,12 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
     let presinged_route = Router::with_hoop(jwt_utils.auth_middleware())
         .path("presigned-url")
         .post(generate_presigned_url);
-    let router = Router::new()
+
+    Router::new()
         .path("auth")
         .post(create_token)
         .push(Router::with_hoop(jwt_utils.refresh_token_middleware()).get(refresh_token))
-        .push(presinged_route);
-
-    router
+        .push(presinged_route)
 }
 
 /// Get presigned url
@@ -35,7 +34,7 @@ pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
 async fn generate_presigned_url(_res: &mut Response) -> Result<PresignedResponse, FailedResponse> {
     let content_type = "image/webp";
     // Generate unique file key
-    let extension = content_type.split('/').last().unwrap_or("jpeg");
+    let extension = content_type.split('/').next_back().unwrap_or("jpeg");
     let key = format!("{}.{}", nanoid!(), extension);
 
     // Create storage object client
@@ -54,7 +53,7 @@ async fn generate_presigned_url(_res: &mut Response) -> Result<PresignedResponse
     match req {
         Ok(uri) => {
             let source_url = match custom_domain {
-                Some(domain) => format!("https://{}/{}/{}", domain, bucket_name, key),
+                Some(domain) => format!("https://{domain}/{bucket_name}/{key}"),
                 None => uri.uri().to_string(),
             };
 

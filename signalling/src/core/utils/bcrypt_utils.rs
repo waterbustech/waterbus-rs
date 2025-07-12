@@ -7,5 +7,5 @@ pub fn hash_password(password: &str) -> String {
 }
 
 pub fn verify_password(password: &str, hash: &str) -> bool {
-    verify(password, &hash).expect("Failed to verify password")
+    verify(password, hash).expect("Failed to verify password")
 }

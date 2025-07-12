@@ -93,7 +93,7 @@ impl ForwardTrack {
                             // Process the batch
                             let rt = tokio::runtime::Handle::current();
                             rt.block_on(async {
-                                Self::_process_batch(&this_clone, batch.drain(..).collect()).await;
+                                Self::_process_batch(&this_clone, std::mem::take(&mut batch)).await;
                             });
                         }
                         Err(_) => {

@@ -44,6 +44,12 @@ pub struct GrpcConfigs {
     pub dispatcher_port: u16,
 }
 
+impl Default for AppEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppEnv {
     pub fn new() -> Self {
         dotenv().ok();

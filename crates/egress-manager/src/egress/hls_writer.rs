@@ -46,13 +46,12 @@ impl HlsWriter {
             worker_storage.start_upload_worker(upload_receiver);
 
             let cloud_url_base = match &r2_storage.config.custom_domain {
-                Some(domain) => Some(format!("https://{}", domain)),
+                Some(domain) => Some(format!("https://{domain}")),
                 None => {
                     let account = r2_storage.config.account_id.clone();
                     let bucket = r2_storage.config.bucket_name.clone();
                     Some(format!(
-                        "https://{}.r2.cloudflarestorage.com/{}",
-                        account, bucket
+                        "https://{account}.r2.cloudflarestorage.com/{bucket}"
                     ))
                 }
             };
@@ -227,9 +226,9 @@ impl HlsWriter {
         let custom_domain = env::var("STORAGE_CUSTOM_DOMAIN").ok();
 
         let r2_config = R2Config {
-            account_id: account_id,
-            bucket_name: bucket_name,
-            custom_domain: custom_domain,
+            account_id,
+            bucket_name,
+            custom_domain,
             path_prefix: Some(path_prefix),
         };
 

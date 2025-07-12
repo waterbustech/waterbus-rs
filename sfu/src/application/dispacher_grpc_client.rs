@@ -27,7 +27,7 @@ impl DispatcherGrpcClient {
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {e}")))?;
 
         client
             .new_user_joined(Request::new(req))
@@ -46,7 +46,7 @@ impl DispatcherGrpcClient {
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {e}")))?;
 
         client
             .subscriber_renegotiate(Request::new(req))
@@ -65,7 +65,7 @@ impl DispatcherGrpcClient {
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {e}")))?;
 
         client
             .on_publisher_candidate(Request::new(req))
@@ -84,7 +84,7 @@ impl DispatcherGrpcClient {
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to dispatcher: {e}")))?;
 
         client
             .on_subscriber_candidate(Request::new(req))

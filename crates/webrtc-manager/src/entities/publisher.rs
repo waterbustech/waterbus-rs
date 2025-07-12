@@ -32,21 +32,30 @@ impl Publisher {
         media: Arc<RwLock<Media>>,
         peer_connection: Arc<RTCPeerConnection>,
         connection_type: ConnectionType,
-    ) -> Self {
-        let mut this = Self {
+    ) -> Arc<Self> {
+        let publisher = Arc::new(Self {
             media,
             peer_connection,
             connection_type: AtomicU8::new(connection_type.into()),
             cancel_token: CancellationToken::new(),
             data_channel: None,
             track_event_receiver: None,
+        });
+
+        let publisher_clone = Arc::clone(&publisher);
+
+        let publisher_mut = unsafe {
+            let ptr = Arc::as_ptr(&publisher_clone) as *mut Publisher;
+            &mut *ptr
         };
 
-        let _ = this.create_data_channel().await;
-        this.setup_media_communication().await;
-        this.start_data_channel_handler().await;
+        let _ = publisher_mut.create_data_channel().await;
+        publisher_mut
+            .setup_media_communication(Arc::downgrade(&publisher_clone))
+            .await;
+        publisher_mut.start_data_channel_handler().await;
 
-        this
+        publisher
     }
 
     pub fn send_rtcp_pli(&self, media_ssrc: u32) {

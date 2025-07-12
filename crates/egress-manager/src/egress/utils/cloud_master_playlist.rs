@@ -157,7 +157,7 @@ pub fn probe_encoder_with_r2(state: Arc<std::sync::Mutex<R2MasterState>>, enc: g
             if let Ok(mime_str) = mime {
                 let mut state_guard = state.lock().unwrap();
                 if let Err(e) = state_guard.add_mime(mime_str.to_string()) {
-                    eprintln!("Failed to add MIME type and upload manifest: {}", e);
+                    eprintln!("Failed to add MIME type and upload manifest: {e}");
                 }
             }
 

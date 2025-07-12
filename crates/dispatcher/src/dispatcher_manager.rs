@@ -14,9 +14,9 @@ use crate::{
     application::sfu_grpc_client::SfuGrpcClient,
     domain::DispatcherCallback,
     infrastructure::{
-        cache::cache::{CacheKey, CacheManager, ClientMetadata},
+        cache::cache_manager::{CacheKey, CacheManager, ClientMetadata},
         etcd::EtcdDispatcher,
-        grpc::grpc::GrpcServer,
+        grpc::grpc_server::GrpcServer,
     },
 };
 
@@ -85,20 +85,16 @@ impl DispatcherManager {
                         };
                         let _ = self.cache_manager.insert(cache_key, &client_metadata);
 
-                        return Ok(resp.into_inner());
+                        Ok(resp.into_inner())
                     }
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "Failed to join room on node {}: {}",
-                            node_id,
-                            e
-                        ));
-                    }
+                    Err(e) => Err(anyhow::anyhow!(
+                        "Failed to join room on node {}: {}",
+                        node_id,
+                        e
+                    )),
                 }
             }
-            None => {
-                return Err(anyhow::anyhow!("No available SFU node found!"));
-            }
+            None => Err(anyhow::anyhow!("No available SFU node found!")),
         }
     }
 
@@ -119,22 +115,18 @@ impl DispatcherManager {
                     let response = self.sfu_grpc_client.subscribe(server_addr, req).await;
 
                     match response {
-                        Ok(resp) => {
-                            return Ok(resp.into_inner());
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(resp) => Ok(resp.into_inner()),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -158,22 +150,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -198,22 +186,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(resp) => {
-                            return Ok(resp.into_inner());
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(resp) => Ok(resp.into_inner()),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -238,22 +222,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(resp) => {
-                            return Ok(resp.into_inner());
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(resp) => Ok(resp.into_inner()),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -278,22 +258,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -318,22 +294,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -352,12 +324,12 @@ impl DispatcherManager {
 
                     let _ = self.sfu_grpc_client.leave_room(server_addr, req).await;
 
-                    return Ok(client);
+                    Ok(client)
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -384,22 +356,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(client);
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(client),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -425,22 +393,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(client);
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(client),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -466,22 +430,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(client);
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(client),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -507,22 +467,18 @@ impl DispatcherManager {
                         .await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(client);
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(client),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 
@@ -545,22 +501,18 @@ impl DispatcherManager {
                     let response = self.sfu_grpc_client.set_camera_type(server_addr, req).await;
 
                     match response {
-                        Ok(_) => {
-                            return Ok(client);
-                        }
-                        Err(e) => {
-                            return Err(anyhow::anyhow!(
-                                "Failed to join room on node {}: {}",
-                                node_id,
-                                e
-                            ));
-                        }
+                        Ok(_) => Ok(client),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
                     }
                 } else {
-                    return Err(anyhow::anyhow!("Client not found!"));
+                    Err(anyhow::anyhow!("Client not found!"))
                 }
             }
-            Err(_) => return Err(anyhow::anyhow!("Client not found!")),
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
         }
     }
 }

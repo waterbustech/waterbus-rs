@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use bytes::Bytes;
 use webrtc::data_channel::RTCDataChannel;
@@ -9,17 +9,16 @@ use crate::{
 };
 
 impl Publisher {
-    pub async fn setup_media_communication(&mut self) {
+    #[allow(clippy::all)]
+    pub async fn setup_media_communication(&mut self, publisher_weak: Weak<Publisher>) {
+        let _ = publisher_weak;
         let media_clone = self.media.clone();
-        let _publisher_weak =
-            Arc::downgrade(&Arc::new(std::ptr::addr_of!(*self) as *const Publisher));
 
         // Create event channel
         let receiver = {
             let mut media = media_clone.write();
             media.create_event_channel()
         };
-
         self.track_event_receiver = Some(receiver);
 
         // Set up callback
@@ -45,6 +44,10 @@ impl Publisher {
         {
             let mut media = media_clone.write();
             media.set_track_subscribed_callback(callback);
+        }
+
+        {
+            let media = media_clone.write();
             media.start_track_monitoring().await;
         }
     }
@@ -53,7 +56,6 @@ impl Publisher {
         if let Some(mut receiver) = self.track_event_receiver.take() {
             let data_channel = self.data_channel.clone();
             let cancel_token = self.cancel_token.clone();
-
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
@@ -84,6 +86,8 @@ impl Publisher {
         let json_string = serde_json::to_string(&message)?;
         let bytes_message = json_string.into_bytes();
         data_channel.send(&Bytes::from(bytes_message)).await?;
+
+        tracing::info!("====> sent track quality over data channel");
         Ok(())
     }
 
@@ -92,7 +96,6 @@ impl Publisher {
             .peer_connection
             .create_data_channel("track_quality", None)
             .await?;
-
         self.data_channel = Some(data_channel);
         Ok(())
     }

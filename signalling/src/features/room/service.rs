@@ -136,12 +136,9 @@ impl RoomService for RoomServiceImpl {
             type_: RoomType::Conferencing as i32,
         };
 
-        let new_room = self
-            .room_repository
+        self.room_repository
             .create_room_with_member(new_room, user, now)
-            .await;
-
-        new_room
+            .await
     }
 
     async fn update_room(
@@ -284,7 +281,8 @@ impl RoomService for RoomServiceImpl {
 
         let participant = self.room_repository.create_participant(participant).await?;
 
-        room.participants.retain(|p| p.participant.node_id != None);
+        room.participants
+            .retain(|p| p.participant.node_id.is_some());
         room.participants.push(participant);
 
         Ok(room)

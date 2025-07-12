@@ -22,18 +22,14 @@ pub struct UserServiceImpl {
 
 impl UserServiceImpl {
     pub fn new(repository: UserRepositoryImpl) -> Self {
-        Self {
-            repository: repository,
-        }
+        Self { repository }
     }
 }
 
 #[async_trait]
 impl UserService for UserServiceImpl {
     async fn get_user_by_id(&self, user_id: i32) -> Result<User, UserError> {
-        let user = self.repository.get_user_by_id(user_id).await;
-
-        user
+        self.repository.get_user_by_id(user_id).await
     }
 
     async fn update_user(&self, user_id: i32, data: UpdateUserDto) -> Result<User, UserError> {
@@ -54,9 +50,7 @@ impl UserService for UserServiceImpl {
                     updated_user.bio = Some(bio);
                 }
 
-                let updated_user = self.repository.update_user(updated_user).await;
-
-                updated_user
+                self.repository.update_user(updated_user).await
             }
             Err(err) => Err(err),
         }
@@ -69,8 +63,6 @@ impl UserService for UserServiceImpl {
     }
 
     async fn update_username(&self, user_id: i32, username: &str) -> Result<User, UserError> {
-        let user = self.repository.update_username(user_id, username).await;
-
-        user
+        self.repository.update_username(user_id, username).await
     }
 }

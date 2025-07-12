@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use webrtc::rtp::codecs::vp9::Vp9Packet;
 
@@ -10,16 +12,20 @@ pub enum TrackQuality {
     High = 3,
 }
 
-impl TrackQuality {
-    pub fn from_str(s: &str) -> TrackQuality {
-        match s {
+impl FromStr for TrackQuality {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "q" => TrackQuality::Low,
             "h" => TrackQuality::Medium,
             "f" => TrackQuality::High,
             _ => TrackQuality::None,
-        }
+        })
     }
+}
 
+impl TrackQuality {
     pub fn from_u8(value: u8) -> TrackQuality {
         match value {
             1 => TrackQuality::Low,
@@ -51,8 +57,6 @@ impl TrackQuality {
 
         let (desired_spatial_id, _) = self.quality_to_svc_layers();
 
-        let forward = vp9_packet.sid == desired_spatial_id;
-
-        forward
+        vp9_packet.sid == desired_spatial_id
     }
 }

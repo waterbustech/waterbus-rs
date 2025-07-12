@@ -56,9 +56,9 @@ impl MoQWriter {
             wrote_manifest: false,
         }));
 
-        let moq_url = format!("http://localhost:4443/waterbus/{}", participant_id);
+        let moq_url = format!("http://localhost:4443/waterbus/{participant_id}");
 
-        println!("[moq] published to namespace: {:?}", moq_url);
+        println!("[moq] published to namespace: {moq_url:?}");
 
         {
             let mut state_lock = state.lock().unwrap();

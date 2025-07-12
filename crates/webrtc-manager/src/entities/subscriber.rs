@@ -9,22 +9,29 @@ use std::{
 };
 use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use webrtc::{
-    data_channel::{data_channel_message::DataChannelMessage, RTCDataChannel}, peer_connection::RTCPeerConnection, rtcp::{
+    data_channel::{RTCDataChannel, data_channel_message::DataChannelMessage},
+    peer_connection::RTCPeerConnection,
+    rtcp::{
         payload_feedbacks::{
             full_intra_request::{FirEntry, FullIntraRequest},
             picture_loss_indication::PictureLossIndication,
         },
         transport_feedbacks::transport_layer_cc::TransportLayerCc,
-    }, rtp_transceiver::{
-        rtp_transceiver_direction::RTCRtpTransceiverDirection, RTCRtpTransceiverInit
-    }, track::track_local::TrackLocal
+    },
+    rtp_transceiver::{
+        RTCRtpTransceiverInit, rtp_transceiver_direction::RTCRtpTransceiverDirection,
+    },
+    track::track_local::TrackLocal,
 };
 
 use crate::{
     errors::WebRTCError,
-    models::{params::TrackMutexWrapper, quality::TrackQuality},
+    models::{
+        params::TrackMutexWrapper, quality::TrackQuality,
+        track_quality_request::TrackQualityRequest,
+    },
 };
 
 use super::forward_track::ForwardTrack;
@@ -194,80 +201,109 @@ impl Subscriber {
             .peer_connection
             .create_data_channel("track_quality", None)
             .await?;
-        
-        self.listen_data_channel(data_channel).await?;
-        
-        Ok(())
-    }
 
-    pub async fn listen_data_channel(&mut self, data_channel: Arc<RTCDataChannel>) -> Result<(), WebRTCError> {
+        // Clone the necessary fields before moving into the closure
         let client_requested_quality = Arc::clone(&self.client_requested_quality);
         let preferred_quality = Arc::clone(&self.preferred_quality);
         let user_id = self.user_id.clone();
         let track_map = Arc::clone(&self.track_map);
-        
-        let data_channel_clone = Arc::clone(&data_channel);
-        
-        tokio::spawn(async move {
-            let user_id_on_msg = user_id.clone();
-            data_channel_clone.on_message(Box::new(move |msg: DataChannelMessage| {
-                let client_quality = Arc::clone(&client_requested_quality);
-                let preferred = Arc::clone(&preferred_quality);
-                let uid = user_id_on_msg.clone();
-                let tracks = Arc::clone(&track_map);
-                
-                Box::pin(async move {
-                    let data = msg.data;
-                    let requested_quality = std::str::from_utf8(&data)
-                .map_err(|e| format!("Invalid UTF-8: {}", e))
-                .and_then(|json_str| {
-                    serde_json::from_str::<TrackQuality>(json_str)
-                        .map_err(|e| format!("JSON parse error: {}", e))
-                });
-                    
-                    if let Ok(quality) = requested_quality {
-                        info!("Received quality request from client {}: {:?}", uid, quality);
-                        let new_quality: Option<TrackQuality> = Some(quality);
-                        
-                        {
-                            let mut client_quality_guard = client_quality.write().await;
-                            *client_quality_guard = new_quality.clone();
-                        }
-                        
-                        // Apply the quality immediately if specified, otherwise use network-based quality
-                        if let Some(quality) = new_quality {
-                            preferred.store(quality.as_u8(), Ordering::Relaxed);
-                            // Update all tracks immediately
-                            for entry in tracks.iter() {
-                                entry.value().set_effective_quality(&quality);
-                            }
-                            info!("Applied client-requested quality: {:?}", quality);
-                        } else {
-                            info!("Client requested no specific quality (None) - using network-based adaptation");
-                        }
-                    } else {
-                        debug!("Received non-text data channel message");
-                    }
-                })
-            }));
-            
-            // Set up state change handlers
-            let user_id_open = user_id.clone();
-            data_channel_clone.on_open(Box::new(move || {
-                info!("Quality control data channel opened for user: {}", user_id_open);
+
+        self.peer_connection
+            .on_data_channel(Box::new(move |dc: Arc<RTCDataChannel>| {
+                let label = dc.label();
+                info!("New data channel from client: {}", label);
+
+                if label == "track_quality" {
+                    let client_quality = Arc::clone(&client_requested_quality);
+                    let preferred = Arc::clone(&preferred_quality);
+                    let uid = user_id.clone();
+                    let tracks = Arc::clone(&track_map);
+
+                    tokio::spawn(async move {
+                        // Handle the data channel setup here instead of calling listen_data_channel
+                        let user_id_on_msg = uid.clone();
+
+                        dc.on_message(Box::new(move |msg: DataChannelMessage| {
+                            let client_quality = Arc::clone(&client_quality);
+                            let preferred = Arc::clone(&preferred);
+                            let uid = user_id_on_msg.clone();
+                            let tracks = Arc::clone(&tracks);
+
+                            Box::pin(async move {
+                                let data = msg.data;
+
+                                let parsed = str::from_utf8(&data)
+                                    .map_err(|e| format!("Invalid UTF-8: {e}"))
+                                    .and_then(|json_str| {
+                                        serde_json::from_str::<TrackQualityRequest>(json_str)
+                                            .map_err(|e| format!("JSON parse error: {e}"))
+                                    });
+
+                                match parsed {
+                                    Ok(request) => {
+                                        info!(
+                                            "Received quality request from client {}: {:?}",
+                                            uid, request
+                                        );
+
+                                        let quality = request.quality.clone();
+
+                                        {
+                                            let mut client_quality_guard =
+                                                client_quality.write().await;
+                                            *client_quality_guard = Some(quality.clone());
+                                        }
+
+                                        preferred.store(quality.as_u8(), Ordering::Relaxed);
+
+                                        if let Some(track) = tracks.get(&request.track_id) {
+                                            track.set_effective_quality(&request.quality);
+                                            info!(
+                                                "Applied requested quality {:?} to track {}",
+                                                request.quality, request.track_id
+                                            );
+                                        } else {
+                                            warn!(
+                                                "Received quality request for unknown track_id: {}",
+                                                request.track_id
+                                            );
+                                        }
+                                    }
+                                    Err(err) => {
+                                        warn!(
+                                            "Failed to parse data channel message from {}: {}",
+                                            uid, err
+                                        );
+                                    }
+                                }
+                            })
+                        }));
+
+                        let user_id_open = uid.clone();
+                        dc.on_open(Box::new(move || {
+                            info!(
+                                "Quality control data channel opened for user: {}",
+                                user_id_open
+                            );
+                            Box::pin(async {})
+                        }));
+
+                        let user_id_close = uid.clone();
+                        dc.on_close(Box::new(move || {
+                            info!(
+                                "Quality control data channel closed for user: {}",
+                                user_id_close
+                            );
+                            Box::pin(async {})
+                        }));
+                    });
+                }
+
                 Box::pin(async {})
             }));
-            
-            let user_id_close = user_id.clone();
-            data_channel_clone.on_close(Box::new(move || {
-                info!("Quality control data channel closed for user: {}", user_id_close);
-                Box::pin(async {})
-            }));
-        });
-        
-        // Store the data channel reference
+
         self.data_channel = Some(data_channel);
-        
+
         Ok(())
     }
 
@@ -298,16 +334,12 @@ impl Subscriber {
         let peer_connection = self.peer_connection.clone();
 
         let forward_track = {
-            let track = remote_track
+            remote_track
                 .read()
-                .new_forward_track(&self.user_id.clone())?;
-            track
+                .new_forward_track(&self.user_id.clone())?
         };
 
-        let local_track = {
-            let track = forward_track.local_track.clone();
-            track
-        };
+        let local_track = { forward_track.local_track.clone() };
 
         let _ = peer_connection
             .add_transceiver_from_track(
@@ -438,11 +470,6 @@ impl Subscriber {
         // Update network stats
         let mut stats = network_stats.write().await;
         stats.update_twcc(avg_delay, high_jitter_count, packet_loss);
-
-        debug!(
-            "TWCC - Avg delay: {:?}, High jitter: {}, Packet loss: {}, Quality: {:?}",
-            avg_delay, high_jitter_count, packet_loss, stats.twcc_quality
-        );
     }
 
     fn spawn_track_update_loop(&self, tx: watch::Sender<()>) {
@@ -459,13 +486,13 @@ impl Subscriber {
                 let update_tasks: Vec<_> = track_map
                     .iter()
                     .map(|entry| {
-                        let track_id = entry.key().clone();
+                        let _track_id = entry.key().clone();
                         let forward_track = entry.value().clone();
                         let quality = preferred.clone();
 
                         tokio::spawn(async move {
                             forward_track.set_effective_quality(&quality);
-                            debug!("Track {} quality -> {:?}", track_id, quality);
+                            // debug!("Track {} quality -> {:?}", track_id, quality);
                         })
                     })
                     .collect();
@@ -522,7 +549,7 @@ impl Subscriber {
                 let fir_packets: Vec<Box<dyn webrtc::rtcp::packet::Packet + Send + Sync>> =
                     vec![Box::new(fir)];
 
-                if let Ok(_) = self.peer_connection.write_rtcp(&fir_packets).await {
+                if (self.peer_connection.write_rtcp(&fir_packets).await).is_ok() {
                     debug!("FIR keyframe request sent for SSRC: {}", ssrc);
                 }
             }
@@ -538,7 +565,7 @@ impl Subscriber {
             let rtcp_packets: Vec<Box<dyn webrtc::rtcp::packet::Packet + Send + Sync>> =
                 vec![Box::new(generic_pli)];
 
-            if let Ok(_) = self.peer_connection.write_rtcp(&rtcp_packets).await {
+            if (self.peer_connection.write_rtcp(&rtcp_packets).await).is_ok() {
                 debug!("Generic PLI keyframe request sent");
             }
         }

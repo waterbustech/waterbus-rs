@@ -20,7 +20,7 @@ use crate::core::{
 use super::service::{ChatService, ChatServiceImpl};
 
 pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
-    let router = Router::with_hoop(jwt_utils.auth_middleware())
+    Router::with_hoop(jwt_utils.auth_middleware())
         .path("chats")
         .push(
             Router::with_path("/{room_id}")
@@ -32,9 +32,7 @@ pub fn get_chat_router(jwt_utils: JwtUtils) -> Router {
                 .put(update_message)
                 .delete(delete_message),
         )
-        .push(Router::with_path("conversations/{room_id}").delete(delete_conversation));
-
-    router
+        .push(Router::with_path("conversations/{room_id}").delete(delete_conversation))
 }
 
 /// Get messages by room

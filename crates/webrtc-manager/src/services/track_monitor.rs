@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::atomic::Ordering};
+use std::{collections::HashMap, str::FromStr, sync::atomic::Ordering};
 
 use crate::{entities::track::Track, models::quality::TrackQuality};
 
@@ -75,7 +75,7 @@ impl Track {
         let available_qualities: Vec<TrackQuality> = self
             .remote_tracks
             .iter()
-            .map(|track| TrackQuality::from_str(track.rid()))
+            .map(|track| TrackQuality::from_str(track.rid()).unwrap())
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
@@ -91,8 +91,6 @@ impl Track {
                 // Try Medium first, then Low
                 if available_qualities.contains(&TrackQuality::Medium) {
                     TrackQuality::Medium
-                } else if available_qualities.contains(&TrackQuality::Low) {
-                    TrackQuality::Low
                 } else {
                     TrackQuality::Low // Default fallback
                 }

@@ -30,7 +30,7 @@ impl EtcdNode {
         let mut client = Client::connect([etcd_addr], None).await?;
         let lease_id = client.lease_grant(ttl, None).await?.id();
 
-        let key = format!("/sfu/nodes/{}", node_id);
+        let key = format!("/sfu/nodes/{node_id}");
         let metadata = NodeMetadata {
             addr: node_ip.clone(),
             cpu: 0.0,

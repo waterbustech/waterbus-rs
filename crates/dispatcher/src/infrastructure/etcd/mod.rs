@@ -107,7 +107,7 @@ impl EtcdDispatcher {
     }
 
     fn parse_node_info(key: &str, val: &str) -> Option<(String, NodeMetadata)> {
-        let id = key.split('/').last()?.to_string();
+        let id = key.split('/').next_back()?.to_string();
         let metadata: NodeMetadata = serde_json::from_str(val).ok()?;
         Some((id, metadata))
     }

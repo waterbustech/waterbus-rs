@@ -19,7 +19,7 @@ use crate::{
     core::{
         database::db::establish_connection,
         env::app_env::AppEnv,
-        socket::socket::get_socket_router,
+        socket::get_socket_router,
         types::app_channel::AppEvent,
         utils::{api_key_utils::api_key_middleware, jwt_utils::JwtUtils},
     },
@@ -93,7 +93,7 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
     let room_repository = RoomRepositoryImpl::new(pool.clone());
     let user_repository = UserRepositoryImpl::new(pool.clone());
     let room_service = RoomServiceImpl::new(room_repository, user_repository);
-    let socket_router = get_socket_router(&env, jwt_utils.clone(), room_service, message_receiver)
+    let socket_router = get_socket_router(env, jwt_utils.clone(), room_service, message_receiver)
         .await
         .expect("Failed to config socket.io");
 

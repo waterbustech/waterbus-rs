@@ -5,7 +5,8 @@ use tracing::info;
 
 use crate::{
     entities::media::{Media, TrackSubscribedCallback},
-    models::{data_channel_msg::TrackSubscribedMessage, quality::TrackQuality}, services::track_monitor::TrackSubscribed,
+    models::{data_channel_msg::TrackSubscribedMessage, quality::TrackQuality},
+    services::track_monitor::TrackSubscribed,
 };
 
 impl Media {

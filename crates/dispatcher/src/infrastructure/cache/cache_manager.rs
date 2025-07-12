@@ -76,7 +76,7 @@ impl CacheManager {
         participant_id: &str,
     ) -> Result<Option<ClientMetadata>, redis::RedisError> {
         let mut conn = self.client.lock().unwrap().get_connection()?;
-        let key: Option<String> = conn.get(format!("participant_id:{}", participant_id))?;
+        let key: Option<String> = conn.get(format!("participant_id:{participant_id}"))?;
         match key {
             Some(actual_key) => self.get(&CacheKey::new(actual_key)),
             None => Ok(None),

@@ -22,7 +22,7 @@ fn collect_proto_files(dir: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
 
         if path.is_dir() {
             files.extend(collect_proto_files(path.to_str().unwrap())?);
-        } else if path.extension().map_or(false, |ext| ext == "proto") {
+        } else if path.extension().is_some_and(|ext| ext == "proto") {
             files.push(path);
         }
     }

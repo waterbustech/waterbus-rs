@@ -4,14 +4,12 @@ use super::room_response::ParticipantResponse;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-
 pub struct ParticipantHasLeftResponse {
     pub target_id: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-
 pub struct NewUserJoinedResponse {
     pub participant: ParticipantResponse,
     pub is_migrate: bool,

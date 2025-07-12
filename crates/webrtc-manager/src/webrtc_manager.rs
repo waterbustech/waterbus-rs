@@ -42,10 +42,11 @@ impl WebRTCManager {
         Self {
             rooms: Arc::new(DashMap::new()),
             clients: Arc::new(DashMap::new()),
-            configs: configs,
+            configs,
         }
     }
 
+    #[allow(clippy::all)]
     pub async fn join_room(
         &self,
         req: JoinRoomReq,
@@ -82,12 +83,15 @@ impl WebRTCManager {
             on_candidate: req.ice_candidate_callback,
         };
 
-        let mut room = room.write();
-        let res = room.join_room(params, &room_id).await?;
+        let res = {
+            let mut room = room.write();
+            room.join_room(params, room_id).await?
+        };
 
         Ok(res)
     }
 
+    #[allow(clippy::all)]
     pub async fn subscribe(
         &self,
         client_id: &str,
@@ -120,6 +124,7 @@ impl WebRTCManager {
         Ok(res)
     }
 
+    #[allow(clippy::all)]
     pub fn set_subscriber_desc(
         &self,
         client_id: &str,
@@ -141,6 +146,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[allow(clippy::all)]
     pub async fn handle_publisher_renegotiation(
         &self,
         client_id: &str,
@@ -163,6 +169,7 @@ impl WebRTCManager {
         Ok(sdp)
     }
 
+    #[allow(clippy::all)]
     pub async fn handle_migrate_connection(
         &self,
         client_id: &str,
@@ -183,7 +190,7 @@ impl WebRTCManager {
             .handle_migrate_connection(participant_id, sdp, connection_type)
             .await?;
 
-        return Ok(sdp);
+        Ok(sdp)
     }
 
     pub fn add_publisher_candidate(

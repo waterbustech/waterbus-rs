@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use egress_manager::egress::hls_writer::HlsWriter;
 use egress_manager::egress::moq_writer::MoQWriter;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::debug;
@@ -60,10 +61,7 @@ impl Track {
         };
 
         // Determine if SVC is used based on codec
-        let is_svc = match codec_type {
-            CodecType::VP9 => true,
-            _ => false,
-        };
+        let is_svc = matches!(codec_type, CodecType::VP9);
 
         let rtp_multicast = MulticastSender::new();
 
@@ -135,7 +133,7 @@ impl Track {
         let available_qualities: Vec<TrackQuality> = self
             .remote_tracks
             .iter()
-            .map(|track| TrackQuality::from_str(track.rid()))
+            .map(|track| TrackQuality::from_str(track.rid()).unwrap())
             .collect::<std::collections::HashSet<_>>() // Remove duplicates
             .into_iter()
             .collect();
@@ -204,7 +202,7 @@ impl Track {
         kind: RTPCodecType,
     ) {
         let multicast = self.rtp_multicast.clone();
-        let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()));
+        let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()).unwrap());
         let acceptable_map = Arc::clone(&self.acceptable_map);
         let is_svc = self.is_svc;
         let is_simulcast = Arc::clone(&self.is_simulcast);

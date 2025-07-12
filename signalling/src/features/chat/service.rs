@@ -94,16 +94,16 @@ impl ChatService for ChatServiceImpl {
             .await
             .map_err(|_| ChatError::ConversationNotFound(room_id))?;
 
-        let is_member = room
-            .members
-            .iter()
-            .any(|member| member.member.user_id == Some(user_id));
+        // let is_member = room
+        //     .members
+        //     .iter()
+        //     .any(|member| member.member.user_id == Some(user_id));
 
-        if !is_member {
-            return Err(ChatError::Forbidden(
-                "You not allowed get messages from room that you not stay in there".to_string(),
-            ));
-        }
+        // if !is_member {
+        //     return Err(ChatError::Forbidden(
+        //         "You not allowed get messages from room that you not stay in there".to_string(),
+        //     ));
+        // }
 
         let index_of_user = room
             .members

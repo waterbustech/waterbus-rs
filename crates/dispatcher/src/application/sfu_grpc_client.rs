@@ -27,7 +27,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.join_room(Request::new(request)).await?;
         Ok(response)
     }
@@ -40,7 +40,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.subscribe(Request::new(request)).await?;
         Ok(response)
     }
@@ -53,7 +53,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.set_subscriber_sdp(Request::new(request)).await?;
         Ok(response)
     }
@@ -66,7 +66,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client
             .publisher_renegotiation(Request::new(request))
             .await?;
@@ -81,7 +81,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client
             .migrate_publisher_connection(Request::new(request))
             .await?;
@@ -96,7 +96,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client
             .add_publisher_candidate(Request::new(request))
             .await?;
@@ -111,7 +111,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client
             .add_subscriber_candidate(Request::new(request))
             .await?;
@@ -126,7 +126,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.leave_room(Request::new(request)).await?;
         Ok(response)
     }
@@ -139,7 +139,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.set_video_enabled(Request::new(request)).await?;
         Ok(response)
     }
@@ -152,7 +152,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.set_audio_enabled(Request::new(request)).await?;
         Ok(response)
     }
@@ -165,7 +165,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.set_hand_raising(Request::new(request)).await?;
         Ok(response)
     }
@@ -178,7 +178,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.set_screen_sharing(Request::new(request)).await?;
         Ok(response)
     }
@@ -191,7 +191,7 @@ impl SfuGrpcClient {
         let mut client = self
             .get_client(server_address)
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.set_camera_type(Request::new(request)).await?;
         Ok(response)
     }

@@ -15,7 +15,7 @@ use crate::core::{
 use super::service::{UserService, UserServiceImpl};
 
 pub fn get_user_router(jwt_utils: JwtUtils) -> Router {
-    let router = Router::with_hoop(jwt_utils.auth_middleware())
+    Router::with_hoop(jwt_utils.auth_middleware())
         .path("users")
         .get(get_user_by_token)
         .put(update_user)
@@ -23,9 +23,7 @@ pub fn get_user_router(jwt_utils: JwtUtils) -> Router {
             Router::with_path("username/{user_name}")
                 .get(check_username_exists)
                 .put(update_username),
-        );
-
-    router
+        )
 }
 
 /// Fetch user info

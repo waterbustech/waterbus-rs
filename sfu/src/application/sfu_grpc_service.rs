@@ -66,7 +66,7 @@ impl SfuService for SfuGrpcService {
 
                     let _ = dispatcher
                         .on_publisher_candidate(PublisherCandidateRequest {
-                            client_id: client_id,
+                            client_id,
                             candidate: Some(waterbus_proto::common::IceCandidate {
                                 candidate: candidate.candidate,
                                 sdp_mid: candidate.sdp_mid,
@@ -122,13 +122,13 @@ impl SfuService for SfuGrpcService {
                         total_tracks: req.total_tracks as u8,
                         connection_type: req.connection_type as u8,
                         callback: joined_callback,
-                        ice_candidate_callback: ice_candidate_callback,
+                        ice_candidate_callback,
                     })
                     .await
             })
         })
         .await
-        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(response) => match response {
@@ -147,7 +147,7 @@ impl SfuService for SfuGrpcService {
                     Ok(Response::new(join_room_response))
                 }
             },
-            Err(err) => Err(Status::internal(format!("Failed to join room: {}", err))),
+            Err(err) => Err(Status::internal(format!("Failed to join room: {err}"))),
         }
     }
 
@@ -222,7 +222,7 @@ impl SfuService for SfuGrpcService {
             })
         })
         .await
-        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(response) => {
@@ -239,7 +239,7 @@ impl SfuService for SfuGrpcService {
                 };
                 Ok(Response::new(subscribe_response))
             }
-            Err(err) => Err(Status::internal(format!("Failed to join room: {}", err))),
+            Err(err) => Err(Status::internal(format!("Failed to join room: {err}"))),
         }
     }
 
@@ -259,8 +259,7 @@ impl SfuService for SfuGrpcService {
             }
             Err(err) => {
                 return Err(Status::internal(format!(
-                    "Failed to set subscriber sdp: {}",
-                    err
+                    "Failed to set subscriber sdp: {err}"
                 )));
             }
         }
@@ -285,13 +284,12 @@ impl SfuService for SfuGrpcService {
             }
         })
         .await
-        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(sdp) => Ok(Response::new(PublisherRenegotiationResponse { sdp })),
             Err(err) => Err(Status::internal(format!(
-                "Failed to handle publisher renegotiate: {}",
-                err
+                "Failed to handle publisher renegotiate: {err}"
             ))),
         }
     }
@@ -317,13 +315,12 @@ impl SfuService for SfuGrpcService {
             ))
         })
         .await
-        .map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(sdp) => Ok(Response::new(MigratePublisherResponse { sdp })),
             Err(err) => Err(Status::internal(format!(
-                "Failed to handle publisher renegotiate: {}",
-                err
+                "Failed to handle publisher renegotiate: {err}"
             ))),
         }
     }
@@ -349,8 +346,7 @@ impl SfuService for SfuGrpcService {
             match response {
                 Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
                 Err(err) => Err(Status::internal(format!(
-                    "Failed to handle publisher renegotiate: {}",
-                    err
+                    "Failed to handle publisher renegotiate: {err}"
                 ))),
             }
         } else {
@@ -380,8 +376,7 @@ impl SfuService for SfuGrpcService {
             match response {
                 Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
                 Err(err) => Err(Status::internal(format!(
-                    "Failed to handle subscriber candidate: {}",
-                    err
+                    "Failed to handle subscriber candidate: {err}"
                 ))),
             }
         } else {
@@ -404,7 +399,7 @@ impl SfuService for SfuGrpcService {
                 participant_id: client.participant_id,
                 room_id: client.room_id,
             })),
-            Err(err) => Err(Status::internal(format!("Failed to leave room: {}", err))),
+            Err(err) => Err(Status::internal(format!("Failed to leave room: {err}"))),
         }
     }
 
@@ -421,8 +416,7 @@ impl SfuService for SfuGrpcService {
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
             Err(err) => Err(Status::internal(format!(
-                "Failed to set video enabled: {}",
-                err
+                "Failed to set video enabled: {err}"
             ))),
         }
     }
@@ -440,8 +434,7 @@ impl SfuService for SfuGrpcService {
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
             Err(err) => Err(Status::internal(format!(
-                "Failed to set audio enabled: {}",
-                err
+                "Failed to set audio enabled: {err}"
             ))),
         }
     }
@@ -459,8 +452,7 @@ impl SfuService for SfuGrpcService {
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
             Err(err) => Err(Status::internal(format!(
-                "Failed to set hand raising: {}",
-                err
+                "Failed to set hand raising: {err}"
             ))),
         }
     }
@@ -479,8 +471,7 @@ impl SfuService for SfuGrpcService {
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
             Err(err) => Err(Status::internal(format!(
-                "Failed to set screen sharing: {}",
-                err
+                "Failed to set screen sharing: {err}"
             ))),
         }
     }
@@ -498,8 +489,7 @@ impl SfuService for SfuGrpcService {
         match response {
             Ok(()) => Ok(Response::new(StatusResponse { is_success: true })),
             Err(err) => Err(Status::internal(format!(
-                "Failed to set camera type: {}",
-                err
+                "Failed to set camera type: {err}"
             ))),
         }
     }

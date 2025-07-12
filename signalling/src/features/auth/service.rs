@@ -31,9 +31,7 @@ pub struct AuthServiceImpl {
 
 impl AuthServiceImpl {
     pub fn new(repository: AuthRepositoryImpl) -> Self {
-        Self {
-            repository: repository,
-        }
+        Self { repository }
     }
 }
 
@@ -59,8 +57,8 @@ impl AuthService for AuthServiceImpl {
 
                 let response = AuthResponse {
                     user: Some(user),
-                    token: token,
-                    refresh_token: refresh_token,
+                    token,
+                    refresh_token,
                 };
 
                 Ok(response)
@@ -90,8 +88,8 @@ impl AuthService for AuthServiceImpl {
 
                         let response = AuthResponse {
                             user: Some(user),
-                            token: token,
-                            refresh_token: refresh_token,
+                            token,
+                            refresh_token,
                         };
 
                         Ok(response)
@@ -116,8 +114,8 @@ impl AuthService for AuthServiceImpl {
 
         let response = AuthResponse {
             user: None,
-            token: token,
-            refresh_token: refresh_token,
+            token,
+            refresh_token,
         };
 
         Ok(response)

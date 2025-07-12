@@ -374,7 +374,7 @@ impl RoomRepository for RoomRepositoryImpl {
                 room_id: &new_room.id,
                 user_id: Some(user.id),
                 role: MembersRoleEnum::Host as i32,
-                created_at: created_at,
+                created_at,
             };
 
             let new_member = insert_into(members::table)
@@ -447,9 +447,7 @@ impl RoomRepository for RoomRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| RoomError::UnexpectedError(err.to_string()))?;
 
-        let member = self.get_member_by_id(new_member.id).await;
-
-        member
+        self.get_member_by_id(new_member.id).await
     }
 
     async fn update_member(&self, member: Member) -> Result<MemberResponse, RoomError> {
@@ -462,9 +460,7 @@ impl RoomRepository for RoomRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| RoomError::UnexpectedError(err.to_string()))?;
 
-        let member = self.get_member_by_id(updated_member.id).await;
-
-        member
+        self.get_member_by_id(updated_member.id).await
     }
 
     async fn delete_member_by_id(&self, member_id: i32) -> Result<(), RoomError> {
@@ -517,9 +513,7 @@ impl RoomRepository for RoomRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| RoomError::UnexpectedError(err.to_string()))?;
 
-        let participant = self.get_participant_by_id(new_participant.id).await;
-
-        participant
+        self.get_participant_by_id(new_participant.id).await
     }
 
     async fn update_participant(
@@ -538,9 +532,7 @@ impl RoomRepository for RoomRepositoryImpl {
             .get_result(&mut conn)
             .map_err(|err| RoomError::UnexpectedError(err.to_string()))?;
 
-        let participant = self.get_participant_by_id(updated_participant.id).await;
-
-        participant
+        self.get_participant_by_id(updated_participant.id).await
     }
 
     async fn delete_participant_by_id(&self, participant_id: i32) -> Result<(), RoomError> {
@@ -562,11 +554,8 @@ impl RoomRepository for RoomRepositoryImpl {
 
         let participant = self.get_participant_by_id(participant_id).await;
 
-        match participant {
-            Ok(participant) => {
-                warn!("Participant found: {:?}", participant);
-            }
-            Err(_) => {}
+        if let Ok(participant) = participant {
+            warn!("Participant found: {:?}", participant);
         }
 
         Ok(())

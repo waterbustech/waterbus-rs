@@ -12,6 +12,12 @@ pub struct MulticastSender {
     senders: Arc<DashMap<String, Sender<RtpForwardInfo>>>,
 }
 
+impl Default for MulticastSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MulticastSender {
     pub fn new() -> Self {
         Self {

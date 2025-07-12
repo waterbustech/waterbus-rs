@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
-use tracing::{info, warn};
+use tracing::warn;
 use webrtc::{
     api::{
         APIBuilder, interceptor_registry::register_default_interceptors, media_engine::MediaEngine,
@@ -54,7 +54,7 @@ impl Room {
         Self {
             publishers: Arc::new(DashMap::new()),
             subscribers: Arc::new(DashMap::new()),
-            configs: configs,
+            configs,
         }
     }
 
@@ -80,13 +80,12 @@ impl Room {
 
         // let _ = media.initialize_hls_writer().await;
 
-        let publisher = Arc::new(Publisher::new(
+        let publisher = Publisher::new(
             Arc::new(RwLock::new(media)),
             pc.clone(),
             params.connection_type.clone(),
-        ).await);
-
-        info!("added publisher");
+        )
+        .await;
 
         self._add_publisher(&participant_id, &publisher);
 
@@ -100,7 +99,6 @@ impl Room {
                 let peer_clone = pc.clone();
                 let callback = params.callback.clone();
                 let has_emitted = has_emitted.clone();
-                let is_migrate = is_migrate.clone();
 
                 pc.on_peer_connection_state_change(Box::new(move |_| {
                     let peer = peer_clone.clone();
@@ -266,14 +264,12 @@ impl Room {
         };
 
         match sdp_cached {
-            Some(sdp) => {
-                return Ok(SubscribeResponse {
-                    offer: sdp,
-                    ..subscribe_response
-                });
-            }
+            Some(sdp) => Ok(SubscribeResponse {
+                offer: sdp,
+                ..subscribe_response
+            }),
             None => {
-                let connection_type = match self._get_publisher(&target_id) {
+                let connection_type = match self._get_publisher(target_id) {
                     Ok(publisher) => publisher.get_connection_type().clone(),
                     Err(_) => ConnectionType::P2P,
                 };
@@ -286,9 +282,8 @@ impl Room {
 
                 let pc = self._create_pc().await?;
 
-                self._add_subscriber(&peer_id, &pc, participant_id.clone()).await;
-
-                info!("added subscriber");
+                self._add_subscriber(&peer_id, &pc, participant_id.clone())
+                    .await;
 
                 // Clone for callbacks
                 let peer_clone = pc.clone();
@@ -352,10 +347,10 @@ impl Room {
                     .await
                     .ok_or(WebRTCError::FailedToGetSdp)?;
 
-                return Ok(SubscribeResponse {
+                Ok(SubscribeResponse {
                     offer: local_desc.sdp.clone(),
                     ..subscribe_response
-                });
+                })
             }
         }
     }
@@ -564,7 +559,7 @@ impl Room {
 
         let media = media.write();
 
-        let _ = media.set_video_enabled(is_enabled);
+        media.set_video_enabled(is_enabled);
 
         Ok(())
     }
@@ -578,7 +573,7 @@ impl Room {
 
         let media = media.write();
 
-        let _ = media.set_audio_enabled(is_enabled);
+        media.set_audio_enabled(is_enabled);
 
         Ok(())
     }
@@ -593,7 +588,7 @@ impl Room {
 
         let media = media.write();
 
-        let _ = media.set_screen_sharing(is_enabled, screen_track_id);
+        media.set_screen_sharing(is_enabled, screen_track_id);
 
         Ok(())
     }
@@ -607,7 +602,7 @@ impl Room {
 
         let media = media.write();
 
-        let _ = media.set_hand_rasing(is_enabled);
+        media.set_hand_rasing(is_enabled);
 
         Ok(())
     }
@@ -617,7 +612,7 @@ impl Room {
             .publishers
             .get(participant_id)
             .map(|r| r.clone())
-            .ok_or_else(|| WebRTCError::ParticipantNotFound)?;
+            .ok_or(WebRTCError::ParticipantNotFound)?;
 
         Ok(result)
     }
@@ -669,7 +664,7 @@ impl Room {
     }
 
     fn _get_subscriber_peer_id(&self, target_id: &str, participant_id: &str) -> String {
-        let key = format!("p_{}_{}", target_id, participant_id);
+        let key = format!("p_{target_id}_{participant_id}");
 
         key
     }
@@ -680,7 +675,7 @@ impl Room {
     }
 
     fn _remove_all_subscribers_with_target_id(&self, participant_id: &str) {
-        let prefix = format!("p_{}_", participant_id);
+        let prefix = format!("p_{participant_id}_");
 
         let subscribers = &self.subscribers;
 
@@ -704,7 +699,7 @@ impl Room {
         remote_track: TrackMutexWrapper,
         target_id: &str,
     ) -> Result<(), WebRTCError> {
-        let prefix_track_id = format!("p_{}_", target_id);
+        let prefix_track_id = format!("p_{target_id}_");
 
         let peer_ids: Vec<String> = subscribers_lock
             .iter()
@@ -714,7 +709,7 @@ impl Room {
 
         for peer_id in peer_ids {
             if let Some(subscriber) = subscribers_lock.get(&peer_id) {
-                let _ = subscriber.add_track(remote_track.clone()).await?;
+                subscriber.add_track(remote_track.clone()).await?;
             }
         }
 
@@ -810,7 +805,7 @@ impl Room {
         let media_state = media.state.read();
 
         SubscribeResponse {
-            camera_type: media_state.camera_type.clone(),
+            camera_type: media_state.camera_type,
             video_enabled: media_state.video_enabled,
             audio_enabled: media_state.audio_enabled,
             is_hand_raising: media_state.is_hand_raising,
@@ -827,12 +822,15 @@ impl Room {
         subscriber: Arc<Subscriber>,
         media_arc: &Arc<RwLock<Media>>,
     ) -> Result<(), WebRTCError> {
-        let media = media_arc.read();
-        let tracks = media.tracks.clone();
+        let tracks = {
+            let media = media_arc.read();
+            media.tracks.clone()
+        };
 
         for entry in tracks.iter() {
-            let _ = subscriber.add_track(Arc::clone(entry.value())).await?;
+            subscriber.add_track(Arc::clone(entry.value())).await?;
         }
+
         Ok(())
     }
 }

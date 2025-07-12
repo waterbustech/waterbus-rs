@@ -49,7 +49,7 @@ impl Media {
         is_audio_enabled: bool,
         is_e2ee_enabled: bool,
     ) -> Self {
-        let output_dir = format!("./hls/{}", publisher_id);
+        let output_dir = format!("./hls/{publisher_id}");
 
         if !Path::new(&output_dir).exists() {
             fs::create_dir_all(&output_dir).unwrap();

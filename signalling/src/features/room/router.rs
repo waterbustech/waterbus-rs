@@ -30,7 +30,7 @@ pub fn get_room_router(jwt_utils: JwtUtils) -> Router {
 
     let deactivate_router = Router::with_path("/{room_id}/deactivate").post(deactivate_room);
 
-    let router = Router::with_hoop(jwt_utils.auth_middleware())
+    Router::with_hoop(jwt_utils.auth_middleware())
         .path("rooms")
         .post(create_room)
         .get(get_rooms_by_user)
@@ -43,9 +43,7 @@ pub fn get_room_router(jwt_utils: JwtUtils) -> Router {
         )
         .push(member_router)
         .push(join_router)
-        .push(deactivate_router);
-
-    router
+        .push(deactivate_router)
 }
 
 /// Retrieves room details using a unique room code.

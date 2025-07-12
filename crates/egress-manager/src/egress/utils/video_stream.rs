@@ -117,7 +117,7 @@ impl VideoStreamExt for VideoStream {
 
         let appsink = gst_app::AppSink::builder().buffer_list(true).build();
 
-        pipeline.add_many(&[
+        pipeline.add_many([
             &src,
             &rtp_depay,
             &h264_parse,
@@ -132,15 +132,15 @@ impl VideoStreamExt for VideoStream {
             appsink.upcast_ref(),
         ])?;
 
-        gst::Element::link_many(&[&src, &rtp_depay, &h264_parse, &decoder])?;
-        gst::Element::link_many(&[
+        gst::Element::link_many([&src, &rtp_depay, &h264_parse, &decoder])?;
+        gst::Element::link_many([
             &decoder,
             &raw_capsfilter_pre,
             &videoscale,
             &videorate,
             &raw_capsfilter_post,
         ])?;
-        gst::Element::link_many(&[
+        gst::Element::link_many([
             &raw_capsfilter_post,
             &enc,
             &h264_capsfilter,

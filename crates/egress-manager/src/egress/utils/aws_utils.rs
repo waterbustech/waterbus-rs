@@ -31,7 +31,5 @@ pub async fn get_storage_object_client() -> Client {
         .load()
         .await;
 
-    let client = Client::new(&shared_config);
-
-    client
+    Client::new(&shared_config)
 }

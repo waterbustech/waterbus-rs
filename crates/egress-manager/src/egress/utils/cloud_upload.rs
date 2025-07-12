@@ -90,7 +90,7 @@ impl R2Storage {
         content_type: &str,
     ) -> Result<String> {
         let key = if let Some(prefix) = &self.config.path_prefix {
-            format!("{}/{}", prefix, key)
+            format!("{prefix}/{key}")
         } else {
             key.to_string()
         };
@@ -112,7 +112,7 @@ impl R2Storage {
 
         // Generate the URL for the uploaded file
         let url = if let Some(domain) = &self.config.custom_domain {
-            format!("https://{}/{}", domain, key)
+            format!("https://{domain}/{key}")
         } else {
             format!(
                 "https://{}.r2.cloudflarestorage.com/{}",
@@ -154,7 +154,7 @@ impl R2Storage {
     /// Get a pre-signed URL for a file in R2 storage asynchronously
     pub async fn get_presigned_url_async(&self, key: &str, expires_in_secs: u64) -> Result<String> {
         let key = if let Some(prefix) = &self.config.path_prefix {
-            format!("{}/{}", prefix, key)
+            format!("{prefix}/{key}")
         } else {
             key.to_string()
         };
@@ -246,7 +246,7 @@ impl R2StreamState {
 
         // Use the message queue instead of tokio::spawn
         if let Err(e) = r2_storage.upload_file(&path, &segment_path, content_type) {
-            eprintln!("Failed to queue segment upload {}: {}", segment_path, e);
+            eprintln!("Failed to queue segment upload {segment_path}: {e}");
         }
     }
 
@@ -271,7 +271,7 @@ impl R2StreamState {
 
         if path.exists() {
             if let Err(e) = self.r2_storage.upload_file(&path, "init.cmfi", "video/mp4") {
-                eprintln!("Failed to queue init segment upload: {}", e);
+                eprintln!("Failed to queue init segment upload: {e}");
             }
         } else {
             eprintln!("Initialization segment not found");
@@ -306,7 +306,7 @@ impl R2StreamState {
             self.r2_storage
                 .upload_file(&path, "manifest.m3u8", "application/vnd.apple.mpegurl")
         {
-            eprintln!("Failed to queue manifest upload: {}", e);
+            eprintln!("Failed to queue manifest upload: {e}");
         }
     }
 
@@ -464,7 +464,7 @@ pub fn setup_r2_appsink(
 
                 // Clean up old segments
                 if let Err(e) = state_guard.cleanup_old_segments() {
-                    eprintln!("Failed to cleanup old segments: {}", e);
+                    eprintln!("Failed to cleanup old segments: {e}");
                 }
 
                 Ok(gst::FlowSuccess::Ok)
