@@ -130,10 +130,10 @@ impl Media {
         let quality_priority = [TrackQuality::High, TrackQuality::Medium, TrackQuality::Low];
 
         for quality in &quality_priority {
-            if let Some(layer) = track_subscribed.layers.get(quality) {
-                if layer.subscriber_count > 0 {
-                    return Some(quality.clone());
-                }
+            if let Some(layer) = track_subscribed.layers.get(quality)
+                && layer.subscriber_count > 0
+            {
+                return Some(quality.clone());
             }
         }
 

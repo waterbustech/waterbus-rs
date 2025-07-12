@@ -201,15 +201,15 @@ impl Room {
             pc.on_ice_candidate(Box::new(move |candidate| {
                 let on_candidate = on_candidate.clone();
                 Box::pin(async move {
-                    if let Some(candidate) = candidate {
-                        if let Ok(init) = candidate.to_json() {
-                            let ice = IceCandidate {
-                                candidate: init.candidate,
-                                sdp_mid: init.sdp_mid,
-                                sdp_m_line_index: init.sdp_mline_index,
-                            };
-                            tokio::spawn((on_candidate)(ice));
-                        }
+                    if let Some(candidate) = candidate
+                        && let Ok(init) = candidate.to_json()
+                    {
+                        let ice = IceCandidate {
+                            candidate: init.candidate,
+                            sdp_mid: init.sdp_mid,
+                            sdp_m_line_index: init.sdp_mline_index,
+                        };
+                        tokio::spawn((on_candidate)(ice));
                     }
                 })
             }));

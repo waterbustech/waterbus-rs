@@ -79,13 +79,13 @@ impl EtcdDispatcher {
                 for event in resp.events() {
                     match event.event_type() {
                         EventType::Put => {
-                            if let Some(kv) = event.kv() {
-                                if let Some((id, metadata)) = EtcdDispatcher::parse_node_info(
+                            if let Some(kv) = event.kv()
+                                && let Some((id, metadata)) = EtcdDispatcher::parse_node_info(
                                     kv.key_str().unwrap(),
                                     kv.value_str().unwrap(),
-                                ) {
-                                    nodes.write().unwrap().insert(id, metadata);
-                                }
+                                )
+                            {
+                                nodes.write().unwrap().insert(id, metadata);
                             }
                         }
                         EventType::Delete => {

@@ -594,12 +594,12 @@ async fn handle_migrate_connection<A: Adapter>(
 
     let sdp = dispatcher_manager.migrate_connection(req).await;
 
-    if let Ok(sdp) = sdp {
-        if let Some(sdp) = sdp.sdp {
-            let _ = socket
-                .emit(WsEvent::RoomMigrate.to_str(), &RenegotiateResponse { sdp })
-                .ok();
-        }
+    if let Ok(sdp) = sdp
+        && let Some(sdp) = sdp.sdp
+    {
+        let _ = socket
+            .emit(WsEvent::RoomMigrate.to_str(), &RenegotiateResponse { sdp })
+            .ok();
     }
 }
 

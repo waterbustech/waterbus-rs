@@ -56,6 +56,7 @@ impl Publisher {
         if let Some(mut receiver) = self.track_event_receiver.take() {
             let data_channel = self.data_channel.clone();
             let cancel_token = self.cancel_token.clone();
+
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
@@ -63,14 +64,11 @@ impl Publisher {
                             break;
                         }
                         message = receiver.recv() => {
-                            if let Some(msg) = message {
-                                if let Some(ref dc) = data_channel {
-                                    if let Err(e) = Self::send_track_subscribed_message(dc, msg).await {
-                                        tracing::error!("Failed to send track subscribed via data channel: {}", e);
-                                    }
-                                }
-                            } else {
-                                break; // Channel closed
+                            if let Some(msg) = message
+                                && let Some(ref dc) = data_channel
+                                && let Err(e) = Self::send_track_subscribed_message(dc, msg).await
+                            {
+                                tracing::error!("Failed to send track subscribed via data channel: {}", e);
                             }
                         }
                     }
