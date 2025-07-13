@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>HLS Stream Player</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+      body {
+        background-color: #121212;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+      }
+
+      .container {
+        width: 95%;
+        max-width: 800px;
+        padding: 20px;
+        border-radius: 0px;
+        background-color: #121212;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.7);
+        text-align: center;
+      }
+
+      h1 {
+        color: #ff6b81;
+        margin-bottom: 25px;
+        font-size: 2.2em;
+        letter-spacing: 2px;
+      }
+
+      .input-group {
+        display: flex;
+        margin-bottom: 10px;
+        justify-content: center;
+        border-radius: 0px;
+        overflow: hidden;
+        border: 2px solid #6e6e6e;
+        background-color: #2a2a2a;
+      }
+
+      .input-group input[type="text"] {
+        flex-grow: 1;
+        padding: 12px 15px;
+        border: none;
+        border-radius: 0;
+        background-color: transparent;
+        color: #eee;
+        font-size: 1.1em;
+        outline: none;
+        width: 60%;
+      }
+
+      .input-group input[type="text"]:focus {
+        border-color: #feca57;
+        box-shadow: 0 0 5px rgba(250, 202, 87, 0.3);
+      }
+
+      .input-group button {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 0;
+        background-color: #feca57;
+        color: #2a2a2a;
+        cursor: pointer;
+        font-size: 1.1em;
+        transition: background-color 0.3s ease, box-shadow 0.3s ease,
+          transform 0.2s ease;
+        font-weight: 500;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+      }
+
+      .input-group button:hover {
+        background-color: #fdbd03;
+        box-shadow: 0 3px 7px rgba(0, 0, 0, 0.7);
+        transform: translateY(-2px);
+      }
+
+      .input-group button:active {
+        background-color: #e5a702;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        transform: translateY(0);
+      }
+
+      .video-wrapper {
+        position: relative;
+        width: 100%;
+      }
+
+      video {
+        width: 100%;
+        background-color: #000;
+        transform: scaleX(-1);
+      }
+
+      .video-controls {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+      }
+
+      #latency-info {
+        margin-top: 15px;
+        font-size: 0.95em;
+        color: #ddd;
+        padding: 10px;
+        border-radius: 8px;
+        background-color: #2a2a2a;
+        border: 1px solid #444;
+      }
+
+      #latency-info span {
+        font-weight: 600;
+        color: #fff;
+      }
+
+      .window-frame {
+        box-shadow: 0 3px 7px rgba(0, 0, 0, 0.5);
+        border: 2px solid #6e6e6e;
+        background-color: #1f1f1f;
+        padding: 0;
+        /* margin-bottom: 20px; */
+        border-radius: 0px;
+      }
+
+      .window-top {
+        display: flex;
+        gap: 10px;
+        padding: 10px;
+      }
+
+      .window-circle {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #555;
+      }
+
+      .window-content {
+        border-radius: 0 0 8px 8px;
+        overflow: hidden;
+      }
+
+      .video-container {
+        margin: 6px;
+        border-radius: 0px;
+        overflow: hidden;
+        border: 2px solid #6e6e6e;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="input-group">
+        <input
+          type="text"
+          id="participantId"
+          placeholder="Enter Participant ID"
+          value=""
+        />
+        <button onclick="loadStream()">Load</button>
+      </div>
+      <div class="window-frame">
+        <div class="window-top">
+          <div class="window-circle"></div>
+          <div class="window-circle"></div>
+          <div class="window-circle"></div>
+        </div>
+        <div class="window-content">
+          <div class="video-container">
+            <div class="video-wrapper">
+              <video
+                id="video"
+                controls
+                playsinline
+                muted
+                class="mirrored-video"
+              ></video>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      var video = document.getElementById("video");
+      var participantIdInput = document.getElementById("participantId");
+      var latencyValueDisplay = document.getElementById("latency-value");
+      var hls = null;
+      var isLive = false;
+
+      function loadStream() {
+        var participantId = participantIdInput.value.trim();
+        if (!participantId) {
+          alert("Please enter a Participant ID.");
+          return;
+        }
+        var videoSrc = `http://0.0.0.0:5998/${participantId}/manifest.m3u8`;
+
+        if (Hls.isSupported()) {
+          if (hls) {
+            hls.destroy();
+          }
+          hls = new Hls({
+            maxBufferLength: 20,
+            backBufferLength: 2,
+            maxBufferSize: 0,
+            enableWorker: false,
+            abrBandWidthUpFactor: 0.5,
+            lowLatencyMode: true,
+            manifestLoadPolicy: {
+              default: {
+                maxTimeToFirstByteMs: Infinity,
+                maxLoadTimeMs: 10000,
+                timeoutRetry: {
+                  maxNumRetry: 2,
+                  retryDelayMs: 0,
+                  maxRetryDelayMs: 0,
+                },
+              },
+            },
+            playlistLoadPolicy: {
+              default: {
+                maxTimeToFirstByteMs: 10000,
+                maxLoadTimeMs: 10000,
+                timeoutRetry: {
+                  maxNumRetry: 2,
+                  retryDelayMs: 0,
+                  maxRetryDelayMs: 0,
+                },
+                errorRetry: {
+                  maxNumRetry: 2,
+                  retryDelayMs: 1000,
+                  maxRetryDelayMs: 8000,
+                },
+              },
+            },
+            fragLoadPolicy: {
+              default: {
+                maxTimeToFirstByteMs: 10000,
+                maxLoadTimeMs: 20000,
+                timeoutRetry: {
+                  maxNumRetry: 4,
+                  retryDelayMs: 0,
+                  maxRetryDelayMs: 0,
+                },
+                errorRetry: {
+                  maxNumRetry: 6,
+                  retryDelayMs: 1000,
+                  maxRetryDelayMs: 8000,
+                },
+              },
+            },
+          });
+
+          hls.loadSource(videoSrc);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            video.play();
+          });
+
+          hls.on(Hls.Events.LEVEL_LOADED, function (event, data) {
+            if (data.details.live) {
+              isLive = true;
+            } else {
+              isLive = false;
+            }
+          });
+
+          hls.on(Hls.Events.FRAG_LOADED, function (event, data) {
+            // const currentTime = video.currentTime;
+            // const fragLoadedStart = data.frag.stats.loading.start;
+            // const fragLoadedEnd = data.frag.stats.loading.end;
+            // const latency = Math.abs(currentTime * 1000 - fragLoadedEnd);
+            // latencyValueDisplay.textContent = latency.toFixed(3);
+          });
+
+          hls.on(Hls.Events.ERROR, function (event, data) {
+            if (data.fatal) {
+              console.error("HLS error:", data);
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  console.log("network error, try to recover");
+                  hls.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  console.log("media error, try to recover");
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  console.error("Fatal error, cannot recover");
+                  break;
+              }
+            }
+          });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = videoSrc;
+          video.addEventListener("loadedmetadata", function () {
+            video.play();
+          });
+          console.log(
+            "Native HLS playback - live status might not be accurately reported."
+          );
+        }
+      }
+
+      // Connect to the default stream on page load
+      // loadStream();
+    </script>
+  </body>
+</html>

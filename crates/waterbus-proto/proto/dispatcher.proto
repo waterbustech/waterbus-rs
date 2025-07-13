@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+import "common.proto";
+
+package dispatcher;
+
+message NewUserJoinedRequest {
+    string clientId = 1;
+    string participantId = 2;
+    string roomId = 3;
+    string nodeId = 4;
+    bool is_migrate = 5;
+}
+
+message SubscriberRenegotiateRequest {
+    string sdp = 1;
+    string clientId = 2;
+    string targetId = 3;
+}
+
+message PublisherCandidateRequest {
+    string clientId = 1;
+    common.IceCandidate candidate = 2;
+}
+
+message SubscriberCandidateRequest {
+    string clientId = 1;
+    string targetId = 2;
+    common.IceCandidate candidate = 3;
+}
+
+message DispatcherResponse {
+    bool isSuccess = 1;
+}
+
+service DispatcherService {
+    rpc newUserJoined(NewUserJoinedRequest) returns (DispatcherResponse) {}
+    rpc subscriberRenegotiate(SubscriberRenegotiateRequest) returns (DispatcherResponse) {}
+    rpc onPublisherCandidate(PublisherCandidateRequest) returns (DispatcherResponse) {}
+    rpc onSubscriberCandidate(SubscriberCandidateRequest) returns (DispatcherResponse) {}
+}

@@ -1,0 +1,24 @@
+[package]
+name = "webrtc-manager"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+nanoid = { workspace = true }
+webrtc = { workspace = true }
+egress-manager = { workspace = true }
+crossbeam = { workspace = true }
+bytes = { workspace = true }
+
+[dev-dependencies]
+mockall = "0.13.1"

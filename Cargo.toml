@@ -1,10 +1,21 @@
-[package]
-name = "waterbus-rs"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "signalling",
+    "sfu",
+    "crates/egress-manager",
+    "crates/webrtc-manager",
+    "crates/waterbus-proto",
+    "crates/dispatcher",
+]
+resolver = "2"
 
-[dependencies]
-salvo = { version = "*", features = [
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[workspace.dependencies]
+salvo = { version = "0.79.0", features = [
     "quinn",
     "tower-compat",
     "oapi",
@@ -16,34 +27,78 @@ salvo = { version = "*", features = [
     "caching-headers",
     "compression",
     "cors",
+    "serve-static",
 ] }
 serde = "1.0.219"
-socketioxide = { version = "0.16.2", features = ["extensions", "state"] }
-socketioxide-redis = "0.2.1"
-tokio = { version = "1.44.1", features = ["full"] }
-tower = { version = "0.5.0", default-features = false }
-tower-http = { version = "0.6.2", features = ["cors", "fs", "auth"] }
+socketioxide = { version = "0.17.1", features = [
+    "extensions",
+    "state",
+    "msgpack",
+] }
+socketioxide-redis = "0.2.2"
+tokio = { version = "1.45.0", features = ["full"] }
+tokio-util = "0.7.15"
+tower = { version = "0.5.2", default-features = false }
+tower-http = { version = "0.6.4", features = ["cors", "fs", "auth"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
-chrono = { version = "0.4.40", features = ["serde"] }
-diesel = { version = "2.2.8", features = ["postgres", "r2d2", "chrono"] }
+chrono = { version = "0.4.41", features = ["serde"] }
+diesel = { version = "2.2.10", features = ["postgres", "r2d2", "chrono"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 dotenvy = "0.15.7"
 time = "0.3.41"
 jsonwebtoken = "9.3.1"
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 thiserror = "2.0.12"
-reqwest = { version = "0.12.15", features = ["json"] }
 validator = "0.20.0"
 validator_derive = "0.20.0"
-aws-sdk-s3 = { version = "1.82.0", features = ["rt-tokio"] }
-aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
-uuid = "1.16.0"
-rustls = { version = "0.23.25", features = ["ring"] }
+aws-sdk-s3 = { version = "1.86.0", features = ["rt-tokio"] }
+aws-config = { version = "1.6.3", features = ["behavior-version-latest"] }
+aws-credential-types = "1.2.3"
+rustls = { version = "0.23.27", features = ["ring"] }
 nanoid = "0.4.0"
-rand = "0.9.0"
+rand = "0.9.1"
 serde_json = "1.0.140"
 bcrypt = "0.17.0"
 async-channel = "2.3.1"
-webrtc-manager = { path = "./webrtc-manager" }
-typesense-client = { path = "./typesense-client" }
+rust-embed = "8.7.2"
+dashmap = "6.1.0"
+parking_lot = "0.12.4"
+webrtc = "0.13.0"
+gst = { package = "gstreamer", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-app = { package = "gstreamer-app", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-video = { package = "gstreamer-video", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-audio = { package = "gstreamer-audio", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-base = { package = "gstreamer-base", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_18",
+] }
+gst-pbutils = { package = "gstreamer-pbutils", git = "https://github.com/GStreamer/gstreamer-rs", branch = "main", features = [
+    "v1_20",
+] }
+m3u8-rs = { git = "https://github.com/JeWe37/m3u8-rs", branch = "ll-hls" }
+moq-gst = { git = "https://github.com/waterbustech/moq-gst.git", branch = "main" }
+gst-plugin-fmp4 = "0.13.6"
+prost = "0.13.5"
+tonic = "0.13.1"
+etcd-client = "0.15.0"
+sysinfo = "0.35.1"
+futures-util = "0.3.31"
+redis = "0.31.0"
+futures = "0.3.31"
+crossbeam = "0.8.4"
+mimalloc = "0.1.46"
+bytes = "1.10.1"
+
+# Local crates
+waterbus-proto = { path = "./crates/waterbus-proto" }
+webrtc-manager = { path = "./crates/webrtc-manager" }
+egress-manager = { path = "./crates/egress-manager" }
+dispatcher = { path = "./crates/dispatcher" }

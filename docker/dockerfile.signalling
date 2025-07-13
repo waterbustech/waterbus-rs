@@ -1,0 +1,33 @@
+# --- Build stage ---
+FROM docker.io/rustlang/rust:nightly AS builder
+
+WORKDIR /usr/src/app
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev cmake clang protobuf-compiler
+
+RUN mkdir -p /usr/src/app/hls
+
+COPY public ./public
+COPY docker/Cargo.toml.signalling ./Cargo.toml
+COPY Cargo.lock ./
+COPY signalling ./signalling
+COPY crates/waterbus-proto ./crates/waterbus-proto
+COPY crates/dispatcher ./crates/dispatcher
+COPY certificates ./certificates
+
+RUN cargo build --release --bin signalling
+
+# --- Runtime stage ---
+FROM debian:trixie-slim
+
+# Install PostgreSQL client libraries and runtime dependencies
+RUN apt-get update && \
+    apt-get install -y libssl-dev ca-certificates libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/src/app/target/release/signalling /usr/local/bin/signalling
+
+EXPOSE 5998
+EXPOSE 50052
+
+CMD ["/usr/local/bin/signalling"]

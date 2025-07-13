@@ -1,0 +1,24 @@
+[package]
+name = "egress-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+gst = { workspace = true }
+gst-app = { workspace = true }
+gst-video = { workspace = true }
+gst-audio = { workspace = true }
+gst-base = { workspace = true }
+gst-pbutils = { workspace = true }
+m3u8-rs = { workspace = true }
+moq-gst = { workspace = true }
+gst-plugin-fmp4 = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+aws-sdk-s3 = { workspace = true, features = ["rt-tokio"] }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-credential-types = { workspace = true }
+dotenvy = { workspace = true }
+futures = { workspace = true }

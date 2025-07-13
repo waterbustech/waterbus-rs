@@ -1,0 +1,42 @@
+[package]
+name = "signalling"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "signalling"
+path = "src/main.rs"
+
+[dependencies]
+salvo = { workspace = true }
+serde = { workspace = true }
+socketioxide = { workspace = true, features = ["extensions", "state"] }
+socketioxide-redis = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tower = { workspace = true, default-features = false }
+tower-http = { workspace = true, features = ["cors", "fs", "auth"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+chrono = { workspace = true, features = ["serde"] }
+diesel = { workspace = true, features = ["postgres", "r2d2", "chrono"] }
+diesel-derive-enum = { workspace = true, features = ["postgres"] }
+dotenvy = { workspace = true }
+time = { workspace = true }
+jsonwebtoken = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+validator = { workspace = true }
+validator_derive = { workspace = true }
+aws-sdk-s3 = { workspace = true, features = ["rt-tokio"] }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-credential-types = { workspace = true }
+rustls = { workspace = true, features = ["ring"] }
+nanoid = { workspace = true }
+rand = { workspace = true }
+serde_json = { workspace = true }
+bcrypt = { workspace = true }
+async-channel = { workspace = true }
+rust-embed = { workspace = true }
+
+dispatcher = { workspace = true }
+waterbus-proto = { workspace = true }
