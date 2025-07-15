@@ -1,108 +1,97 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    rooms (id) {
-        id -> Int4,
-        title -> Varchar,
-        password -> Nullable<Varchar>,
-        avatar -> Nullable<Varchar>,
-        #[sql_name = "latestMessageCreatedAt"]
-        latest_message_created_at -> Nullable<Timestamp>,
-        code -> Varchar,
-        #[sql_name = "createdAt"]
-        created_at -> Timestamp,
-        #[sql_name = "updatedAt"]
-        updated_at -> Timestamp,
-        #[sql_name = "deletedAt"]
-        deleted_at -> Nullable<Timestamp>,
-        #[sql_name = "latestMessageId"]
-        latest_message_id -> Nullable<Int4>,
-        status -> Int4,
-        #[sql_name = "type"]
-        type_ -> Int4,
-    }
-}
-
-diesel::table! {
     members (id) {
         id -> Int4,
-        #[sql_name = "createdAt"]
         created_at -> Timestamp,
-        #[sql_name = "deletedAt"]
         deleted_at -> Nullable<Timestamp>,
-        #[sql_name = "softDeletedAt"]
         soft_deleted_at -> Nullable<Timestamp>,
-        #[sql_name = "userId"]
-        user_id -> Nullable<Int4>,
-        #[sql_name = "roomId"]
-        room_id -> Nullable<Int4>,
-        role -> Int4,
+        user_id -> Int4,
+        room_id -> Int4,
+        role -> Int2,
     }
 }
 
 diesel::table! {
     messages (id) {
         id -> Int4,
-        data -> Varchar,
-        #[sql_name = "createdAt"]
+        data -> Text,
         created_at -> Timestamp,
-        #[sql_name = "updatedAt"]
         updated_at -> Timestamp,
-        #[sql_name = "deletedAt"]
         deleted_at -> Nullable<Timestamp>,
-        #[sql_name = "createdById"]
-        created_by_id -> Nullable<Int4>,
-        #[sql_name = "roomId"]
-        room_id -> Nullable<Int4>,
+        created_by_id -> Int4,
+        room_id -> Int4,
         #[sql_name = "type"]
-        type_ -> Int4,
-        status -> Int4,
+        type_ -> Int2,
+        status -> Int2,
     }
 }
 
 diesel::table! {
     participants (id) {
         id -> Int4,
-        #[sql_name = "createdAt"]
         created_at -> Timestamp,
-        #[sql_name = "deletedAt"]
         deleted_at -> Nullable<Timestamp>,
-        #[sql_name = "userId"]
-        user_id -> Nullable<Int4>,
-        #[sql_name = "roomId"]
-        room_id -> Nullable<Int4>,
-        #[sql_name = "nodeId"]
+        user_id -> Int4,
+        room_id -> Int4,
+        #[max_length = 100]
         node_id -> Nullable<Varchar>,
-        status -> Int4,
+        status -> Int2,
+    }
+}
+
+diesel::table! {
+    rooms (id) {
+        id -> Int4,
+        #[max_length = 255]
+        title -> Varchar,
+        #[max_length = 255]
+        password -> Nullable<Varchar>,
+        #[max_length = 500]
+        avatar -> Nullable<Varchar>,
+        latest_message_created_at -> Nullable<Timestamp>,
+        #[max_length = 20]
+        code -> Varchar,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        deleted_at -> Nullable<Timestamp>,
+        latest_message_id -> Nullable<Int4>,
+        status -> Int2,
+        #[sql_name = "type"]
+        type_ -> Int2,
     }
 }
 
 diesel::table! {
     users (id) {
         id -> Int4,
-        #[sql_name = "fullName"]
+        #[max_length = 255]
         full_name -> Nullable<Varchar>,
-        #[sql_name = "userName"]
+        #[max_length = 50]
         user_name -> Varchar,
-        bio -> Nullable<Varchar>,
-        #[sql_name = "externalId"]
+        bio -> Nullable<Text>,
+        #[max_length = 100]
         external_id -> Varchar,
+        #[max_length = 500]
         avatar -> Nullable<Varchar>,
-        #[sql_name = "createdAt"]
         created_at -> Timestamp,
-        #[sql_name = "updatedAt"]
         updated_at -> Timestamp,
-        #[sql_name = "deletedAt"]
         deleted_at -> Nullable<Timestamp>,
-        #[sql_name = "lastSeenAt"]
         last_seen_at -> Nullable<Timestamp>,
     }
 }
 
 diesel::joinable!(members -> rooms (room_id));
 diesel::joinable!(members -> users (user_id));
+diesel::joinable!(messages -> rooms (room_id));
 diesel::joinable!(messages -> users (created_by_id));
 diesel::joinable!(participants -> rooms (room_id));
 diesel::joinable!(participants -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(rooms, members, messages, participants, users,);
+diesel::allow_tables_to_appear_in_same_query!(
+    members,
+    messages,
+    participants,
+    rooms,
+    users,
+);

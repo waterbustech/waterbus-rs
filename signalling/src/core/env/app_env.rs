@@ -79,10 +79,10 @@ impl AppEnv {
             app_port: Self::get_env("APP_PORT", 3000),
             client_api_key: env::var("CLIENT_SECRET_KEY").unwrap_or_else(|_| "".to_string()),
             udp_port_range: UdpPortRange {
-                port_min: Self::get_env("PORT_MIN_UDP", 19200),
-                port_max: Self::get_env("PORT_MAX_UDP", 19250),
+                port_min: Self::get_env("PORT_MIN_UDP", 19000),
+                port_max: Self::get_env("PORT_MAX_UDP", 60000),
             },
-            db_uri: DbUri(env::var("DATABASE_URI").expect("DATABASE_URI must be set")),
+            db_uri: DbUri(env::var("DATABASE_URL").expect("DATABASE_URL must be set")),
             redis_uris,
             jwt: JwtConfig {
                 jwt_token: env::var("AUTH_JWT_SECRET").expect("AUTH_JWT_SECRET must be set"),

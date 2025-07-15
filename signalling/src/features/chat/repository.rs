@@ -1,6 +1,5 @@
 use diesel::{
-    ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
-    SelectableHelper,
+    ExpressionMethods, JoinOnDsl, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
     dsl::{insert_into, update},
     r2d2::{ConnectionManager, Pool, PooledConnection},
 };
@@ -63,8 +62,8 @@ impl ChatRepository for ChatRepositoryImpl {
         let result = messages::table
             .filter(messages::room_id.eq(room_id))
             .filter(messages::created_at.gt(deleted_at))
-            .left_join(rooms::table.on(messages::room_id.eq(rooms::id.nullable())))
-            .left_join(users::table.on(messages::created_by_id.eq(users::id.nullable())))
+            .left_join(rooms::table.on(messages::room_id.eq(rooms::id)))
+            .left_join(users::table.on(messages::created_by_id.eq(users::id)))
             .select((
                 Message::as_select(),
                 Option::<Room>::as_select(),
@@ -93,8 +92,8 @@ impl ChatRepository for ChatRepositoryImpl {
 
         let result = messages::table
             .filter(messages::id.eq(message_id))
-            .left_join(rooms::table.on(messages::room_id.eq(rooms::id.nullable())))
-            .left_join(users::table.on(messages::created_by_id.eq(users::id.nullable())))
+            .left_join(rooms::table.on(messages::room_id.eq(rooms::id)))
+            .left_join(users::table.on(messages::created_by_id.eq(users::id)))
             .select((
                 Message::as_select(),
                 Option::<Room>::as_select(),
@@ -151,7 +150,7 @@ impl ChatRepository for ChatRepositoryImpl {
     async fn delete_message_by_id(&self, message_id: i32) -> Result<Message, ChatError> {
         let mut conn = self.get_conn()?;
 
-        let message_status = MessagesStatusEnum::Inactive as i32;
+        let message_status: i16 = MessagesStatusEnum::Inactive.into();
 
         let updated_message = update(messages::table)
             .filter(messages::id.eq(message_id))

@@ -108,7 +108,7 @@ impl ChatService for ChatServiceImpl {
         let index_of_user = room
             .members
             .iter()
-            .position(|member| member.member.user_id == Some(user_id));
+            .position(|member| member.member.user_id == user_id);
 
         let deleted_at = match index_of_user {
             Some(index) => {
@@ -150,8 +150,8 @@ impl ChatService for ChatServiceImpl {
             data,
             created_by_id: Some(&user_id),
             room_id: Some(&room_id),
-            status: &(MessagesStatusEnum::Active as i32),
-            type_: &(MessagesTypeEnum::Default as i32),
+            status: &MessagesStatusEnum::Active.into(),
+            type_: &MessagesTypeEnum::Default.into(),
             created_at: now,
             updated_at: now,
         };
@@ -177,13 +177,13 @@ impl ChatService for ChatServiceImpl {
         let mut message_response = self.chat_repository.get_message_by_id(message_id).await?;
         let room = message_response.clone().room.unwrap();
 
-        if message_response.message.status == MessagesStatusEnum::Inactive as i32 {
+        if message_response.message.status == MessagesStatusEnum::Inactive as i16 {
             return Err(ChatError::UnexpectedError(
                 "Message has been deleted".to_string(),
             ));
         }
 
-        if message_response.message.created_by_id != Some(user_id) {
+        if message_response.message.created_by_id != user_id {
             return Err(ChatError::Forbidden(
                 "You not allowed modify message of other users".to_string(),
             ));
@@ -211,13 +211,13 @@ impl ChatService for ChatServiceImpl {
     ) -> Result<MessageResponse, ChatError> {
         let mut message_response = self.chat_repository.get_message_by_id(message_id).await?;
 
-        if message_response.message.status == MessagesStatusEnum::Inactive as i32 {
+        if message_response.message.status == MessagesStatusEnum::Inactive as i16 {
             return Err(ChatError::UnexpectedError(
                 "Message has been deleted".to_string(),
             ));
         }
 
-        if message_response.message.created_by_id != Some(user_id) {
+        if message_response.message.created_by_id != user_id {
             return Err(ChatError::Forbidden(
                 "You not allowed modify message of other users".to_string(),
             ));
@@ -225,7 +225,7 @@ impl ChatService for ChatServiceImpl {
 
         let mut message = message_response.message;
 
-        message.status = MessagesStatusEnum::Inactive as i32;
+        message.status = MessagesStatusEnum::Inactive.into();
 
         let message = self.chat_repository.update_message(message).await?;
 
@@ -248,7 +248,7 @@ impl ChatService for ChatServiceImpl {
         let index_of_member = room
             .members
             .iter()
-            .position(|member| member.member.user_id == Some(user_id));
+            .position(|member| member.member.user_id == user_id);
 
         match index_of_member {
             Some(index) => {
