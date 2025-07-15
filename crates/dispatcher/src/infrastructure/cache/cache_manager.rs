@@ -1,4 +1,4 @@
-use redis::{Client, Commands};
+use redis::{Commands, cluster::ClusterClient};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
@@ -21,14 +21,14 @@ impl CacheKey {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CacheManager {
-    client: Arc<Mutex<Client>>,
+    client: Arc<Mutex<ClusterClient>>,
 }
 
 impl CacheManager {
-    pub fn new(redis_uri: String) -> Self {
-        let client = Client::open(redis_uri).unwrap();
+    pub fn new(urls: Vec<String>) -> Self {
+        let client = ClusterClient::new(urls).unwrap();
         Self {
             client: Arc::new(Mutex::new(client)),
         }
