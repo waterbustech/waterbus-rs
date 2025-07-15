@@ -35,7 +35,7 @@ socketioxide = { version = "0.17.1", features = [
     "state",
     "msgpack",
 ] }
-socketioxide-redis = "0.2.2"
+socketioxide-redis = { version = "0.2.2", features = ["redis-cluster"] }
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
 tower = { version = "0.5.2", default-features = false }
@@ -91,7 +91,8 @@ tonic = "0.13.1"
 etcd-client = "0.15.0"
 sysinfo = "0.35.1"
 futures-util = "0.3.31"
-redis = "0.31.0"
+deadpool-redis = "0.22.0"
+redis = { version = "0.32.4", features = ["cluster"] }
 futures = "0.3.31"
 crossbeam = "0.8.4"
 mimalloc = "0.1.46"

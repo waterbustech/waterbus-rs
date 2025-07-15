@@ -9,7 +9,7 @@ pub struct AppEnv {
     pub app_port: u16,
     pub client_api_key: String,
     pub db_uri: DbUri,
-    pub redis_uri: RedisUri,
+    pub redis_uris: Vec<String>,
     pub jwt: JwtConfig,
     pub udp_port_range: UdpPortRange,
     pub grpc_configs: GrpcConfigs,
@@ -18,9 +18,6 @@ pub struct AppEnv {
 
 #[derive(Debug, Clone)]
 pub struct DbUri(pub String);
-
-#[derive(Debug, Clone)]
-pub struct RedisUri(pub String);
 
 #[derive(Debug, Clone)]
 pub struct JwtConfig {
@@ -54,6 +51,27 @@ impl AppEnv {
     pub fn new() -> Self {
         dotenv().ok();
 
+        let default_urls = vec![
+            "redis://127.0.0.1:6379?protocol=resp3",
+            "redis://127.0.0.1:6380?protocol=resp3",
+            "redis://127.0.0.1:6381?protocol=resp3",
+            "redis://127.0.0.1:6382?protocol=resp3",
+            "redis://127.0.0.1:6383?protocol=resp3",
+            "redis://127.0.0.1:6384?protocol=resp3",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+
+        let redis_uris = env::var("REDIS_URIS")
+            .map(|val| {
+                val.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or(default_urls);
+
         Self {
             group_id: env::var("GROUP_ID").unwrap_or_else(|_| "waterbus-group-1".to_string()),
             etcd_addr: env::var("ETCD_URI").expect("ETCD_URI must be set"),
@@ -65,7 +83,7 @@ impl AppEnv {
                 port_max: Self::get_env("PORT_MAX_UDP", 19250),
             },
             db_uri: DbUri(env::var("DATABASE_URI").expect("DATABASE_URI must be set")),
-            redis_uri: RedisUri(env::var("REDIS_URI").expect("REDIS_URI must be set")),
+            redis_uris,
             jwt: JwtConfig {
                 jwt_token: env::var("AUTH_JWT_SECRET").expect("AUTH_JWT_SECRET must be set"),
                 refresh_token: env::var("AUTH_REFRESH_SECRET")

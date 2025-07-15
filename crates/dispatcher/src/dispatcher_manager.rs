@@ -24,7 +24,7 @@ pub struct DispatcherConfigs {
     pub group_id: String,
     pub dispatcher_port: u16,
     pub sfu_port: u16,
-    pub redis_uri: String,
+    pub redis_uris: Vec<String>,
     pub etcd_uri: String,
     pub sender: Sender<DispatcherCallback>,
 }
@@ -51,7 +51,7 @@ impl DispatcherManager {
         .unwrap();
 
         let sfu_grpc_client = SfuGrpcClient::default();
-        let cache_manager = CacheManager::new(configs.redis_uri);
+        let cache_manager = CacheManager::new(configs.redis_uris);
 
         Self {
             sfu_grpc_client,
