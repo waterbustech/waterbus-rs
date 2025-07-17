@@ -7,21 +7,86 @@ use diesel::prelude::*;
 use salvo::oapi::ToSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::core::database::schema::*;
+use crate::{core::database::schema::*, impl_from_i16_with_default};
 
-#[repr(i32)]
-#[derive(Debug)]
+#[repr(i16)]
+#[derive(Debug, Clone, Copy)]
 pub enum RoomType {
-    Conferencing,
-    LiveStreaming,
+    Conferencing = 0,
+    LiveStreaming = 1,
 }
+impl_from_i16_with_default!(RoomType {
+    Conferencing = 0,
+    LiveStreaming = 1,
+});
 
-#[repr(i32)]
-#[derive(Debug)]
-pub enum RoomStatusEnum {
-    Active,
-    Inactive,
+#[repr(i16)]
+#[derive(Debug, Clone, Copy)]
+pub enum MembersRoleEnum {
+    Owner = 0,
+    Attendee = 1,
 }
+impl_from_i16_with_default!(MembersRoleEnum {
+    Owner = 0,
+    Attendee = 1,
+});
+
+#[repr(i16)]
+#[derive(Debug, Clone, Copy)]
+pub enum MessagesTypeEnum {
+    Default = 0,
+    System = 1,
+}
+impl_from_i16_with_default!(MessagesTypeEnum {
+    Default = 0,
+    System = 1,
+});
+
+#[repr(i16)]
+#[derive(Debug, Clone, Copy)]
+pub enum MessagesStatusEnum {
+    Active = 0,
+    Inactive = 1,
+}
+impl_from_i16_with_default!(MessagesStatusEnum {
+    Active = 0,
+    Inactive = 1,
+});
+
+#[repr(i16)]
+#[derive(Debug, Clone, Copy)]
+pub enum RecordsStatusEnum {
+    Recording = 0,
+    Processing = 1,
+    Finish = 2,
+}
+impl_from_i16_with_default!(RecordsStatusEnum {
+    Recording = 0,
+    Processing = 1,
+    Finish = 2,
+});
+
+#[repr(i16)]
+#[derive(Debug, Clone, Copy)]
+pub enum ParticipantsStatusEnum {
+    Active = 0,
+    Inactive = 1,
+}
+impl_from_i16_with_default!(ParticipantsStatusEnum {
+    Active = 0,
+    Inactive = 1,
+});
+
+#[repr(i16)]
+#[derive(Debug, Clone, Copy)]
+pub enum RoomStatusEnum {
+    Active = 0,
+    Inactive = 1,
+}
+impl_from_i16_with_default!(RoomStatusEnum {
+    Active = 0,
+    Inactive = 1,
+});
 
 impl TryFrom<i32> for RoomStatusEnum {
     type Error = ();
@@ -33,42 +98,6 @@ impl TryFrom<i32> for RoomStatusEnum {
             _ => Err(()),
         }
     }
-}
-
-#[repr(i32)]
-#[derive(Debug)]
-pub enum MembersRoleEnum {
-    Host,
-    Attendee,
-}
-
-#[repr(i32)]
-#[derive(Debug)]
-pub enum MessagesTypeEnum {
-    Default,
-    System,
-}
-
-#[repr(i32)]
-#[derive(Debug)]
-pub enum MessagesStatusEnum {
-    Active,
-    Inactive,
-}
-
-#[repr(i32)]
-#[derive(Debug)]
-pub enum RecordsStatusEnum {
-    Recording,
-    Processing,
-    Finish,
-}
-
-#[repr(i32)]
-#[derive(Debug)]
-pub enum ParticipantsStatusEnum {
-    Active,
-    Inactive,
 }
 
 #[derive(
@@ -91,14 +120,14 @@ pub struct Room {
     #[serde(skip_serializing)]
     pub password: Option<String>,
     pub avatar: Option<String>,
-    pub status: i32,
+    pub status: i16,
     pub latest_message_created_at: Option<NaiveDateTime>,
     pub code: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub latest_message_id: Option<i32>,
-    pub type_: i32,
+    pub type_: i16,
 }
 
 #[derive(
@@ -120,12 +149,12 @@ pub struct Room {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Member {
     pub id: i32,
-    pub role: i32,
+    pub role: i16,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
     pub soft_deleted_at: Option<NaiveDateTime>,
-    pub user_id: Option<i32>,
-    pub room_id: Option<i32>,
+    pub user_id: i32,
+    pub room_id: i32,
 }
 
 #[derive(
@@ -149,13 +178,13 @@ pub struct Member {
 pub struct Message {
     pub id: i32,
     pub data: String,
-    pub type_: i32,
-    pub status: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
-    pub created_by_id: Option<i32>,
-    pub room_id: Option<i32>,
+    pub created_by_id: i32,
+    pub room_id: i32,
+    pub type_: i16,
+    pub status: i16,
 }
 
 #[derive(
@@ -177,11 +206,11 @@ pub struct Message {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Participant {
     pub id: i32,
-    pub status: i32,
     pub created_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
-    pub user_id: Option<i32>,
-    pub room_id: Option<i32>,
+    pub user_id: i32,
+    pub room_id: i32,
+    pub status: i16,
     #[serde(skip_serializing)]
     pub node_id: Option<String>,
 }
@@ -231,8 +260,8 @@ pub struct NewMessage<'a> {
     pub data: &'a str,
     pub created_by_id: Option<&'a i32>,
     pub room_id: Option<&'a i32>,
-    pub status: &'a i32,
-    pub type_: &'a i32,
+    pub status: &'a i16,
+    pub type_: &'a i16,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -246,8 +275,8 @@ pub struct NewRoom<'a> {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub latest_message_created_at: NaiveDateTime,
-    pub status: i32,
-    pub type_: i32,
+    pub status: i16,
+    pub type_: i16,
 }
 
 #[derive(Insertable)]
@@ -256,7 +285,7 @@ pub struct NewMember<'a> {
     pub room_id: &'a i32,
     pub created_at: NaiveDateTime,
     pub user_id: Option<i32>,
-    pub role: i32,
+    pub role: i16,
 }
 
 #[derive(Insertable)]
@@ -265,5 +294,5 @@ pub struct NewParticipant<'a> {
     pub room_id: &'a i32,
     pub user_id: Option<i32>,
     pub created_at: NaiveDateTime,
-    pub status: i32,
+    pub status: i16,
 }

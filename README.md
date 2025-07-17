@@ -53,19 +53,17 @@ This project uses the following technologies:
 - [Rust](https://www.rust-lang.org/) `1.82+`
 - [PostgreSQL](https://www.postgresql.org/) `16+`
 - [Redis](https://redis.io/) `7+`
+- [Diesel CLI](https://diesel.rs/)
 
+- Install `Diesel CLI`:
+
+```bash
+cargo install diesel_cli --no-default-features --features postgres
+```
 
 ## ⚡️ Quick Start
 
 Get up and running with Waterbus in just a few steps.
-
-### 🗂️ Create db schema
-
-- Connect to your PostgreSQL database and run the schema file:
-
-```bash
-psql -h <postgres-host> -U <postgres-user> -d <database-name> -f schema.sql
-```
 
 ### 🛠 Local Build
 
@@ -80,6 +78,12 @@ cd waterbus-rs
 
 ```bash
 mv example.env .env
+```
+
+- Initialize the database
+
+```bash
+diesel migration run
 ```
 
 - Build & Run the Server

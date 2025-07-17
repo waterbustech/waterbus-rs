@@ -129,11 +129,11 @@ impl RoomService for RoomServiceImpl {
             title: &data.title,
             password: &password_hashed,
             code: &code,
-            status: RoomStatusEnum::Active as i32,
+            status: RoomStatusEnum::Active.into(),
             created_at: now,
             updated_at: now,
             latest_message_created_at: now,
-            type_: RoomType::Conferencing as i32,
+            type_: RoomType::Conferencing.into(),
         };
 
         self.room_repository
@@ -152,8 +152,7 @@ impl RoomService for RoomServiceImpl {
 
         // Check whether user_id is host or not
         let is_host = room.members.iter().any(|member| {
-            member.member.user_id == Some(user_id)
-                && member.member.role == MembersRoleEnum::Host as i32
+            member.member.user_id == user_id && member.member.role == MembersRoleEnum::Owner as i16
         });
 
         if !is_host {
@@ -221,19 +220,19 @@ impl RoomService for RoomServiceImpl {
         let index_of_member = room
             .members
             .iter()
-            .position(|member| member.member.user_id == Some(user_id))
+            .position(|member| member.member.user_id == user_id)
             .ok_or_else(|| RoomError::UnexpectedError("Member not found".into()))?;
 
         let member = room.members[index_of_member].member.clone();
 
-        if member.role == MembersRoleEnum::Host as i32 {
+        if member.role == MembersRoleEnum::Owner as i16 {
             return Err(RoomError::UnexpectedError("Host not allowed to leave the room. You can archive chats if the room no longer active.".into()));
         }
 
         self.room_repository.delete_member_by_id(member.id).await?;
 
         room.members
-            .retain(|member| member.member.user_id != Some(user_id));
+            .retain(|member| member.member.user_id != user_id);
 
         Ok(room)
     }
@@ -255,7 +254,7 @@ impl RoomService for RoomServiceImpl {
         let is_member = room
             .members
             .iter()
-            .any(|member| member.member.user_id == Some(user_id));
+            .any(|member| member.member.user_id == user_id);
 
         if !is_member {
             let is_password_correct = match room.room.password.as_ref() {
@@ -275,7 +274,7 @@ impl RoomService for RoomServiceImpl {
         let participant = NewParticipant {
             user_id: Some(user_id),
             room_id: &room.room.id,
-            status: ParticipantsStatusEnum::Active as i32,
+            status: ParticipantsStatusEnum::Active.into(),
             created_at: now,
         };
 
@@ -299,7 +298,7 @@ impl RoomService for RoomServiceImpl {
         let is_member = room
             .members
             .iter()
-            .any(|member| member.member.user_id == Some(user_id));
+            .any(|member| member.member.user_id == user_id);
 
         if is_member {
             return Err(RoomError::UnexpectedError(
@@ -308,8 +307,7 @@ impl RoomService for RoomServiceImpl {
         }
 
         let is_host = room.members.iter().any(|member| {
-            member.member.user_id == Some(host_id)
-                && member.member.role == MembersRoleEnum::Host as i32
+            member.member.user_id == host_id && member.member.role == MembersRoleEnum::Owner as i16
         });
 
         if !is_host {
@@ -328,7 +326,7 @@ impl RoomService for RoomServiceImpl {
             user_id: Some(user_id),
             room_id: &room.room.id,
             created_at: now,
-            role: MembersRoleEnum::Attendee as i32,
+            role: MembersRoleEnum::Attendee.into(),
         };
 
         let new_member = self.room_repository.create_member(new_member).await?;
@@ -349,12 +347,11 @@ impl RoomService for RoomServiceImpl {
         let index_of_member = room
             .members
             .iter()
-            .position(|member| member.member.user_id == Some(user_id))
+            .position(|member| member.member.user_id == user_id)
             .ok_or_else(|| RoomError::UnexpectedError("Member not found".into()))?;
 
         let is_host = room.members.iter().any(|member| {
-            member.member.user_id == Some(host_id)
-                && member.member.role == MembersRoleEnum::Host as i32
+            member.member.user_id == host_id && member.member.role == MembersRoleEnum::Owner as i16
         });
 
         if !is_host {
@@ -366,7 +363,7 @@ impl RoomService for RoomServiceImpl {
         self.room_repository.delete_member_by_id(member_id).await?;
 
         room.members
-            .retain(|member| member.member.user_id != Some(user_id));
+            .retain(|member| member.member.user_id != user_id);
 
         Ok(room)
     }
@@ -377,18 +374,18 @@ impl RoomService for RoomServiceImpl {
         let index_of_member = room
             .members
             .iter()
-            .position(|member| member.member.user_id == Some(user_id))
+            .position(|member| member.member.user_id == user_id)
             .ok_or_else(|| RoomError::UnexpectedError("Member not found".into()))?;
 
         let member = room.members[index_of_member].member.clone();
 
-        if member.role != MembersRoleEnum::Host as i32 {
+        if member.role != MembersRoleEnum::Owner as i16 {
             return Err(RoomError::YouDontHavePermissions);
         }
 
         let mut room = room.room;
 
-        room.status = RoomStatusEnum::Inactive as i32;
+        room.status = RoomStatusEnum::Inactive as i16;
 
         let room = self.room_repository.update_room(room).await?;
 

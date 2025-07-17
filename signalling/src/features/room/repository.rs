@@ -110,19 +110,19 @@ impl RoomRepository for RoomRepositoryImpl {
     ) -> Result<Vec<RoomResponse>, RoomError> {
         let mut conn = self.get_conn()?;
 
-        let room_status = room_status as i32;
+        let room_status: i16 = room_status.into();
 
         let users_for_message = diesel::alias!(users as users_for_message);
 
         let rooms_with_latest = rooms::table
-            .inner_join(members::table.on(rooms::id.nullable().eq(members::room_id)))
-            .inner_join(users::table.on(members::user_id.eq(users::id.nullable())))
+            .inner_join(members::table.on(rooms::id.eq(members::room_id)))
+            .inner_join(users::table.on(members::user_id.eq(users::id)))
             .filter(rooms::status.eq(room_status))
             .filter(users::id.eq(user_id))
             .left_join(messages::table.on(rooms::latest_message_id.eq(messages::id.nullable())))
             .left_join(
                 users_for_message
-                    .on(messages::created_by_id.eq(users_for_message.field(users::id).nullable())),
+                    .on(messages::created_by_id.eq(users_for_message.field(users::id))),
             )
             .select((
                 Room::as_select(),
@@ -159,13 +159,13 @@ impl RoomRepository for RoomRepositoryImpl {
             .collect::<Vec<_>>();
 
         let participants_with_users = Participant::belonging_to(&rooms_only)
-            .inner_join(users::table.on(users::id.nullable().eq(participants::user_id)))
+            .inner_join(users::table.on(users::id.eq(participants::user_id)))
             .select((Participant::as_select(), Option::<User>::as_select()))
             .load::<(Participant, Option<User>)>(&mut conn)
             .map_err(|_| RoomError::UnexpectedError("Failed to get participants".into()))?;
 
         let members_with_users = Member::belonging_to(&rooms_only)
-            .inner_join(users::table.on(users::id.nullable().eq(members::user_id)))
+            .inner_join(users::table.on(users::id.eq(members::user_id)))
             .select((Member::as_select(), Option::<User>::as_select()))
             .load::<(Member, Option<User>)>(&mut conn)
             .map_err(|_| RoomError::UnexpectedError("Failed to get members".into()))?;
@@ -239,13 +239,13 @@ impl RoomRepository for RoomRepositoryImpl {
             .map_err(|_| RoomError::RoomNotFound(room_id))?;
 
         let participants_with_users = Participant::belonging_to(&rooms)
-            .inner_join(users::table.on(users::id.nullable().eq(participants::user_id)))
+            .inner_join(users::table.on(users::id.eq(participants::user_id)))
             .select((Participant::as_select(), Option::<User>::as_select()))
             .load::<(Participant, Option<User>)>(&mut conn)
             .map_err(|_| RoomError::UnexpectedError("Failed to get participants".into()))?;
 
         let members_with_users = Member::belonging_to(&rooms)
-            .inner_join(users::table.on(users::id.nullable().eq(members::user_id)))
+            .inner_join(users::table.on(users::id.eq(members::user_id)))
             .select((Member::as_select(), Option::<User>::as_select()))
             .load::<(Member, Option<User>)>(&mut conn)
             .map_err(|_| RoomError::UnexpectedError("Failed to get members".into()))?;
@@ -293,13 +293,13 @@ impl RoomRepository for RoomRepositoryImpl {
             .map_err(|_| RoomError::RoomCodeNotFound(room_code.to_string()))?;
 
         let participants_with_users = Participant::belonging_to(&rooms)
-            .inner_join(users::table.on(users::id.nullable().eq(participants::user_id)))
+            .inner_join(users::table.on(users::id.eq(participants::user_id)))
             .select((Participant::as_select(), Option::<User>::as_select()))
             .load::<(Participant, Option<User>)>(&mut conn)
             .map_err(|_| RoomError::UnexpectedError("Failed to get participants".into()))?;
 
         let members_with_users = Member::belonging_to(&rooms)
-            .inner_join(users::table.on(users::id.nullable().eq(members::user_id)))
+            .inner_join(users::table.on(users::id.eq(members::user_id)))
             .select((Member::as_select(), Option::<User>::as_select()))
             .load::<(Member, Option<User>)>(&mut conn)
             .map_err(|_| RoomError::UnexpectedError("Failed to get members".into()))?;
@@ -373,7 +373,7 @@ impl RoomRepository for RoomRepositoryImpl {
             let new_member = NewMember {
                 room_id: &new_room.id,
                 user_id: Some(user.id),
-                role: MembersRoleEnum::Host as i32,
+                role: MembersRoleEnum::Owner.into(),
                 created_at,
             };
 
