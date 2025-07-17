@@ -152,7 +152,7 @@ impl RoomService for RoomServiceImpl {
 
         // Check whether user_id is host or not
         let is_host = room.members.iter().any(|member| {
-            member.member.user_id == user_id && member.member.role == MembersRoleEnum::Host as i16
+            member.member.user_id == user_id && member.member.role == MembersRoleEnum::Owner as i16
         });
 
         if !is_host {
@@ -225,7 +225,7 @@ impl RoomService for RoomServiceImpl {
 
         let member = room.members[index_of_member].member.clone();
 
-        if member.role == MembersRoleEnum::Host as i16 {
+        if member.role == MembersRoleEnum::Owner as i16 {
             return Err(RoomError::UnexpectedError("Host not allowed to leave the room. You can archive chats if the room no longer active.".into()));
         }
 
@@ -307,7 +307,7 @@ impl RoomService for RoomServiceImpl {
         }
 
         let is_host = room.members.iter().any(|member| {
-            member.member.user_id == host_id && member.member.role == MembersRoleEnum::Host as i16
+            member.member.user_id == host_id && member.member.role == MembersRoleEnum::Owner as i16
         });
 
         if !is_host {
@@ -351,7 +351,7 @@ impl RoomService for RoomServiceImpl {
             .ok_or_else(|| RoomError::UnexpectedError("Member not found".into()))?;
 
         let is_host = room.members.iter().any(|member| {
-            member.member.user_id == host_id && member.member.role == MembersRoleEnum::Host as i16
+            member.member.user_id == host_id && member.member.role == MembersRoleEnum::Owner as i16
         });
 
         if !is_host {
@@ -379,7 +379,7 @@ impl RoomService for RoomServiceImpl {
 
         let member = room.members[index_of_member].member.clone();
 
-        if member.role != MembersRoleEnum::Host as i16 {
+        if member.role != MembersRoleEnum::Owner as i16 {
             return Err(RoomError::YouDontHavePermissions);
         }
 

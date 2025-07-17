@@ -23,11 +23,11 @@ impl_from_i16_with_default!(RoomType {
 #[repr(i16)]
 #[derive(Debug, Clone, Copy)]
 pub enum MembersRoleEnum {
-    Host = 0,
+    Owner = 0,
     Attendee = 1,
 }
 impl_from_i16_with_default!(MembersRoleEnum {
-    Host = 0,
+    Owner = 0,
     Attendee = 1,
 });
 

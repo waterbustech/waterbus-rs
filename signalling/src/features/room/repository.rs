@@ -373,7 +373,7 @@ impl RoomRepository for RoomRepositoryImpl {
             let new_member = NewMember {
                 room_id: &new_room.id,
                 user_id: Some(user.id),
-                role: MembersRoleEnum::Host.into(),
+                role: MembersRoleEnum::Owner.into(),
                 created_at,
             };
 
