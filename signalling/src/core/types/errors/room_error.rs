@@ -6,7 +6,7 @@ use salvo::prelude::*;
 use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Debug, Error, ToSchema, Serialize)]
+#[derive(Debug, Error, ToSchema, Serialize, Clone)]
 pub enum RoomError {
     #[error("Room with ID {0} not found")]
     RoomNotFound(i32),

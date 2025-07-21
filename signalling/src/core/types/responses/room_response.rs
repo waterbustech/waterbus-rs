@@ -7,7 +7,7 @@ use crate::core::entities::models::{Member, Participant, Room, User};
 
 use super::message_response::MessageResponse;
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomResponse {
     #[serde(flatten)]
@@ -17,7 +17,7 @@ pub struct RoomResponse {
     pub latest_message: Option<MessageResponse>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MemberResponse {
     #[serde(flatten)]

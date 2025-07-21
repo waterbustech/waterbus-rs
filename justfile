@@ -10,3 +10,5 @@ build-sfu:
 	podman build --platform=linux/amd64 -f docker/dockerfile.sfu -t docker.io/lambiengcode/waterbus-sfu .
 clippy:
 	cargo clippy --all-targets --all-features -- -D warnings
+nextest:
+	cargo nextest run

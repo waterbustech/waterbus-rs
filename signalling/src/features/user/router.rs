@@ -3,13 +3,17 @@ use salvo::{
     prelude::*,
 };
 
-use crate::core::{
-    dtos::user::update_user_dto::UpdateUserDto,
-    entities::models::User,
-    types::{
-        errors::user_error::UserError, responses::check_username_response::CheckUsernameResponse,
+use crate::{
+    core::{
+        dtos::user::update_user_dto::UpdateUserDto,
+        entities::models::User,
+        types::{
+            errors::user_error::UserError,
+            responses::check_username_response::CheckUsernameResponse,
+        },
+        utils::jwt_utils::JwtUtils,
     },
-    utils::jwt_utils::JwtUtils,
+    features::user::repository::UserRepositoryImpl,
 };
 
 use super::service::{UserService, UserServiceImpl};
@@ -29,7 +33,9 @@ pub fn get_user_router(jwt_utils: JwtUtils) -> Router {
 /// Fetch user info
 #[endpoint(tags("user"), status_codes(200, 400, 404, 500))]
 async fn get_user_by_token(_res: &mut Response, depot: &mut Depot) -> Result<User, UserError> {
-    let user_service = depot.obtain::<UserServiceImpl>().unwrap();
+    let user_service = depot
+        .obtain::<UserServiceImpl<UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let user = user_service
@@ -47,7 +53,9 @@ async fn update_user(
     depot: &mut Depot,
 ) -> Result<User, UserError> {
     let update_user_dto = data.0;
-    let user_service = depot.obtain::<UserServiceImpl>().unwrap();
+    let user_service = depot
+        .obtain::<UserServiceImpl<UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let user = user_service
@@ -64,7 +72,9 @@ async fn check_username_exists(
     user_name: PathParam<String>,
     depot: &mut Depot,
 ) -> CheckUsernameResponse {
-    let user_service = depot.obtain::<UserServiceImpl>().unwrap();
+    let user_service = depot
+        .obtain::<UserServiceImpl<UserRepositoryImpl>>()
+        .unwrap();
 
     let user_name = user_name.into_inner();
 
@@ -82,7 +92,9 @@ async fn update_username(
     user_name: PathParam<String>,
     depot: &mut Depot,
 ) -> Result<User, UserError> {
-    let user_service = depot.obtain::<UserServiceImpl>().unwrap();
+    let user_service = depot
+        .obtain::<UserServiceImpl<UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let user = user_service

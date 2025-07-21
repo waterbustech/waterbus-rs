@@ -14,6 +14,7 @@ use crate::core::types::responses::failed_response::FailedResponse;
 use crate::core::types::responses::presigned_url_response::PresignedResponse;
 use crate::core::utils::aws_utils::get_storage_object_client;
 use crate::core::utils::jwt_utils::JwtUtils;
+use crate::features::auth::repository::AuthRepositoryImpl;
 
 use super::service::{AuthService, AuthServiceImpl};
 
@@ -79,7 +80,9 @@ async fn create_token(
     data: JsonBody<CreateTokenDto>,
     depot: &mut Depot,
 ) -> Result<AuthResponse, AuthError> {
-    let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
+    let auth_service = depot
+        .obtain::<AuthServiceImpl<AuthRepositoryImpl>>()
+        .unwrap();
     let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
 
     let auth_response = auth_service
@@ -93,7 +96,9 @@ async fn create_token(
 #[endpoint(tags("auth"), status_codes(200, 400, 404, 500))]
 async fn refresh_token(_res: &mut Response, depot: &mut Depot) -> Result<AuthResponse, AuthError> {
     let user_id = depot.get::<String>("user_id").unwrap();
-    let auth_service = depot.obtain::<AuthServiceImpl>().unwrap();
+    let auth_service = depot
+        .obtain::<AuthServiceImpl<AuthRepositoryImpl>>()
+        .unwrap();
     let jwt_utils = depot.obtain::<JwtUtils>().unwrap();
 
     let auth_response = auth_service

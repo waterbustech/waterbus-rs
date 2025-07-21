@@ -47,7 +47,13 @@ use crate::{
         },
         utils::jwt_utils::JwtUtils,
     },
-    features::room::service::{RoomService, RoomServiceImpl},
+    features::{
+        room::{
+            repository::RoomRepositoryImpl,
+            service::{RoomService, RoomServiceImpl},
+        },
+        user::repository::UserRepositoryImpl,
+    },
 };
 
 #[derive(Clone)]
@@ -84,7 +90,7 @@ impl RemoteUserCnt {
 pub async fn get_socket_router(
     env: &AppEnv,
     jwt_utils: JwtUtils,
-    room_service: RoomServiceImpl,
+    room_service: RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>,
     message_receiver: Receiver<AppEvent>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let client = redis::cluster::ClusterClient::new(env.clone().redis_uris).unwrap();
@@ -143,7 +149,7 @@ pub async fn get_socket_router(
 pub async fn handle_dispatcher_callback(
     io: SocketIo<CustomRedisAdapter<Emitter, ClusterDriver>>,
     receiver: Receiver<DispatcherCallback>,
-    room_service: RoomServiceImpl,
+    room_service: RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>,
 ) {
     // Non-blocking check for any new messages on the channel
     while let Ok(msg) = receiver.recv().await {
@@ -415,7 +421,7 @@ async fn on_disconnect<A: Adapter>(
     socket: SocketRef<A>,
     user_cnt: State<RemoteUserCnt>,
     dispatcher_manager: State<DispatcherManager>,
-    room_service: State<RoomServiceImpl>,
+    room_service: State<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>,
 ) {
     let _ = _handle_leave_room(socket, dispatcher_manager.0, room_service.0).await;
 
@@ -845,7 +851,7 @@ async fn handle_set_subscribe_subtitle<A: Adapter>(
 async fn handle_leave_room<A: Adapter>(
     socket: SocketRef<A>,
     dispatcher_manager: State<DispatcherManager>,
-    room_service: State<RoomServiceImpl>,
+    room_service: State<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>,
 ) {
     let _ = _handle_leave_room(socket, dispatcher_manager.0, room_service.0).await;
 }
@@ -853,7 +859,7 @@ async fn handle_leave_room<A: Adapter>(
 async fn _handle_leave_room<A: Adapter>(
     socket: SocketRef<A>,
     dispatcher_manager: DispatcherManager,
-    room_service: RoomServiceImpl,
+    room_service: RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>,
 ) -> Result<(), anyhow::Error> {
     let client_id = socket.id.to_string();
 

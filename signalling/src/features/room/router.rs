@@ -3,20 +3,23 @@ use salvo::{
     prelude::*,
 };
 
-use crate::core::{
-    dtos::{
-        common::pagination_dto::PaginationDto,
-        room::{
-            add_member_dto::AddMemberDto, create_room_dto::CreateRoomDto,
-            join_room_dto::JoinRoomDto, update_room_dto::UpdateRoomDto,
+use crate::{
+    core::{
+        dtos::{
+            common::pagination_dto::PaginationDto,
+            room::{
+                add_member_dto::AddMemberDto, create_room_dto::CreateRoomDto,
+                join_room_dto::JoinRoomDto, update_room_dto::UpdateRoomDto,
+            },
         },
+        entities::models::RoomStatusEnum,
+        types::{
+            errors::room_error::RoomError,
+            responses::{list_room_response::ListRoomResponse, room_response::RoomResponse},
+        },
+        utils::jwt_utils::JwtUtils,
     },
-    entities::models::RoomStatusEnum,
-    types::{
-        errors::room_error::RoomError,
-        responses::{list_room_response::ListRoomResponse, room_response::RoomResponse},
-    },
-    utils::jwt_utils::JwtUtils,
+    features::{room::repository::RoomRepositoryImpl, user::repository::UserRepositoryImpl},
 };
 
 use super::service::{RoomService, RoomServiceImpl};
@@ -53,7 +56,9 @@ async fn get_room_by_code(
     code: PathParam<String>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
 
     let room_code = &code.into_inner();
 
@@ -69,7 +74,9 @@ async fn leave_room(
     room_id: PathParam<i32>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let room_id = room_id.into_inner();
 
@@ -87,7 +94,9 @@ async fn get_rooms_by_user(
     pagination_dto: PaginationDto,
     depot: &mut Depot,
 ) -> Result<ListRoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let rooms = room_service
@@ -108,7 +117,9 @@ async fn get_inactive_rooms(
     pagination_dto: PaginationDto,
     depot: &mut Depot,
 ) -> Result<ListRoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let rooms = room_service
@@ -129,7 +140,9 @@ async fn create_room(
     data: JsonBody<CreateRoomDto>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let create_room_dto = data.0;
 
@@ -148,7 +161,9 @@ async fn update_room(
     data: JsonBody<UpdateRoomDto>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let update_room_dto = data.0;
@@ -169,7 +184,9 @@ async fn add_member(
     data: JsonBody<AddMemberDto>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let host_id = depot.get::<String>("user_id").unwrap();
 
     let user_id = data.into_inner().user_id;
@@ -190,7 +207,9 @@ async fn delete_member(
     data: JsonBody<AddMemberDto>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let host_id = depot.get::<String>("user_id").unwrap();
 
     let user_id = data.into_inner().user_id;
@@ -211,7 +230,9 @@ async fn join_room(
     data: JsonBody<JoinRoomDto>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let room_id = room_id.into_inner();
@@ -232,7 +253,9 @@ async fn deactivate_room(
     room_id: PathParam<i32>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, RoomError> {
-    let room_service = depot.obtain::<RoomServiceImpl>().unwrap();
+    let room_service = depot
+        .obtain::<RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let room_id = room_id.into_inner();

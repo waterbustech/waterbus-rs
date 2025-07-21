@@ -7,7 +7,7 @@ use thiserror::Error;
 use super::general::GeneralError;
 use super::{BadRequestError, InternalError, NotFoundError};
 
-#[derive(Debug, Error, Serialize, ToSchema)]
+#[derive(Debug, Error, Serialize, ToSchema, Clone)]
 pub enum UserError {
     #[error("User with ID {0} not found")]
     UserNotFound(i32),
