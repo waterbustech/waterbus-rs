@@ -464,7 +464,7 @@ mod tests {
         }
         async fn get_room_by_id(&self, _room_id: i32) -> Result<RoomResponse, RoomError> {
             if let Some(ref err) = self.fail {
-                return Err(RoomError::UnexpectedError(format!("{:?}", err)));
+                return Err(RoomError::UnexpectedError(format!("{err:?}")));
             }
             self.room.clone().ok_or(RoomError::RoomNotFound(_room_id))
         }
@@ -484,7 +484,7 @@ mod tests {
         }
         async fn update_room(&self, _room: Room) -> Result<RoomResponse, RoomError> {
             if let Some(ref err) = self.fail {
-                return Err(RoomError::UnexpectedError(format!("{:?}", err)));
+                return Err(RoomError::UnexpectedError(format!("{err:?}")));
             }
             self.updated_room
                 .clone()
@@ -498,7 +498,7 @@ mod tests {
         }
         async fn update_member(&self, _member: Member) -> Result<MemberResponse, RoomError> {
             if let Some(ref err) = self.fail {
-                return Err(RoomError::UnexpectedError(format!("{:?}", err)));
+                return Err(RoomError::UnexpectedError(format!("{err:?}")));
             }
             self.updated_member
                 .clone()
@@ -543,7 +543,7 @@ mod tests {
     impl UserRepository for MockUserRepository {
         async fn get_user_by_id(&self, _user_id: i32) -> Result<User, UserError> {
             if let Some(ref err) = self.fail {
-                return Err(UserError::UnexpectedError(format!("{:?}", err)));
+                return Err(UserError::UnexpectedError(format!("{err:?}")));
             }
             self.user.clone().ok_or(UserError::UserNotFound(_user_id))
         }
