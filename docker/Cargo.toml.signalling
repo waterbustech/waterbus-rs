@@ -41,7 +41,6 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 diesel = { version = "2.2.10", features = ["postgres", "r2d2", "chrono"] }
-diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 dotenvy = "0.15.7"
 time = "0.3.41"
 jsonwebtoken = "9.3.1"
