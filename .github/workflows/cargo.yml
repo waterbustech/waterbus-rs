@@ -71,3 +71,20 @@ jobs:
         with:
           command: clippy
           args: --all-targets --all-features -- -D warnings
+
+      - name: 📦 Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: 🧪 Run tests with nextest
+        run: cargo nextest run --all-features
+
+      - name: 📦 Install cargo-udeps
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-udeps
+
+      - name: 🔍 Check for unused dependencies
+        run: cargo udeps

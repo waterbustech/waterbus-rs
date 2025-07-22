@@ -456,7 +456,9 @@ mod tests {
     use super::*;
     use crate::core::dtos::room::create_room_dto::CreateRoomDto;
     use crate::core::dtos::room::update_room_dto::UpdateRoomDto;
-    use crate::core::entities::models::{Member, Message, Participant, Room, User};
+    use crate::core::entities::models::{
+        Member, Message, Participant, Room, StreamingProtocol, User,
+    };
     use crate::core::types::responses::message_response::MessageResponse;
     use crate::core::types::responses::room_response::{
         MemberResponse, ParticipantResponse, RoomResponse,
@@ -565,6 +567,9 @@ mod tests {
         CreateRoomDto {
             title: "Test Room".to_string(),
             password: None,
+            room_type: RoomType::Conferencing,
+            streaming_protocol: StreamingProtocol::SFU,
+            capacity: None,
         }
     }
 
@@ -573,6 +578,9 @@ mod tests {
             title: Some("Updated Room".to_string()),
             password: Some("newpass".to_string()),
             avatar: Some("avatar.png".to_string()),
+            room_type: None,
+            streaming_protocol: None,
+            capacity: None,
         }
     }
 
