@@ -55,6 +55,17 @@ impl Publisher {
             .await;
         publisher_mut.start_data_channel_handler().await;
 
+        // Set up keyframe request callback
+        {
+            let publisher_weak = Arc::downgrade(&publisher);
+            let mut media = publisher.media.write();
+            media.keyframe_request_callback = Some(Arc::new(move |ssrc: u32| {
+                if let Some(publisher) = publisher_weak.upgrade() {
+                    publisher.send_rtcp_pli_once(ssrc);
+                }
+            }));
+        }
+
         publisher
     }
 
@@ -65,7 +76,7 @@ impl Publisher {
         tokio::spawn(async move {
             let mut result = Result::<usize, anyhow::Error>::Ok(0);
             while result.is_ok() {
-                let timeout = tokio::time::sleep(Duration::from_secs(1));
+                let timeout = tokio::time::sleep(Duration::from_secs(3));
                 tokio::pin!(timeout);
 
                 tokio::select! {
@@ -84,6 +95,21 @@ impl Publisher {
                         }
                     }
                 };
+            }
+        });
+    }
+
+    pub fn send_rtcp_pli_once(&self, media_ssrc: u32) {
+        let pc2 = Arc::downgrade(&self.peer_connection);
+
+        tokio::spawn(async move {
+            if let Some(pc) = pc2.upgrade() {
+                let _ = pc
+                    .write_rtcp(&[Box::new(PictureLossIndication {
+                        sender_ssrc: 0,
+                        media_ssrc,
+                    })])
+                    .await;
             }
         });
     }

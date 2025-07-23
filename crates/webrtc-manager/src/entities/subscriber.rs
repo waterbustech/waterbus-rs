@@ -334,9 +334,9 @@ impl Subscriber {
         let peer_connection = self.peer_connection.clone();
 
         let forward_track = {
-            remote_track
-                .read()
-                .new_forward_track(&self.user_id.clone())?
+            let track_guard = remote_track.read();
+            let ssrc = track_guard.ssrc;
+            track_guard.new_forward_track(&self.user_id, ssrc)?
         };
 
         let local_track = { forward_track.local_track.clone() };

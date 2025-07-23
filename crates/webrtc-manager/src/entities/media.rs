@@ -28,6 +28,7 @@ pub struct Media {
     sdp: Option<String>,
     pub track_subscribed_callback: Option<TrackSubscribedCallback>,
     pub track_event_sender: Option<mpsc::UnboundedSender<TrackSubscribedMessage>>,
+    pub keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
 }
 
 #[derive(Debug)]
@@ -65,6 +66,7 @@ impl Media {
             sdp: None,
             track_subscribed_callback: None,
             track_event_sender: None,
+            keyframe_request_callback: None,
             state: Arc::new(RwLock::new(MediaState {
                 video_enabled: is_video_enabled,
                 audio_enabled: is_audio_enabled,
@@ -163,6 +165,7 @@ impl Media {
             self.participant_id.clone(),
             self.hls_writer.clone(),
             self.moq_writer.clone(),
+            self.keyframe_request_callback.clone(),
         )));
 
         if rtp_track.kind() == RTPCodecType::Video {
