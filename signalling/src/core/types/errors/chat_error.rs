@@ -8,7 +8,7 @@ use super::general::GeneralError;
 
 use super::{BadRequestError, InternalError, NotFoundError};
 
-#[derive(Debug, Error, ToSchema, Serialize)]
+#[derive(Debug, Error, ToSchema, Serialize, Clone)]
 pub enum ChatError {
     #[error("Message with ID {0} not found")]
     MessageNotFound(i32),

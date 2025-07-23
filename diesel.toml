@@ -6,4 +6,4 @@ file = "signalling/src/core/database/schema.rs"
 custom_type_derives = ["diesel::query_builder::QueryId"]
 
 [migrations_directory]
-dir = "/Users/lambiengcode/Documents/waterbus/waterbus-rs/migrations"
+dir = "./migrations"

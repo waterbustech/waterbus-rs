@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{core::database::schema::*, impl_from_i16_with_default};
 
 #[repr(i16)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 pub enum RoomType {
     Conferencing = 0,
     LiveStreaming = 1,
@@ -18,6 +18,19 @@ pub enum RoomType {
 impl_from_i16_with_default!(RoomType {
     Conferencing = 0,
     LiveStreaming = 1,
+});
+
+#[repr(i16)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+pub enum StreamingProtocol {
+    SFU = 0,
+    HLS = 1,
+    MOQ = 2,
+}
+impl_from_i16_with_default!(StreamingProtocol {
+    SFU = 0,
+    HLS = 1,
+    MOQ = 2,
 });
 
 #[repr(i16)]

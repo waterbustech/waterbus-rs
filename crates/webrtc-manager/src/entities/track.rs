@@ -24,7 +24,7 @@ pub enum CodecType {
     Other,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Track {
     pub id: String,
     pub room_id: String,
@@ -37,8 +37,10 @@ pub struct Track {
     pub kind: RTPCodecType,
     pub remote_tracks: Vec<Arc<TrackRemote>>,
     pub forward_tracks: Arc<DashMap<String, Arc<ForwardTrack>>>,
+    pub ssrc: u32,
     acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
     rtp_multicast: MulticastSender,
+    keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
 }
 
 impl Track {
@@ -48,6 +50,7 @@ impl Track {
         participant_id: String,
         hls_writer: Option<Arc<HlsWriter>>,
         moq_writer: Option<Arc<MoQWriter>>,
+        keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
     ) -> Self {
         let kind = track.kind();
 
@@ -78,7 +81,9 @@ impl Track {
             remote_tracks: vec![track.clone()],
             forward_tracks: Arc::new(DashMap::new()),
             acceptable_map: Arc::new(DashMap::new()),
+            ssrc: track.ssrc(),
             rtp_multicast,
+            keyframe_request_callback: keyframe_request_callback.clone(),
         };
 
         handler.rebuild_acceptable_map();
@@ -103,24 +108,22 @@ impl Track {
         self.forward_tracks.clear();
     }
 
-    pub fn new_forward_track(&self, id: &str) -> Result<Arc<ForwardTrack>, WebRTCError> {
+    pub fn new_forward_track(&self, id: &str, ssrc: u32) -> Result<Arc<ForwardTrack>, WebRTCError> {
         if self.forward_tracks.contains_key(id) {
             return Err(WebRTCError::FailedToAddTrack);
         }
-
         let receiver = self.rtp_multicast.add_receiver(id.to_string());
-
         let forward_track = ForwardTrack::new(
             self.capability.clone(),
             self.id.clone(),
             self.stream_id.clone(),
             receiver,
             id.to_string(),
+            ssrc,
+            self.keyframe_request_callback.clone(),
         );
-
         self.forward_tracks
             .insert(id.to_owned(), forward_track.clone());
-
         Ok(forward_track)
     }
 

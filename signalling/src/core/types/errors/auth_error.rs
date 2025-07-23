@@ -7,7 +7,7 @@ use thiserror::Error;
 use super::general::GeneralError;
 use super::{BadRequestError, InternalError, NotFoundError};
 
-#[derive(Debug, Error, ToSchema, Serialize)]
+#[derive(Debug, Error, ToSchema, Serialize, Clone)]
 pub enum AuthError {
     #[error("Invalid API Key")]
     InvalidAPIKey,

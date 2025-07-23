@@ -32,7 +32,7 @@ The server is written in **Rust**, using the native [WebRTC.rs](https://github.c
 
 - 🎥 **Simulcast with Bandwidth Awareness**
 
-    Uses simulcast to send multiple video layers per publisher. Waterbus leverages **REMB (Receiver Estimated Maximum Bitrate)** feedback to monitor subscriber bandwidth and forwards only the most suitable video quality for each participant.
+    Uses simulcast to send multiple video layers per publisher. Waterbus leverages **Transport-CC (Transport-wide Congestion Control)** feedback to monitor subscriber bandwidth and forwards only the most suitable video quality for each participant.
 
 - 📈 **Scalable by Design**
 
@@ -126,8 +126,8 @@ Simulcast allows a publisher to send **multiple versions** of the same video str
 Waterbus uses the following approach:
 
 1. **Client Encodes Multiple Layers** → Sender sends low, mid, and high-quality streams.
-2. **REMB Feedback from Receiver** → Each subscriber sends Receiver Estimated Maximum Bitrate (REMB) reports.
-3. **Adaptive Stream Forwarding** → The server uses REMB to dynamically forward the most suitable layer for each subscriber, ensuring the best quality without overloading their connection.
+2. **Transport-CC Feedback from Receiver** → Each subscriber sends Transport-wide Congestion Control (Transport-CC) reports.
+3. **Adaptive Stream Forwarding** → The server uses Transport-CC to dynamically forward the most suitable layer for each subscriber, ensuring the best quality without overloading their connection.
 
 This provides a **responsive, bandwidth-efficient experience**, especially in group calls with diverse devices and network conditions.
 

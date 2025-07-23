@@ -4,17 +4,23 @@ use salvo::{
     prelude::*,
 };
 
-use crate::core::{
-    dtos::{chat::send_message_dto::SendMessageDto, common::pagination_dto::PaginationDto},
-    types::{
-        app_channel::AppEvent,
-        errors::chat_error::ChatError,
-        responses::{
-            list_message_response::ListMessageResponse, message_response::MessageResponse,
-            room_response::RoomResponse,
+use crate::{
+    core::{
+        dtos::{chat::send_message_dto::SendMessageDto, common::pagination_dto::PaginationDto},
+        types::{
+            app_channel::AppEvent,
+            errors::chat_error::ChatError,
+            responses::{
+                list_message_response::ListMessageResponse, message_response::MessageResponse,
+                room_response::RoomResponse,
+            },
         },
+        utils::jwt_utils::JwtUtils,
     },
-    utils::jwt_utils::JwtUtils,
+    features::{
+        chat::repository::ChatRepositoryImpl, room::repository::RoomRepositoryImpl,
+        user::repository::UserRepositoryImpl,
+    },
 };
 
 use super::service::{ChatService, ChatServiceImpl};
@@ -43,7 +49,9 @@ async fn get_messages_by_room(
     pagination_dto: PaginationDto,
     depot: &mut Depot,
 ) -> Result<ListMessageResponse, ChatError> {
-    let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let chat_service = depot
+        .obtain::<ChatServiceImpl<ChatRepositoryImpl, RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
 
     let pagination_dto = pagination_dto.clone();
@@ -69,7 +77,9 @@ async fn create_message(
     data: JsonBody<SendMessageDto>,
     depot: &mut Depot,
 ) -> Result<MessageResponse, ChatError> {
-    let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let chat_service = depot
+        .obtain::<ChatServiceImpl<ChatRepositoryImpl, RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let app_channel_tx = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let data = data.0.data;
@@ -94,7 +104,9 @@ async fn update_message(
     data: JsonBody<SendMessageDto>,
     depot: &mut Depot,
 ) -> Result<MessageResponse, ChatError> {
-    let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let chat_service = depot
+        .obtain::<ChatServiceImpl<ChatRepositoryImpl, RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let app_channel_tx = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let data = data.0.data;
@@ -118,7 +130,9 @@ async fn delete_message(
     message_id: PathParam<i32>,
     depot: &mut Depot,
 ) -> Result<MessageResponse, ChatError> {
-    let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let chat_service = depot
+        .obtain::<ChatServiceImpl<ChatRepositoryImpl, RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let app_channel_tx = depot.obtain::<Sender<AppEvent>>().unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let message_id = message_id.into_inner();
@@ -141,7 +155,9 @@ async fn delete_conversation(
     room_id: PathParam<i32>,
     depot: &mut Depot,
 ) -> Result<RoomResponse, ChatError> {
-    let chat_service = depot.obtain::<ChatServiceImpl>().unwrap();
+    let chat_service = depot
+        .obtain::<ChatServiceImpl<ChatRepositoryImpl, RoomRepositoryImpl, UserRepositoryImpl>>()
+        .unwrap();
     let user_id = depot.get::<String>("user_id").unwrap();
     let room_id = room_id.into_inner();
 

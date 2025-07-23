@@ -21,12 +21,13 @@ use webrtc::{
 
 use crate::models::{quality::TrackQuality, rtp_foward_info::RtpForwardInfo};
 
-#[derive(Debug)]
 pub struct ForwardTrack {
     pub local_track: Arc<TrackLocalStaticRTP>,
     pub track_id: String,
     requested_quality: Arc<AtomicU8>,
     effective_quality: Arc<AtomicU8>,
+    ssrc: u32,
+    keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
 }
 
 impl ForwardTrack {
@@ -36,12 +37,16 @@ impl ForwardTrack {
         sid: String,
         receiver: Receiver<RtpForwardInfo>,
         forward_track_id: String,
+        ssrc: u32,
+        keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
     ) -> Arc<Self> {
         let this = Arc::new(Self {
             local_track: Arc::new(TrackLocalStaticRTP::new(codec, track_id.clone(), sid)),
             track_id: forward_track_id,
             requested_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
             effective_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
+            ssrc,
+            keyframe_request_callback,
         });
 
         Self::_receive_rtp(Arc::clone(&this), receiver);
@@ -55,6 +60,10 @@ impl ForwardTrack {
             debug!("[quality] change requested quality to: {:?}", quality);
             self.requested_quality
                 .store(quality.as_u8(), Ordering::SeqCst);
+            // Request keyframe on quality switch
+            if let Some(cb) = &self.keyframe_request_callback {
+                cb(self.ssrc);
+            }
         }
     }
 
