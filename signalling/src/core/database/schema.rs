@@ -59,6 +59,8 @@ diesel::table! {
         status -> Int2,
         #[sql_name = "type"]
         type_ -> Int2,
+        capacity -> Nullable<Int4>,
+        streaming_protocol -> Nullable<Int2>,
     }
 }
 
@@ -88,4 +90,10 @@ diesel::joinable!(messages -> users (created_by_id));
 diesel::joinable!(participants -> rooms (room_id));
 diesel::joinable!(participants -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(members, messages, participants, rooms, users,);
+diesel::allow_tables_to_appear_in_same_query!(
+    members,
+    messages,
+    participants,
+    rooms,
+    users,
+);

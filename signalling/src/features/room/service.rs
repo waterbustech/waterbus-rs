@@ -3,7 +3,6 @@ use crate::core::dtos::room::create_room_dto::CreateRoomDto;
 use crate::core::dtos::room::update_room_dto::UpdateRoomDto;
 use crate::core::entities::models::{
     MembersRoleEnum, NewMember, NewParticipant, NewRoom, ParticipantsStatusEnum, RoomStatusEnum,
-    RoomType,
 };
 use crate::core::types::errors::room_error::RoomError;
 use crate::core::types::responses::room_response::{ParticipantResponse, RoomResponse};
@@ -113,12 +112,12 @@ impl<R: RoomRepository + Send + Sync, U: UserRepository + Send + Sync> RoomServi
                 let password = data.password.clone();
                 async move {
                     match password {
-                        Some(pwd) => tokio::task::spawn_blocking(move || hash_password(&pwd))
+                        Some(pwd) => tokio::task::spawn_blocking(move || Some(hash_password(&pwd)))
                             .await
                             .map_err(|_| {
                                 RoomError::UnexpectedError("Failed to hash password".into())
                             }),
-                        None => Ok("".to_string()),
+                        None => Ok(None),
                     }
                 }
             },
@@ -129,13 +128,15 @@ impl<R: RoomRepository + Send + Sync, U: UserRepository + Send + Sync> RoomServi
 
         let new_room = NewRoom {
             title: &data.title,
-            password: &password_hashed,
+            password: password_hashed.as_deref(),
             code: &code,
             status: RoomStatusEnum::Active.into(),
             created_at: now,
             updated_at: now,
             latest_message_created_at: now,
-            type_: RoomType::Conferencing.into(),
+            type_: data.room_type as i16,
+            capacity: data.capacity,
+            streaming_protocol: Some(data.streaming_protocol as i16),
         };
 
         self.room_repository
@@ -175,6 +176,16 @@ impl<R: RoomRepository + Send + Sync, U: UserRepository + Send + Sync> RoomServi
 
         if let Some(avatar) = update_room_dto.avatar {
             room.avatar = Some(avatar);
+        }
+
+        if let Some(room_type) = update_room_dto.room_type {
+            room.type_ = room_type as i16;
+        }
+        if let Some(streaming_protocol) = update_room_dto.streaming_protocol {
+            room.streaming_protocol = Some(streaming_protocol as i16);
+        }
+        if let Some(capacity) = update_room_dto.capacity {
+            room.capacity = Some(capacity);
         }
 
         let updated_room = self.room_repository.update_room(room).await?;
@@ -257,6 +268,15 @@ impl<R: RoomRepository + Send + Sync, U: UserRepository + Send + Sync> RoomServi
             .members
             .iter()
             .any(|member| member.member.user_id == user_id);
+
+        // Enforce capacity
+        if !is_member {
+            if let Some(capacity) = room.room.capacity {
+                if room.members.len() as i32 >= capacity {
+                    return Err(RoomError::RoomIsFull);
+                }
+            }
+        }
 
         if !is_member {
             let is_password_correct = match room.room.password.as_ref() {
@@ -457,7 +477,7 @@ mod tests {
     use crate::core::dtos::room::create_room_dto::CreateRoomDto;
     use crate::core::dtos::room::update_room_dto::UpdateRoomDto;
     use crate::core::entities::models::{
-        Member, Message, Participant, Room, StreamingProtocol, User,
+        Member, Message, Participant, Room, RoomType, StreamingProtocol, User,
     };
     use crate::core::types::responses::message_response::MessageResponse;
     use crate::core::types::responses::room_response::{
@@ -546,6 +566,8 @@ mod tests {
                 deleted_at: None,
                 latest_message_id: Some(1),
                 type_: RoomType::Conferencing as i16,
+                capacity: Some(10),
+                streaming_protocol: Some(StreamingProtocol::SFU as i16),
             },
             members: vec![MemberResponse {
                 member: sample_member(1, owner_id, id, MembersRoleEnum::Owner as i16),
@@ -560,6 +582,7 @@ mod tests {
                 created_by: Some(sample_user(owner_id)),
                 room: None,
             }),
+            is_protected: None,
         }
     }
 
@@ -569,7 +592,7 @@ mod tests {
             password: None,
             room_type: RoomType::Conferencing,
             streaming_protocol: StreamingProtocol::SFU,
-            capacity: None,
+            capacity: Some(10),
         }
     }
 
@@ -578,9 +601,9 @@ mod tests {
             title: Some("Updated Room".to_string()),
             password: Some("newpass".to_string()),
             avatar: Some("avatar.png".to_string()),
-            room_type: None,
-            streaming_protocol: None,
-            capacity: None,
+            room_type: Some(RoomType::Conferencing),
+            streaming_protocol: Some(StreamingProtocol::SFU),
+            capacity: Some(10),
         }
     }
 
@@ -787,6 +810,12 @@ mod tests {
         assert!(result.is_ok());
         let room = result.unwrap();
         assert_eq!(room.room.title, "Test Room");
+        assert_eq!(room.room.type_, RoomType::Conferencing as i16);
+        assert_eq!(
+            room.room.streaming_protocol,
+            Some(StreamingProtocol::SFU as i16)
+        );
+        assert_eq!(room.room.capacity, Some(10));
     }
 
     #[tokio::test]
@@ -826,6 +855,12 @@ mod tests {
         assert!(result.is_ok());
         let updated = result.unwrap();
         assert_eq!(updated.room.title, "Updated Room");
+        assert_eq!(updated.room.type_, RoomType::Conferencing as i16);
+        assert_eq!(
+            updated.room.streaming_protocol,
+            Some(StreamingProtocol::SFU as i16)
+        );
+        assert_eq!(updated.room.capacity, Some(10));
     }
 
     #[tokio::test]
@@ -967,6 +1002,36 @@ mod tests {
         let service = RoomServiceImpl::new(room_repo, user_repo);
         let result = service.join_room(2, 1, None).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_join_room_full() {
+        let mut room = sample_room(1, 1);
+        // Set capacity to 3 (owner + 2 attendees)
+        room.room.capacity = Some(3);
+        room.members.push(MemberResponse {
+            member: sample_member(2, 2, 1, MembersRoleEnum::Attendee as i16),
+            user: Some(sample_user(2)),
+        });
+        room.members.push(MemberResponse {
+            member: sample_member(3, 3, 1, MembersRoleEnum::Attendee as i16),
+            user: Some(sample_user(3)),
+        });
+        // Now the room is full (3/3)
+        let rooms = Arc::new(Mutex::new(vec![room.clone()]));
+        let users = Arc::new(Mutex::new(vec![sample_user(4)]));
+        let room_repo = MockRoomRepository {
+            rooms: rooms.clone(),
+            fail: false,
+        };
+        let user_repo = MockUserRepository {
+            users: users.clone(),
+            fail: false,
+        };
+        let service = RoomServiceImpl::new(room_repo, user_repo);
+        let result = service.join_room(4, 1, None).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), RoomError::RoomIsFull);
     }
 
     #[tokio::test]

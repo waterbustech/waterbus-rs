@@ -170,5 +170,6 @@ async fn delete_conversation(
         members: vec![],
         participants: vec![],
         latest_message: None,
+        is_protected: None,
     })
 }

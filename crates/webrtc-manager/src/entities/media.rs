@@ -1,4 +1,4 @@
-use std::{fs, path::Path, sync::Arc};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 use dashmap::DashMap;
 use egress_manager::egress::{hls_writer::HlsWriter, moq_writer::MoQWriter};
@@ -9,9 +9,9 @@ use tracing::{debug, info};
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
 
 use crate::models::{
-    data_channel_msg::TrackSubscribedMessage,
-    params::{AddTrackResponse, TrackMutexWrapper},
-};
+        data_channel_msg::TrackSubscribedMessage,
+        params::{AddTrackResponse, TrackMutexWrapper}, streaming_protocol::StreamingProtocol,
+    };
 
 use super::track::Track;
 
@@ -22,13 +22,14 @@ pub struct Media {
     pub participant_id: String,
     pub tracks: Arc<DashMap<String, TrackMutexWrapper>>,
     pub state: Arc<RwLock<MediaState>>,
-    hls_writer: Option<Arc<HlsWriter>>,
-    moq_writer: Option<Arc<MoQWriter>>,
-    output_dir: String,
-    sdp: Option<String>,
+    pub moq_writer: Option<Arc<MoQWriter>>,
+    pub sdp: Option<String>,
+    pub hls_writers: Arc<RwLock<HashMap<String, Arc<HlsWriter>>>>,
+    pub hls_urls: Arc<RwLock<HashMap<String, String>>>,
     pub track_subscribed_callback: Option<TrackSubscribedCallback>,
     pub track_event_sender: Option<mpsc::UnboundedSender<TrackSubscribedMessage>>,
     pub keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
+    pub streaming_protocol: StreamingProtocol,
 }
 
 #[derive(Debug)]
@@ -49,24 +50,14 @@ impl Media {
         is_video_enabled: bool,
         is_audio_enabled: bool,
         is_e2ee_enabled: bool,
+        streaming_protocol: StreamingProtocol,
     ) -> Self {
-        let output_dir = format!("./hls/{publisher_id}");
-
-        if !Path::new(&output_dir).exists() {
-            fs::create_dir_all(&output_dir).unwrap();
-        }
-
         Self {
             media_id: format!("m_{}", nanoid!(12)),
             participant_id: publisher_id,
             tracks: Arc::new(DashMap::new()),
-            hls_writer: None,
-            moq_writer: None,
-            output_dir,
-            sdp: None,
-            track_subscribed_callback: None,
-            track_event_sender: None,
-            keyframe_request_callback: None,
+            hls_writers: Arc::new(RwLock::new(HashMap::new())),
+            hls_urls: Arc::new(RwLock::new(HashMap::new())),
             state: Arc::new(RwLock::new(MediaState {
                 video_enabled: is_video_enabled,
                 audio_enabled: is_audio_enabled,
@@ -77,13 +68,13 @@ impl Media {
                 codec: String::new(),
                 screen_track_id: None,
             })),
+            track_subscribed_callback: None,
+            track_event_sender: None,
+            keyframe_request_callback: None,
+            moq_writer: None,
+            sdp: None,
+            streaming_protocol,
         }
-    }
-
-    pub async fn initialize_hls_writer(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let hls_writer = HlsWriter::new(&self.output_dir, self.participant_id.clone()).await?;
-        self.hls_writer = Some(Arc::new(hls_writer));
-        Ok(())
     }
 
     pub fn initialize_moq_writer(&mut self) -> Result<(), anyhow::Error> {
@@ -104,24 +95,7 @@ impl Media {
         sdp
     }
 
-    // Alternative: Static method that creates and initializes everything
-    pub async fn new_with_hls(
-        publisher_id: String,
-        is_video_enabled: bool,
-        is_audio_enabled: bool,
-        is_e2ee_enabled: bool,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut media = Self::new(
-            publisher_id,
-            is_video_enabled,
-            is_audio_enabled,
-            is_e2ee_enabled,
-        );
-        media.initialize_hls_writer().await?;
-        Ok(media)
-    }
-
-    pub fn add_track(&self, rtp_track: Arc<TrackRemote>, room_id: String) -> AddTrackResponse {
+    pub fn add_track(&mut self, rtp_track: Arc<TrackRemote>, room_id: String) -> AddTrackResponse {
         if let Some(existing_track_arc) = self.tracks.get(&rtp_track.id()) {
             let mut track_guard = existing_track_arc.write();
             track_guard.add_track(rtp_track.clone());
@@ -150,8 +124,8 @@ impl Media {
                 _ => "h264",
             };
 
-            if let Some(hls_writer) = &self.hls_writer {
-                hls_writer.set_video_codec(codec);
+            if self.streaming_protocol == StreamingProtocol::HLS {
+                let _ = self.add_track_to_hls_writer(rtp_track.clone());
             }
 
             if let Some(moq_writer) = &self.moq_writer {
@@ -163,7 +137,7 @@ impl Media {
             rtp_track.clone(),
             room_id,
             self.participant_id.clone(),
-            self.hls_writer.clone(),
+            None,
             self.moq_writer.clone(),
             self.keyframe_request_callback.clone(),
         )));
@@ -178,6 +152,36 @@ impl Media {
         self._log_track_added(rtp_track);
 
         AddTrackResponse::AddTrackSuccess(new_track)
+    }
+
+    pub fn add_track_to_hls_writer(
+        &mut self,
+        rtp_track: Arc<TrackRemote>,
+    ) -> Result<(), anyhow::Error> {
+        if self.streaming_protocol == StreamingProtocol::HLS {
+            let hls_writer = self._initialize_hls_writer(&rtp_track.id());
+
+            if let Ok(hls_writer) = hls_writer {
+                hls_writer.set_video_codec(&rtp_track.codec().capability.mime_type);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn _initialize_hls_writer(&mut self, track_id: &str) -> Result<Arc<HlsWriter>, anyhow::Error> {
+        let output_dir = format!("./hls/{}/{}", self.participant_id, track_id);
+
+        if !Path::new(&output_dir).exists() {
+            fs::create_dir_all(&output_dir).unwrap();
+        }
+
+        let hls_writer = HlsWriter::new(&output_dir, self.participant_id.clone())?;
+        let hls_writer_arc = Arc::new(hls_writer);
+        self.hls_writers
+            .write()
+            .insert(self.participant_id.clone(), hls_writer_arc.clone());
+        Ok(hls_writer_arc)
     }
 
     pub fn set_screen_sharing(&self, is_enabled: bool, screen_track_id: Option<String>) {
@@ -253,9 +257,15 @@ impl Media {
     pub fn stop(&self) {
         self.remove_all_tracks();
 
-        if let Some(writer) = &self.hls_writer {
-            writer.stop();
-        }
+        let hls_writers = self.hls_writers.clone();
+        tokio::spawn(async move {
+            let mut hls_writers = hls_writers.write();
+            for writer in hls_writers.values() {
+                writer.stop();
+            }
+            hls_writers.clear();
+        });
+
         if let Some(writer) = &self.moq_writer {
             writer.stop();
         }
@@ -290,5 +300,9 @@ impl Media {
             rtp_track.stream_id(),
             rtp_track.ssrc(),
         );
+    }
+
+    pub fn get_hls_urls(&self) -> Vec<String> {
+        self.hls_urls.read().values().cloned().collect()
     }
 }

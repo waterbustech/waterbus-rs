@@ -34,6 +34,7 @@ rustls = { workspace = true, features = ["ring"] }
 nanoid = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }
+serde_repr = { workspace = true }
 bcrypt = { workspace = true }
 async-channel = { workspace = true }
 rust-embed = { workspace = true }

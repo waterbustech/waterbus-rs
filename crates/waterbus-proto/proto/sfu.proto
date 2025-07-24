@@ -15,6 +15,7 @@ message JoinRoomRequest {
     bool isE2eeEnabled = 7;
     int32 totalTracks = 8;
     int32 connectionType = 9;
+    int32 streamingProtocol = 10;
 }
 
 message SubscribeRequest {
@@ -22,6 +23,13 @@ message SubscribeRequest {
     string targetId = 2;
     string participantId = 3;
     string roomId = 4;
+}
+
+message SubscribeHlsLiveStreamRequest {
+    string clientId = 1;
+    string targetId = 2;
+    string roomId = 3;
+    string participantId = 4;
 }
 
 message SetSubscriberSdpRequest {
@@ -92,6 +100,10 @@ message SubscribeResponse {
     optional string screenTrackId = 9;
 }
 
+message SubscribeHlsLiveStreamResponse {
+    repeated string hlsUrls = 1;
+}
+
 message PublisherRenegotiationResponse {
     string sdp = 1;
 }
@@ -112,6 +124,7 @@ message StatusResponse {
 service SfuService {
     rpc joinRoom(JoinRoomRequest) returns (JoinRoomResponse) {}
     rpc subscribe(SubscribeRequest) returns (SubscribeResponse) {}
+    rpc subscribeHlsLiveStream(SubscribeHlsLiveStreamRequest) returns (SubscribeHlsLiveStreamResponse) {}
     rpc setSubscriberSdp(SetSubscriberSdpRequest) returns (StatusResponse) {}
     rpc publisherRenegotiation(PublisherRenegotiationRequest) returns (PublisherRenegotiationResponse) {}
     rpc addPublisherCandidate(AddPublisherCandidateRequest) returns (StatusResponse) {}

@@ -27,7 +27,7 @@ pub struct HlsWriter {
 }
 
 impl HlsWriter {
-    pub async fn new(dir: &str, prefix_path: String) -> Result<Self, anyhow::Error> {
+    pub fn new(dir: &str, prefix_path: String) -> Result<Self, anyhow::Error> {
         init()?;
 
         let path = PathBuf::from(dir);
@@ -38,7 +38,7 @@ impl HlsWriter {
 
         let (r2_storage, master_state) = if let Some(config) = r2_config {
             // Use new_with_worker instead of new
-            let (r2_storage, upload_receiver) = R2Storage::new_with_worker(config.clone()).await?;
+            let (r2_storage, upload_receiver) = R2Storage::new_with_worker(config.clone())?;
             let r2_storage = Arc::new(r2_storage);
 
             // Start the upload worker

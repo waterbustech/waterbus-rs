@@ -6,27 +6,40 @@ use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use salvo::oapi::ToSchema;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::{core::database::schema::*, impl_from_i16_with_default};
 
+fn default_room_type() -> i16 {
+    0
+}
+
+fn default_streaming_protocol() -> i16 {
+    0
+}
+
 #[repr(i16)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, ToSchema)]
+#[salvo(schema(default = default_room_type, example = 0))]
 pub enum RoomType {
     Conferencing = 0,
     LiveStreaming = 1,
 }
+
 impl_from_i16_with_default!(RoomType {
     Conferencing = 0,
     LiveStreaming = 1,
 });
 
 #[repr(i16)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, ToSchema)]
+#[salvo(schema(default = default_streaming_protocol, example = 0))]
 pub enum StreamingProtocol {
     SFU = 0,
     HLS = 1,
     MOQ = 2,
 }
+
 impl_from_i16_with_default!(StreamingProtocol {
     SFU = 0,
     HLS = 1,
@@ -141,6 +154,8 @@ pub struct Room {
     pub deleted_at: Option<NaiveDateTime>,
     pub latest_message_id: Option<i32>,
     pub type_: i16,
+    pub capacity: Option<i32>,
+    pub streaming_protocol: Option<i16>,
 }
 
 #[derive(
@@ -160,6 +175,7 @@ pub struct Room {
 #[diesel(belongs_to(User))]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
+#[salvo(schema(example = json!({"id": 1, "role": 0, "created_at": "2021-01-01T00:00:00Z", "deleted_at": null, "soft_deleted_at": null, "user_id": 1, "room_id": 1})))]
 pub struct Member {
     pub id: i32,
     pub role: i16,
@@ -217,6 +233,7 @@ pub struct Message {
 #[diesel(belongs_to(Room))]
 #[diesel(belongs_to(User))]
 #[diesel(check_for_backend(diesel::pg::Pg))]
+#[salvo(schema(example = json!({"id": 1, "created_at": "2021-01-01T00:00:00Z", "deleted_at": null, "user_id": 1, "room_id": 1, "status": 0, "node_id": null})))]
 pub struct Participant {
     pub id: i32,
     pub created_at: NaiveDateTime,
@@ -242,6 +259,7 @@ pub struct Participant {
 #[diesel(table_name = users)]
 #[serde(rename_all = "camelCase")]
 #[diesel(check_for_backend(diesel::pg::Pg))]
+#[salvo(schema(example = json!({"id": 1, "full_name": "John Doe", "user_name": "john_doe", "bio": "I am a software engineer", "external_id": "123123", "avatar": "https://example.com/avatar.png", "created_at": "2021-01-01T00:00:00Z", "updated_at": "2021-01-01T00:00:00Z", "deleted_at": null, "last_seen_at": null})))]
 pub struct User {
     pub id: i32,
     pub full_name: Option<String>,
@@ -283,13 +301,15 @@ pub struct NewMessage<'a> {
 #[diesel(table_name = rooms)]
 pub struct NewRoom<'a> {
     pub title: &'a str,
-    pub password: &'a str,
+    pub password: Option<&'a str>,
     pub code: &'a str,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub latest_message_created_at: NaiveDateTime,
     pub status: i16,
     pub type_: i16,
+    pub capacity: Option<i32>,
+    pub streaming_protocol: Option<i16>,
 }
 
 #[derive(Insertable)]
