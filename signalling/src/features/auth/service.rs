@@ -155,7 +155,7 @@ mod tests {
 
     // Helper to create a dummy AppEnv for JwtUtils
     fn dummy_app_env() -> crate::core::env::app_env::AppEnv {
-        use crate::core::env::app_env::{AppEnv, DbUri, GrpcConfigs, JwtConfig};
+        use crate::core::env::app_env::{AppEnv, DbUri, GrpcConfig, JwtConfig, TurnConfig};
         AppEnv {
             group_id: "test-group".to_string(),
             etcd_addr: "localhost:2379".to_string(),
@@ -169,7 +169,7 @@ mod tests {
                 token_expires_in_seconds: 3600,
                 refresh_token_expires_in_seconds: 7200,
             },
-            grpc_configs: GrpcConfigs {
+            grpc_configs: GrpcConfig {
                 sfu_host: "localhost".to_string(),
                 sfu_port: 1,
                 dispatcher_host: "localhost".to_string(),
@@ -177,6 +177,10 @@ mod tests {
             },
             tls_enabled: false,
             api_suffix: "busapi".to_string(),
+            turn_configs: TurnConfig {
+                cf_turn_access_id: "".to_string(),
+                cf_turn_secret_key: "".to_string(),
+            },
         }
     }
 

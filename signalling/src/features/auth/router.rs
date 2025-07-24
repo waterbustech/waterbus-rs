@@ -8,26 +8,34 @@ use salvo::prelude::*;
 use salvo::{Response, Router, oapi::endpoint};
 
 use crate::core::dtos::auth::create_token_dto::CreateTokenDto;
+use crate::core::env::app_env::AppEnv;
 use crate::core::types::errors::auth_error::AuthError;
 use crate::core::types::responses::auth_response::AuthResponse;
 use crate::core::types::responses::failed_response::FailedResponse;
+use crate::core::types::responses::ice_response::IceServersResponse;
 use crate::core::types::responses::presigned_url_response::PresignedResponse;
 use crate::core::utils::aws_utils::get_storage_object_client;
 use crate::core::utils::jwt_utils::JwtUtils;
 use crate::features::auth::repository::AuthRepositoryImpl;
 
 use super::service::{AuthService, AuthServiceImpl};
+use serde_json::json;
 
 pub fn get_auth_router(jwt_utils: JwtUtils) -> Router {
     let presinged_route = Router::with_hoop(jwt_utils.auth_middleware())
         .path("presigned-url")
         .post(generate_presigned_url);
 
+    let ice_servers_route = Router::with_hoop(jwt_utils.auth_middleware())
+        .path("ice-servers")
+        .get(generate_ice_servers);
+
     Router::new()
         .path("auth")
         .post(create_token)
         .push(Router::with_hoop(jwt_utils.refresh_token_middleware()).get(refresh_token))
         .push(presinged_route)
+        .push(ice_servers_route)
 }
 
 /// Get presigned url
@@ -106,4 +114,44 @@ async fn refresh_token(_res: &mut Response, depot: &mut Depot) -> Result<AuthRes
         .await?;
 
     Ok(auth_response)
+}
+
+/// Generate ICE servers from Cloudflare TURN
+#[endpoint(tags("auth"), status_codes(200, 500))]
+async fn generate_ice_servers(
+    _res: &mut Response,
+    depot: &mut Depot,
+) -> Result<IceServersResponse, AuthError> {
+    let turn_config = depot.obtain::<AppEnv>().unwrap().turn_configs.clone();
+
+    let api_url = format!(
+        "https://rtc.live.cloudflare.com/v1/turn/keys/{}/credentials/generate-ice-servers",
+        turn_config.cf_turn_access_id
+    );
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&api_url)
+        .header(
+            "Authorization",
+            format!("Bearer {}", turn_config.cf_turn_secret_key),
+        )
+        .header("Content-Type", "application/json")
+        .json(&json!({"ttl": 86400}))
+        .send()
+        .await
+        .map_err(|e| AuthError::CloudflareError(e.to_string()))?;
+
+    let status = resp.status();
+
+    if !status.is_success() {
+        return Err(AuthError::CloudflareError(resp.text().await.unwrap()));
+    }
+
+    let res: IceServersResponse = resp
+        .json()
+        .await
+        .map_err(|e| AuthError::UnexpectedError(e.to_string()))?;
+
+    Ok(res)
 }

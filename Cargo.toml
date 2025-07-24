@@ -97,6 +97,7 @@ futures = "0.3.31"
 crossbeam = "0.8.4"
 mimalloc = "0.1.46"
 bytes = "1.10.1"
+reqwest = { version = "0.12.22", features = ["json"] }
 
 # Local crates
 waterbus-proto = { path = "./crates/waterbus-proto" }

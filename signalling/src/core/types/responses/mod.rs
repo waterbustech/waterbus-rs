@@ -1,6 +1,7 @@
 pub mod auth_response;
 pub mod check_username_response;
 pub mod failed_response;
+pub mod ice_response;
 pub mod list_message_response;
 pub mod list_room_response;
 pub mod message_response;

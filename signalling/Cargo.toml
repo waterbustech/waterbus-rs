@@ -19,7 +19,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 chrono = { workspace = true, features = ["serde"] }
 diesel = { workspace = true, features = ["postgres", "r2d2", "chrono"] }
-# diesel-derive-enum = { workspace = true, features = ["postgres"] }
 dotenvy = { workspace = true }
 time = { workspace = true }
 jsonwebtoken = { workspace = true }
@@ -38,6 +37,7 @@ serde_repr = { workspace = true }
 bcrypt = { workspace = true }
 async-channel = { workspace = true }
 rust-embed = { workspace = true }
+reqwest = { workspace = true }
 
 dispatcher = { workspace = true }
 waterbus-proto = { workspace = true }

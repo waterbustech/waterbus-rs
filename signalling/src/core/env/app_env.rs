@@ -9,10 +9,11 @@ pub struct AppEnv {
     pub client_api_key: String,
     pub db_uri: DbUri,
     pub redis_uris: Vec<String>,
-    pub jwt: JwtConfig,
-    pub grpc_configs: GrpcConfigs,
     pub tls_enabled: bool,
     pub api_suffix: String,
+    pub jwt: JwtConfig,
+    pub grpc_configs: GrpcConfig,
+    pub turn_configs: TurnConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -27,11 +28,17 @@ pub struct JwtConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct GrpcConfigs {
+pub struct GrpcConfig {
     pub sfu_host: String,
     pub sfu_port: u16,
     pub dispatcher_host: String,
     pub dispatcher_port: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct TurnConfig {
+    pub cf_turn_access_id: String,
+    pub cf_turn_secret_key: String,
 }
 
 impl Default for AppEnv {
@@ -82,7 +89,7 @@ impl AppEnv {
                     31_536_000, // a year
                 ),
             },
-            grpc_configs: GrpcConfigs {
+            grpc_configs: GrpcConfig {
                 sfu_host: Self::get_str_env("DIST_SFU_HOST", "http://[::1]".to_owned()),
                 sfu_port: Self::get_env("DIST_SFU_PORT", 50051),
                 dispatcher_host: Self::get_str_env(
@@ -96,6 +103,12 @@ impl AppEnv {
                 .to_lowercase()
                 == "true",
             api_suffix: env::var("APP_API_SUFFIX").unwrap_or_else(|_| "busapi".to_string()),
+            turn_configs: TurnConfig {
+                cf_turn_access_id: env::var("CF_TURN_ACCESS_KEY")
+                    .unwrap_or_else(|_| "".to_string()),
+                cf_turn_secret_key: env::var("CF_TURN_SECRET_KEY")
+                    .unwrap_or_else(|_| "".to_string()),
+            },
         }
     }
 
