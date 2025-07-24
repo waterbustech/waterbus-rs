@@ -39,7 +39,7 @@ async fn generate_presigned_url(_res: &mut Response) -> Result<PresignedResponse
     let key = format!("{}.{}", nanoid!(), extension);
 
     // Create storage object client
-    let (object_client, bucket_name, custom_domain) = get_storage_object_client().await;
+    let (object_client, bucket_name, custom_domain) = get_storage_object_client();
 
     // Prepare request
     let req = object_client
