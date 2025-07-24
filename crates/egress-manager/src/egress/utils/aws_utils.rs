@@ -20,7 +20,7 @@ pub fn get_storage_object_client() -> Client {
     let region_provider = RegionProviderChain::first_try(region.map(Region::new))
         .or_default_provider()
         .or_else(Region::new("us-west-2"));
-    
+
     let rt = tokio::runtime::Handle::current();
     let shared_config = rt.block_on(async {
         aws_config::from_env()
@@ -30,6 +30,6 @@ pub fn get_storage_object_client() -> Client {
             .load()
             .await
     });
-    
+
     Client::new(&shared_config)
 }

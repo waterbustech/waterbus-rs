@@ -1,6 +1,11 @@
 use tonic::{Request, Status, transport::Channel};
 use waterbus_proto::{
-    sfu_service_client::SfuServiceClient, AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse, LeaveRoomRequest, LeaveRoomResponse, MigratePublisherRequest, MigratePublisherResponse, PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType, SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest, StatusResponse, SubscribeHlsLiveStreamRequest, SubscribeHlsLiveStreamResponse, SubscribeRequest, SubscribeResponse
+    AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
+    LeaveRoomRequest, LeaveRoomResponse, MigratePublisherRequest, MigratePublisherResponse,
+    PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType,
+    SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest, StatusResponse,
+    SubscribeHlsLiveStreamRequest, SubscribeHlsLiveStreamResponse, SubscribeRequest,
+    SubscribeResponse, sfu_service_client::SfuServiceClient,
 };
 
 #[derive(Debug, Clone, Default)]

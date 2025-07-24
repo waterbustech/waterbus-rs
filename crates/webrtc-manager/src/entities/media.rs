@@ -9,9 +9,10 @@ use tracing::{debug, info};
 use webrtc::{rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote};
 
 use crate::models::{
-        data_channel_msg::TrackSubscribedMessage,
-        params::{AddTrackResponse, TrackMutexWrapper}, streaming_protocol::StreamingProtocol,
-    };
+    data_channel_msg::TrackSubscribedMessage,
+    params::{AddTrackResponse, TrackMutexWrapper},
+    streaming_protocol::StreamingProtocol,
+};
 
 use super::track::Track;
 

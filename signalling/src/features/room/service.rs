@@ -270,12 +270,10 @@ impl<R: RoomRepository + Send + Sync, U: UserRepository + Send + Sync> RoomServi
             .any(|member| member.member.user_id == user_id);
 
         // Enforce capacity
-        if !is_member {
-            if let Some(capacity) = room.room.capacity {
-                if room.members.len() as i32 >= capacity {
-                    return Err(RoomError::RoomIsFull);
-                }
-            }
+        if let Some(capacity) = room.room.capacity
+            && room.members.len() as i32 >= capacity
+        {
+            return Err(RoomError::RoomIsFull);
         }
 
         if !is_member {
