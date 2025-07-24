@@ -155,11 +155,10 @@ mod tests {
 
     // Helper to create a dummy AppEnv for JwtUtils
     fn dummy_app_env() -> crate::core::env::app_env::AppEnv {
-        use crate::core::env::app_env::{AppEnv, DbUri, GrpcConfigs, JwtConfig, UdpPortRange};
+        use crate::core::env::app_env::{AppEnv, DbUri, GrpcConfigs, JwtConfig};
         AppEnv {
             group_id: "test-group".to_string(),
             etcd_addr: "localhost:2379".to_string(),
-            public_ip: "127.0.0.1".to_string(),
             app_port: 1234,
             client_api_key: "dummy".to_string(),
             db_uri: DbUri("dummy_db_uri".to_string()),
@@ -170,10 +169,6 @@ mod tests {
                 token_expires_in_seconds: 3600,
                 refresh_token_expires_in_seconds: 7200,
             },
-            udp_port_range: UdpPortRange {
-                port_min: 10000,
-                port_max: 20000,
-            },
             grpc_configs: GrpcConfigs {
                 sfu_host: "localhost".to_string(),
                 sfu_port: 1,
@@ -181,6 +176,7 @@ mod tests {
                 dispatcher_port: 2,
             },
             tls_enabled: false,
+            api_suffix: "busapi".to_string(),
         }
     }
 

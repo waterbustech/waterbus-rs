@@ -24,19 +24,20 @@ pub struct HlsWriter {
     start_time: Instant,
     video_offset: Arc<Mutex<u64>>,
     audio_offset: Arc<Mutex<u64>>,
+    pub hls_url: String,
 }
 
 impl HlsWriter {
-    pub fn new(dir: &str, prefix_path: String) -> Result<Self, anyhow::Error> {
+    pub fn new(dir: &str, prefix_path: &str) -> Result<Self, anyhow::Error> {
         init()?;
 
         let path = PathBuf::from(dir);
         let pipeline = gst::Pipeline::default();
         std::fs::create_dir_all(&path).expect("failed to create directory");
 
-        let r2_config: Option<R2Config> = Self::_get_r2_config(prefix_path);
+        let r2_config: Option<R2Config> = Self::_get_r2_config(prefix_path.to_string());
 
-        let (r2_storage, master_state) = if let Some(config) = r2_config {
+        let (r2_storage, master_state, cloud_url_base) = if let Some(config) = r2_config {
             // Use new_with_worker instead of new
             let (r2_storage, upload_receiver) = R2Storage::new_with_worker(config.clone())?;
             let r2_storage = Arc::new(r2_storage);
@@ -65,9 +66,9 @@ impl HlsWriter {
                 cloud_url_base.clone(),
             )));
 
-            (Some(r2_storage), Some(master_state))
+            (Some(r2_storage), Some(master_state), cloud_url_base)
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         let mut manifest_path = path.clone();
@@ -128,6 +129,12 @@ impl HlsWriter {
             start_time: Instant::now(),
             video_offset: Arc::new(Mutex::new(0)),
             audio_offset: Arc::new(Mutex::new(0)),
+            hls_url: format!(
+                "{}/{}/{}",
+                cloud_url_base.unwrap(),
+                prefix_path,
+                "manifest.m3u8"
+            ),
         };
 
         let hls_writer_arc = Arc::new(this.clone());
@@ -222,7 +229,7 @@ impl HlsWriter {
         dotenvy::dotenv().ok();
 
         let account_id = env::var("STORAGE_ACCOUNT_ID").ok()?;
-        let bucket_name = env::var("STORAGE_BUCKET_NAME").ok()?;
+        let bucket_name = env::var("STORAGE_BUCKET").ok()?;
         let custom_domain = env::var("STORAGE_CUSTOM_DOMAIN").ok();
 
         let r2_config = R2Config {

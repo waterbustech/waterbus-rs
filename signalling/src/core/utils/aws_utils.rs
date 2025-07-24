@@ -9,13 +9,12 @@ use std::env;
 pub fn get_storage_object_client() -> (Client, String, Option<String>) {
     dotenvy::dotenv().ok();
 
-    let access_key_id = env::var("STORAGE_ACCESS_KEY_ID").expect("STORAGE_ACCESS_KEY_ID not set");
-    let secret_access_key =
-        env::var("STORAGE_SECRET_ACCESS_KEY").expect("STORAGE_SECRET_ACCESS_KEY not set");
+    let access_key_id = env::var("STORAGE_ACCESS_KEY").expect("STORAGE_ACCESS_KEY not set");
+    let secret_access_key = env::var("STORAGE_SECRET_KEY").expect("STORAGE_SECRET_KEY not set");
     let region = env::var("STORAGE_REGION").unwrap_or_else(|_| "auto".to_string());
-    let endpoint_url = env::var("STORAGE_ENDPOINT_URL").ok();
+    let endpoint_url = env::var("STORAGE_ENDPOINT").ok();
     let custom_domain = env::var("STORAGE_CUSTOM_DOMAIN").ok();
-    let bucket_name = env::var("STORAGE_BUCKET_NAME").expect("STORAGE_BUCKET_NAME must be set");
+    let bucket_name = env::var("STORAGE_BUCKET").expect("STORAGE_BUCKET must be set");
 
     let credentials = Credentials::new(
         access_key_id,

@@ -5,15 +5,14 @@ use std::env;
 pub struct AppEnv {
     pub group_id: String,
     pub etcd_addr: String,
-    pub public_ip: String,
     pub app_port: u16,
     pub client_api_key: String,
     pub db_uri: DbUri,
     pub redis_uris: Vec<String>,
     pub jwt: JwtConfig,
-    pub udp_port_range: UdpPortRange,
     pub grpc_configs: GrpcConfigs,
     pub tls_enabled: bool,
+    pub api_suffix: String,
 }
 
 #[derive(Debug, Clone)]
@@ -25,12 +24,6 @@ pub struct JwtConfig {
     pub refresh_token: String,
     pub token_expires_in_seconds: i64,
     pub refresh_token_expires_in_seconds: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct UdpPortRange {
-    pub port_min: u16,
-    pub port_max: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -73,15 +66,10 @@ impl AppEnv {
             .unwrap_or(default_urls);
 
         Self {
-            group_id: env::var("GROUP_ID").unwrap_or_else(|_| "waterbus-group-1".to_string()),
-            etcd_addr: env::var("ETCD_URI").expect("ETCD_URI must be set"),
-            public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
+            group_id: env::var("DIST_GROUP_ID").unwrap_or_else(|_| "waterbus-group-0".to_string()),
+            etcd_addr: env::var("DIST_ETCD_URI").expect("DIST_ETCD_URI must be set"),
             app_port: Self::get_env("APP_PORT", 3000),
-            client_api_key: env::var("CLIENT_SECRET_KEY").unwrap_or_else(|_| "".to_string()),
-            udp_port_range: UdpPortRange {
-                port_min: Self::get_env("PORT_MIN_UDP", 19000),
-                port_max: Self::get_env("PORT_MAX_UDP", 60000),
-            },
+            client_api_key: env::var("APP_CLIENT_SECRET").unwrap_or_else(|_| "".to_string()),
             db_uri: DbUri(env::var("DATABASE_URL").expect("DATABASE_URL must be set")),
             redis_uris,
             jwt: JwtConfig {
@@ -95,15 +83,19 @@ impl AppEnv {
                 ),
             },
             grpc_configs: GrpcConfigs {
-                sfu_host: Self::get_str_env("SFU_HOST", "http://[::1]".to_owned()),
-                sfu_port: Self::get_env("SFU_PORT", 50051),
-                dispatcher_host: Self::get_str_env("DISPATCHER_HOST", "http://[::1]".to_owned()),
-                dispatcher_port: Self::get_env("DISPATCHER_PORT", 50052),
+                sfu_host: Self::get_str_env("DIST_SFU_HOST", "http://[::1]".to_owned()),
+                sfu_port: Self::get_env("DIST_SFU_PORT", 50051),
+                dispatcher_host: Self::get_str_env(
+                    "DIST_DISPATCHER_PORT",
+                    "http://[::1]".to_owned(),
+                ),
+                dispatcher_port: Self::get_env("DIST_DISPATCHER_PORT", 50052),
             },
-            tls_enabled: std::env::var("TLS_ENABLED")
+            tls_enabled: std::env::var("APP_TLS_ENABLED")
                 .unwrap_or_else(|_| "false".into())
                 .to_lowercase()
                 == "true",
+            api_suffix: env::var("APP_API_SUFFIX").unwrap_or_else(|_| "busapi".to_string()),
         }
     }
 
