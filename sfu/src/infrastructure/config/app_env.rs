@@ -37,7 +37,7 @@ impl AppEnv {
         dotenv().ok();
 
         Self {
-            group_id: env::var("DIST_GROUP_ID").unwrap_or_else(|_| "waterbus-group-1".to_string()),
+            group_id: env::var("DIST_GROUP_ID").unwrap_or_else(|_| "waterbus-group-0".to_string()),
             public_ip: env::var("RTC_EXTERNAL_IP").unwrap_or_else(|_| "".to_string()),
             node_id: Self::get_node_id(),
             etcd_addr: env::var("DIST_ETCD_URI").expect("DIST_ETCD_URI must be set"),
@@ -49,7 +49,7 @@ impl AppEnv {
                 sfu_host: Self::get_str_env("DIST_SFU_HOST", "http://[::1]".to_owned()),
                 sfu_port: Self::get_env("DIST_SFU_PORT", 50051),
                 dispatcher_host: Self::get_str_env(
-                    "DIST_DISPATCHER_PORT",
+                    "DIST_DISPATCHER_HOST",
                     "http://[::1]".to_owned(),
                 ),
                 dispatcher_port: Self::get_env("DIST_DISPATCHER_PORT", 50052),

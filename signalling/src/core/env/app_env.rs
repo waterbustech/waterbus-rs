@@ -93,7 +93,7 @@ impl AppEnv {
                 sfu_host: Self::get_str_env("DIST_SFU_HOST", "http://[::1]".to_owned()),
                 sfu_port: Self::get_env("DIST_SFU_PORT", 50051),
                 dispatcher_host: Self::get_str_env(
-                    "DIST_DISPATCHER_PORT",
+                    "DIST_DISPATCHER_HOST",
                     "http://[::1]".to_owned(),
                 ),
                 dispatcher_port: Self::get_env("DIST_DISPATCHER_PORT", 50052),

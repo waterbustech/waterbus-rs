@@ -178,12 +178,6 @@ impl<R: RoomRepository + Send + Sync, U: UserRepository + Send + Sync> RoomServi
             room.avatar = Some(avatar);
         }
 
-        if let Some(room_type) = update_room_dto.room_type {
-            room.type_ = room_type as i16;
-        }
-        if let Some(streaming_protocol) = update_room_dto.streaming_protocol {
-            room.streaming_protocol = Some(streaming_protocol as i16);
-        }
         if let Some(capacity) = update_room_dto.capacity {
             room.capacity = Some(capacity);
         }
@@ -599,8 +593,6 @@ mod tests {
             title: Some("Updated Room".to_string()),
             password: Some("newpass".to_string()),
             avatar: Some("avatar.png".to_string()),
-            room_type: Some(RoomType::Conferencing),
-            streaming_protocol: Some(StreamingProtocol::SFU),
             capacity: Some(10),
         }
     }

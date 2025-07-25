@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use dashmap::DashMap;
 use egress_manager::egress::hls_writer::HlsWriter;
 use egress_manager::egress::moq_writer::MoQWriter;
@@ -7,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::debug;
 use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
 use webrtc::track::track_remote::TrackRemote;
+use webrtc::util::Marshal;
 
 use crate::errors::WebRTCError;
 use crate::models::quality::TrackQuality;
@@ -200,8 +202,8 @@ impl Track {
     pub fn _forward_rtp(
         &self,
         remote_track: Arc<TrackRemote>,
-        _hls_writer: Option<Arc<HlsWriter>>,
-        _moq_writer: Option<Arc<MoQWriter>>,
+        hls_writer: Option<Arc<HlsWriter>>,
+        moq_writer: Option<Arc<MoQWriter>>,
         kind: RTPCodecType,
     ) {
         let multicast = self.rtp_multicast.clone();
@@ -211,7 +213,7 @@ impl Track {
         let is_simulcast = Arc::clone(&self.is_simulcast);
 
         tokio::spawn(async move {
-            let _is_video = kind == RTPCodecType::Video;
+            let is_video = kind == RTPCodecType::Video;
 
             loop {
                 let result = remote_track.read_rtp().await;
@@ -219,15 +221,35 @@ impl Track {
                 match result {
                     Ok((rtp, _)) => {
                         if !rtp.payload.is_empty() {
-                            let info = RtpForwardInfo {
-                                packet: Arc::new(rtp),
-                                acceptable_map: acceptable_map.clone(),
-                                is_svc,
-                                is_simulcast: is_simulcast.load(Ordering::Relaxed),
-                                track_quality: (*current_quality).clone(),
-                            };
+                            if hls_writer.is_some() || moq_writer.is_some() {
+                                if let Ok(header_bytes) = rtp.header.marshal() {
+                                    let mut buf = BytesMut::with_capacity(
+                                        header_bytes.len() + rtp.payload.len(),
+                                    );
+                                    buf.extend_from_slice(&header_bytes);
+                                    buf.extend_from_slice(&rtp.payload);
 
-                            multicast.send(info);
+                                    if let Some(writer) = &hls_writer {
+                                        let _ = writer.write_rtp(&buf, is_video);
+                                    }
+
+                                    if let Some(writer) = &moq_writer {
+                                        let _ = writer.write_rtp(&buf, is_video);
+                                    }
+                                } else {
+                                    debug!("Failed to marshal RTP header");
+                                }
+                            } else {
+                                let info = RtpForwardInfo {
+                                    packet: Arc::new(rtp),
+                                    acceptable_map: acceptable_map.clone(),
+                                    is_svc,
+                                    is_simulcast: is_simulcast.load(Ordering::Relaxed),
+                                    track_quality: (*current_quality).clone(),
+                                };
+
+                                multicast.send(info);
+                            }
                         }
                     }
                     Err(err) => {

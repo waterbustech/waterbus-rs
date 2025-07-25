@@ -94,7 +94,7 @@ impl Media {
         sdp
     }
 
-    pub fn add_track(&mut self, rtp_track: Arc<TrackRemote>, room_id: String) -> AddTrackResponse {
+    pub fn add_track(&self, rtp_track: Arc<TrackRemote>, room_id: String) -> AddTrackResponse {
         if let Some(existing_track_arc) = self.tracks.get(&rtp_track.id()) {
             let mut track_guard = existing_track_arc.write();
             track_guard.add_track(rtp_track.clone());
@@ -156,7 +156,7 @@ impl Media {
     }
 
     pub fn add_track_to_hls_writer(
-        &mut self,
+        &self,
         rtp_track: Arc<TrackRemote>,
     ) -> Option<Arc<HlsWriter>> {
         if self.streaming_protocol == StreamingProtocol::HLS {
@@ -172,7 +172,7 @@ impl Media {
         None
     }
 
-    fn _initialize_hls_writer(&mut self, track_id: &str) -> Result<Arc<HlsWriter>, anyhow::Error> {
+    fn _initialize_hls_writer(&self, track_id: &str) -> Result<Arc<HlsWriter>, anyhow::Error> {
         let output_dir = format!("./hls/{}/{}", self.participant_id, track_id);
 
         if !Path::new(&output_dir).exists() {

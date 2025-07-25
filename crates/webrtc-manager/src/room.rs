@@ -152,7 +152,7 @@ impl Room {
 
                 publisher.send_rtcp_pli(track.ssrc());
 
-                let mut media = media.write();
+                let media = media.write();
                 let add_track_response = media.add_track(track, room_id);
 
                 Box::pin(async move {
