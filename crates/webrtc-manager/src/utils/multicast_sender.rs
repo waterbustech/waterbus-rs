@@ -4,12 +4,13 @@ use crossbeam::channel::{self, Receiver, Sender};
 use dashmap::DashMap;
 use tracing::debug;
 
+use crate::models::quality::TrackQuality;
 use crate::models::rtp_foward_info::RtpForwardInfo;
 
-// Multi-cast sender wrapper for broadcasting to multiple receivers
+/// Multi-cast sender wrapper for broadcasting to multiple receivers per quality layer
 #[derive(Debug, Clone)]
 pub struct MulticastSender {
-    senders: Arc<DashMap<String, Sender<RtpForwardInfo>>>,
+    quality_senders: Arc<DashMap<TrackQuality, DashMap<String, Sender<RtpForwardInfo>>>>,
 }
 
 impl Default for MulticastSender {
@@ -19,48 +20,120 @@ impl Default for MulticastSender {
 }
 
 impl MulticastSender {
+    /// Create a new MulticastSender
     pub fn new() -> Self {
+        let quality_senders = DashMap::new();
+        for q in [TrackQuality::High, TrackQuality::Medium, TrackQuality::Low] {
+            quality_senders.insert(q, DashMap::new());
+        }
         Self {
-            senders: Arc::new(DashMap::new()),
+            quality_senders: Arc::new(quality_senders),
         }
     }
 
-    pub fn add_receiver(&self, id: String) -> Receiver<RtpForwardInfo> {
-        // Use bounded channel with reasonable buffer size
+    /// Add a receiver for a specific quality (f/h/q)
+    ///
+    /// # Arguments
+    ///
+    /// * `quality` - The quality to add the receiver for
+    /// * `id` - The id of the receiver
+    ///
+    pub fn add_receiver_for_quality(
+        &self,
+        quality: TrackQuality,
+        id: String,
+    ) -> Receiver<RtpForwardInfo> {
         let (tx, rx) = channel::bounded(1024);
-        self.senders.insert(id, tx);
+        if let Some(map) = self.quality_senders.get(&quality) {
+            map.insert(id, tx);
+        }
         rx
     }
 
-    pub fn remove_receiver(&self, id: &str) {
-        self.senders.remove(id);
+    /// Remove a receiver for a specific quality
+    ///
+    /// # Arguments
+    ///
+    /// * `quality` - The quality to remove the receiver for
+    /// * `id` - The id of the receiver
+    ///
+    pub fn remove_receiver_for_quality(&self, quality: TrackQuality, id: &str) {
+        if let Some(map) = self.quality_senders.get(&quality) {
+            map.remove(id);
+        }
     }
 
-    pub fn send(&self, info: RtpForwardInfo) {
-        // Remove any disconnected senders and send to active ones
-        let mut to_remove = Vec::new();
-
-        for entry in self.senders.iter() {
-            match entry.value().try_send(info.clone()) {
-                Ok(_) => {} // Success
-                Err(crossbeam::channel::TrySendError::Full(_)) => {
-                    // Channel full, drop this packet for this receiver
-                    debug!("Channel full for receiver {}, dropping packet", entry.key());
-                }
-                Err(crossbeam::channel::TrySendError::Disconnected(_)) => {
-                    // Receiver disconnected, mark for removal
-                    to_remove.push(entry.key().clone());
+    /// Send to all receivers for a specific quality
+    ///
+    /// # Arguments
+    ///
+    /// * `quality` - The quality to send to
+    /// * `info` - The RtpForwardInfo to send
+    ///
+    pub fn send_to_quality(&self, quality: TrackQuality, info: RtpForwardInfo) {
+        if let Some(map) = self.quality_senders.get(&quality) {
+            let mut to_remove = Vec::new();
+            for entry in map.iter() {
+                match entry.value().try_send(info.clone()) {
+                    Ok(_) => {}
+                    Err(crossbeam::channel::TrySendError::Full(_)) => {
+                        debug!(
+                            "Channel full for receiver {} (quality {:?}), dropping packet",
+                            entry.key(),
+                            quality
+                        );
+                    }
+                    Err(crossbeam::channel::TrySendError::Disconnected(_)) => {
+                        to_remove.push(entry.key().clone());
+                    }
                 }
             }
-        }
-
-        // Clean up disconnected receivers
-        for id in to_remove {
-            self.senders.remove(&id);
+            for id in to_remove {
+                map.remove(&id);
+            }
         }
     }
 
-    pub fn receiver_count(&self) -> usize {
-        self.senders.len()
+    /// For non-simulcast legacy: add a receiver to 'Medium' (h)
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The id of the receiver
+    ///
+    pub fn add_receiver(&self, id: String) -> Receiver<RtpForwardInfo> {
+        self.add_receiver_for_quality(TrackQuality::Medium, id)
+    }
+
+    /// For non-simulcast legacy: remove a receiver from 'Medium' (h)
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The id of the receiver
+    ///
+    pub fn remove_receiver(&self, id: &str) {
+        self.remove_receiver_for_quality(TrackQuality::Medium, id)
+    }
+
+    /// For non-simulcast legacy: send to 'Medium' (h)
+    ///
+    /// # Arguments
+    ///
+    /// * `info` - The RtpForwardInfo to send
+    ///
+    pub fn send(&self, info: RtpForwardInfo) {
+        self.send_to_quality(TrackQuality::Medium, info);
+    }
+
+    /// Get the number of receivers for a specific quality
+    ///
+    /// # Arguments
+    ///
+    /// * `quality` - The quality to get the number of receivers for
+    ///
+    pub fn receiver_count(&self, quality: TrackQuality) -> usize {
+        self.quality_senders
+            .get(&quality)
+            .map(|m| m.len())
+            .unwrap_or(0)
     }
 }

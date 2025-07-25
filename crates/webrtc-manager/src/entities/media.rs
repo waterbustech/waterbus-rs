@@ -18,6 +18,7 @@ use super::track::Track;
 
 pub type TrackSubscribedCallback = Arc<dyn Fn(TrackSubscribedMessage) + Send + Sync>;
 
+/// Media is a media that is used to manage the media of the participant
 pub struct Media {
     pub media_id: String,
     pub participant_id: String,
@@ -45,6 +46,12 @@ pub struct MediaState {
 }
 
 impl Media {
+    /// Create a new Media
+    ///
+    /// # Arguments
+    ///
+    /// * `publisher_id` - The id of the publisher
+    /// * `is_video_enabled` - Whether the video is enabled
     pub fn new(
         publisher_id: String,
         is_video_enabled: bool,
@@ -76,16 +83,34 @@ impl Media {
         }
     }
 
+    /// Initialize the moq writer
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The Media
+    ///
     pub fn initialize_moq_writer(&mut self) -> Result<(), anyhow::Error> {
         let moq_writer = MoQWriter::new(&self.participant_id.clone())?;
         self.moq_writer = Some(Arc::new(moq_writer));
         Ok(())
     }
 
+    /// Cache the sdp incase peer to peer connection
+    ///
+    /// # Arguments
+    ///
+    /// * `sdp` - The sdp to cache
+    ///
     pub fn cache_sdp(&mut self, sdp: String) {
         self.sdp = Some(sdp);
     }
 
+    /// Get the sdp
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The Media
+    ///
     pub fn get_sdp(&mut self) -> Option<String> {
         let sdp = self.sdp.clone();
 
@@ -94,6 +119,13 @@ impl Media {
         sdp
     }
 
+    /// Add a new track to the Media
+    ///
+    /// # Arguments
+    ///
+    /// * `rtp_track` - The rtp track to add
+    /// * `room_id` - The id of the room
+    ///
     pub fn add_track(&self, rtp_track: Arc<TrackRemote>, room_id: String) -> AddTrackResponse {
         if let Some(existing_track_arc) = self.tracks.get(&rtp_track.id()) {
             let mut track_guard = existing_track_arc.write();
@@ -155,10 +187,13 @@ impl Media {
         AddTrackResponse::AddTrackSuccess(new_track)
     }
 
-    pub fn add_track_to_hls_writer(
-        &self,
-        rtp_track: Arc<TrackRemote>,
-    ) -> Option<Arc<HlsWriter>> {
+    /// Add a new track to the hls writer
+    ///
+    /// # Arguments
+    ///
+    /// * `rtp_track` - The rtp track to add
+    ///
+    pub fn add_track_to_hls_writer(&self, rtp_track: Arc<TrackRemote>) -> Option<Arc<HlsWriter>> {
         if self.streaming_protocol == StreamingProtocol::HLS {
             let hls_writer = self._initialize_hls_writer(&rtp_track.id());
 
@@ -172,6 +207,12 @@ impl Media {
         None
     }
 
+    /// Initialize the hls writer
+    ///
+    /// # Arguments
+    ///
+    /// * `track_id` - The id of the track
+    ///
     fn _initialize_hls_writer(&self, track_id: &str) -> Result<Arc<HlsWriter>, anyhow::Error> {
         let output_dir = format!("./hls/{}/{}", self.participant_id, track_id);
 
@@ -189,6 +230,13 @@ impl Media {
         Ok(hls_writer_arc)
     }
 
+    /// Set the screen sharing
+    ///
+    /// # Arguments
+    ///
+    /// * `is_enabled` - Whether the screen sharing is enabled
+    /// * `screen_track_id` - The id of the screen track
+    ///
     pub fn set_screen_sharing(&self, is_enabled: bool, screen_track_id: Option<String>) {
         let mut state = self.state.write();
         if state.is_screen_sharing != is_enabled {
@@ -204,11 +252,23 @@ impl Media {
         }
     }
 
+    /// Set the hand raising
+    ///
+    /// # Arguments
+    ///
+    /// * `is_enabled` - Whether the hand raising is enabled
+    ///
     pub fn set_hand_rasing(&self, is_enabled: bool) {
         let mut state = self.state.write();
         state.is_hand_raising = is_enabled;
     }
 
+    /// Remove the screen track
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The Media
+    ///
     fn remove_screen_track(&self) {
         let screen_track_id_opt = {
             let state = self.state.read();
@@ -232,6 +292,12 @@ impl Media {
         }
     }
 
+    /// Remove all tracks
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The Media
+    ///
     pub fn remove_all_tracks(&self) {
         for entry in self.tracks.iter() {
             let track_mutex = entry.value().clone();
@@ -243,22 +309,52 @@ impl Media {
         self.tracks.clear();
     }
 
+    /// Set the camera type
+    ///
+    /// # Arguments
+    ///
+    /// * `camera_type` - The camera type
+    ///
     pub fn set_camera_type(&self, camera_type: u8) {
         self.state.write().camera_type = camera_type;
     }
 
+    /// Set the video enabled
+    ///
+    /// # Arguments
+    ///
+    /// * `is_enabled` - Whether the video is enabled
+    ///
     pub fn set_video_enabled(&self, is_enabled: bool) {
         self.state.write().video_enabled = is_enabled;
     }
 
+    /// Set the audio enabled
+    ///
+    /// # Arguments
+    ///
+    /// * `is_enabled` - Whether the audio is enabled
+    ///
     pub fn set_audio_enabled(&self, is_enabled: bool) {
         self.state.write().audio_enabled = is_enabled;
     }
 
+    /// Set the e2ee enabled
+    ///
+    /// # Arguments
+    ///
+    /// * `is_enabled` - Whether the e2ee is enabled
+    ///
     pub fn set_e2ee_enabled(&self, is_enabled: bool) {
         self.state.write().is_e2ee_enabled = is_enabled;
     }
 
+    /// Stop the Media
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The Media
+    ///
     pub fn stop(&self) {
         self.remove_all_tracks();
 
@@ -287,6 +383,12 @@ impl Media {
         }
     }
 
+    /// Log the track added
+    ///
+    /// # Arguments
+    ///
+    /// * `rtp_track` - The rtp track
+    ///
     fn _log_track_added(&self, rtp_track: Arc<TrackRemote>) {
         let rid = if rtp_track.kind() == RTPCodecType::Audio {
             "audio"
@@ -307,6 +409,12 @@ impl Media {
         );
     }
 
+    /// Get the hls urls
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The Media
+    ///
     pub fn get_hls_urls(&self) -> Vec<String> {
         self.hls_writers
             .read()

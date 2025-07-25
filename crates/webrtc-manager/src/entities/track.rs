@@ -17,7 +17,7 @@ use crate::utils::multicast_sender::MulticastSender;
 
 use super::forward_track::ForwardTrack;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum CodecType {
     H264,
     VP8,
@@ -26,6 +26,8 @@ pub enum CodecType {
     Other,
 }
 
+/// Track is a track that is used to forward RTP packets to the local track
+/// It is used to forward RTP packets to the local track
 #[derive(Clone)]
 pub struct Track {
     pub id: String,
@@ -46,6 +48,12 @@ pub struct Track {
 }
 
 impl Track {
+    /// Create a new Track
+    ///
+    /// # Arguments
+    ///
+    /// * `track` - The track to create the Track for
+    /// * `room_id` - The id of the room
     pub fn new(
         track: Arc<TrackRemote>,
         room_id: String,
@@ -95,6 +103,12 @@ impl Track {
         handler
     }
 
+    /// Add a new track to the Track
+    ///
+    /// # Arguments
+    ///
+    /// * `track` - The track to add to the Track
+    ///
     pub fn add_track(&mut self, track: Arc<TrackRemote>) {
         self.remote_tracks.push(track.clone());
 
@@ -105,16 +119,32 @@ impl Track {
         self.is_simulcast.store(true, Ordering::Relaxed);
     }
 
+    /// Stop the Track
+    ///
+    /// # Arguments
+    ///
+    /// * `track` - The track to stop
+    ///
     pub fn stop(&mut self) {
         self.remote_tracks.clear();
         self.forward_tracks.clear();
     }
 
+    /// Create a new ForwardTrack
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The id of the ForwardTrack
+    /// * `ssrc` - The ssrc of the ForwardTrack
+    ///
     pub fn new_forward_track(&self, id: &str, ssrc: u32) -> Result<Arc<ForwardTrack>, WebRTCError> {
         if self.forward_tracks.contains_key(id) {
             return Err(WebRTCError::FailedToAddTrack);
         }
-        let receiver = self.rtp_multicast.add_receiver(id.to_string());
+        // Start with Medium (h) quality; ForwardTrack will switch as needed
+        let receiver = self
+            .rtp_multicast
+            .add_receiver_for_quality(TrackQuality::Medium, id.to_string());
         let forward_track = ForwardTrack::new(
             self.capability.clone(),
             self.id.clone(),
@@ -123,17 +153,36 @@ impl Track {
             id.to_string(),
             ssrc,
             self.keyframe_request_callback.clone(),
+            Arc::new(self.rtp_multicast.clone()), // pass Arc<MulticastSender>
         );
         self.forward_tracks
             .insert(id.to_owned(), forward_track.clone());
         Ok(forward_track)
     }
 
+    /// Remove a ForwardTrack
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The id of the ForwardTrack
+    ///
     pub fn remove_forward_track(&self, id: &str) {
-        self.rtp_multicast.remove_receiver(id);
+        // Remove from all quality lines
+        self.rtp_multicast
+            .remove_receiver_for_quality(TrackQuality::High, id);
+        self.rtp_multicast
+            .remove_receiver_for_quality(TrackQuality::Medium, id);
+        self.rtp_multicast
+            .remove_receiver_for_quality(TrackQuality::Low, id);
         self.forward_tracks.remove(id);
     }
 
+    /// Rebuild the acceptable map
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The id of the ForwardTrack
+    ///
     pub fn rebuild_acceptable_map(&self) {
         let available_qualities: Vec<TrackQuality> = self
             .remote_tracks
@@ -199,6 +248,15 @@ impl Track {
         }
     }
 
+    /// Forward RTP
+    ///
+    /// # Arguments
+    ///
+    /// * `remote_track` - The remote track to forward
+    /// * `hls_writer` - The hls writer to write to the cloud storage
+    /// * `moq_writer` - The moq writer to write to the moq host
+    /// * `kind` - The kind of the track (video or audio)
+    ///
     pub fn _forward_rtp(
         &self,
         remote_track: Arc<TrackRemote>,
@@ -248,7 +306,15 @@ impl Track {
                                     track_quality: (*current_quality).clone(),
                                 };
 
-                                multicast.send(info);
+                                // For simulcast, send to the correct quality line based on rid
+                                if is_simulcast.load(Ordering::Relaxed) {
+                                    let quality = TrackQuality::from_str(remote_track.rid())
+                                        .unwrap_or(TrackQuality::Medium);
+                                    multicast.send_to_quality(quality, info);
+                                } else {
+                                    // Non-simulcast: always use Medium (h)
+                                    multicast.send_to_quality(TrackQuality::Medium, info);
+                                }
                             }
                         }
                     }

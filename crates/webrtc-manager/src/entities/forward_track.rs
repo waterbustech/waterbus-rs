@@ -20,7 +20,9 @@ use webrtc::{
 };
 
 use crate::models::{quality::TrackQuality, rtp_foward_info::RtpForwardInfo};
+use crate::utils::multicast_sender::MulticastSender;
 
+/// ForwardTrack is a track that forwards RTP packets to the local track
 pub struct ForwardTrack {
     pub local_track: Arc<TrackLocalStaticRTP>,
     pub track_id: String,
@@ -28,32 +30,49 @@ pub struct ForwardTrack {
     effective_quality: Arc<AtomicU8>,
     ssrc: u32,
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
+    multicast: Arc<MulticastSender>,
+    receiver_id: String,
 }
 
 impl ForwardTrack {
+    /// Create a new ForwardTrack
+    ///
+    /// # Arguments
+    ///
+    /// * `codec` - The codec of the track
+    /// * `track_id` - The id of the track
     pub fn new(
         codec: RTCRtpCodecCapability,
         track_id: String,
         sid: String,
-        receiver: Receiver<RtpForwardInfo>,
+        initial_receiver: Receiver<RtpForwardInfo>,
         forward_track_id: String,
         ssrc: u32,
         keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
+        multicast: Arc<MulticastSender>,
     ) -> Arc<Self> {
         let this = Arc::new(Self {
             local_track: Arc::new(TrackLocalStaticRTP::new(codec, track_id.clone(), sid)),
-            track_id: forward_track_id,
+            track_id: forward_track_id.clone(),
             requested_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
             effective_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
             ssrc,
             keyframe_request_callback,
+            multicast,
+            receiver_id: forward_track_id,
         });
 
-        Self::_receive_rtp(Arc::clone(&this), receiver);
+        Self::_dynamic_receive_rtp(Arc::clone(&this), initial_receiver);
 
         this
     }
 
+    /// Set the requested quality
+    ///
+    /// # Arguments
+    ///
+    /// * `quality` - The quality to set
+    ///
     pub fn set_requested_quality(&self, quality: &TrackQuality) {
         let current = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
         if *quality != current {
@@ -67,6 +86,12 @@ impl ForwardTrack {
         }
     }
 
+    /// Set the effective quality
+    ///
+    /// # Arguments
+    ///
+    /// * `quality` - The quality to set
+    ///
     pub fn set_effective_quality(&self, quality: &TrackQuality) {
         let current = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
         if *quality != current {
@@ -76,52 +101,89 @@ impl ForwardTrack {
         }
     }
 
-    fn _receive_rtp(this: Arc<Self>, receiver: Receiver<RtpForwardInfo>) {
+    /// Dynamic receive RTP
+    ///
+    /// # Arguments
+    ///
+    /// * `this` - The ForwardTrack
+    /// * `initial_receiver` - The initial receiver
+    ///
+    fn _dynamic_receive_rtp(this: Arc<Self>, initial_receiver: Receiver<RtpForwardInfo>) {
         tokio::spawn(async move {
-            // Use blocking receiver in a spawn_blocking to avoid blocking the async runtime
-            let this_clone = Arc::clone(&this);
-            tokio::task::spawn_blocking(move || {
-                // Process packets in batches for better performance
+            let mut current_quality = TrackQuality::Medium;
+            let mut receiver = initial_receiver;
+            let mut last_quality_check = tokio::time::Instant::now();
+            const QUALITY_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+            const BATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(10);
+
+            loop {
                 let mut batch = Vec::with_capacity(32);
+                let batch_start = tokio::time::Instant::now();
 
-                loop {
-                    // Try to collect a batch of packets
-                    match receiver.recv() {
-                        Ok(info) => {
+                // Collect a batch of packets or timeout
+                while batch.len() < 32 && batch_start.elapsed() < BATCH_TIMEOUT {
+                    match tokio::task::spawn_blocking({
+                        let receiver = receiver.clone();
+                        move || receiver.try_recv()
+                    })
+                    .await
+                    {
+                        Ok(Ok(info)) => {
                             batch.push(info);
-
-                            // Try to collect more packets without blocking
-                            while batch.len() < 32 {
-                                match receiver.try_recv() {
-                                    Ok(info) => batch.push(info),
-                                    Err(TryRecvError::Empty) => break,
-                                    Err(TryRecvError::Disconnected) => return,
-                                }
+                        }
+                        Ok(Err(TryRecvError::Empty)) => {
+                            // No more packets available immediately, break to process what we have
+                            if !batch.is_empty() {
+                                break;
                             }
-
-                            // Process the batch
-                            let rt = tokio::runtime::Handle::current();
-                            rt.block_on(async {
-                                Self::_process_batch(&this_clone, std::mem::take(&mut batch)).await;
-                            });
+                            // If batch is empty, wait a bit for new packets
+                            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                        }
+                        Ok(Err(TryRecvError::Disconnected)) => {
+                            // Process remaining batch and exit
+                            if !batch.is_empty() {
+                                Self::_process_batch(&this, batch).await;
+                            }
+                            return;
                         }
                         Err(_) => {
-                            debug!(
-                                "[track] receiver disconnected for track {}",
-                                this_clone.track_id
-                            );
+                            // Task error, continue
                             break;
                         }
                     }
                 }
-            })
-            .await
-            .unwrap_or_else(|e| {
-                warn!("[track] spawn_blocking error: {}", e);
-            });
+
+                // Process batch if we have packets
+                if !batch.is_empty() {
+                    Self::_process_batch(&this, batch).await;
+                }
+
+                // Check quality periodically
+                if last_quality_check.elapsed() >= QUALITY_CHECK_INTERVAL {
+                    let desired_quality = this.get_desired_quality();
+                    if desired_quality != current_quality && desired_quality != TrackQuality::None {
+                        // Switch receiver
+                        this.multicast
+                            .remove_receiver_for_quality(current_quality, &this.receiver_id);
+                        receiver = this.multicast.add_receiver_for_quality(
+                            desired_quality.clone(),
+                            this.receiver_id.clone(),
+                        );
+                        current_quality = desired_quality;
+                    }
+                    last_quality_check = tokio::time::Instant::now();
+                }
+            }
         });
     }
 
+    /// Process a batch of RTP packets
+    ///
+    /// # Arguments
+    ///
+    /// * `this` - The ForwardTrack
+    /// * `batch` - The batch of RTP packets
+    ///
     async fn _process_batch(this: &Arc<Self>, batch: Vec<RtpForwardInfo>) {
         for info in batch {
             let is_svc = info.is_svc;
@@ -171,12 +233,25 @@ impl ForwardTrack {
         }
     }
 
+    /// Get the desired quality
+    ///
+    /// # Arguments
+    ///
+    /// * `this` - The ForwardTrack
+    ///
     pub fn get_desired_quality(&self) -> TrackQuality {
         let requested = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
         let effective = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
         requested.min(effective)
     }
 
+    /// Write RTP packet
+    ///
+    /// # Arguments
+    ///
+    /// * `local_track` - The local track
+    /// * `rtp` - The RTP packet
+    ///
     async fn _write_rtp(local_track: &Arc<TrackLocalStaticRTP>, rtp: &Packet) {
         if let Err(err) = local_track
             .write_rtp_with_extensions(
@@ -193,6 +268,15 @@ impl ForwardTrack {
         }
     }
 
+    /// Check if the track is acceptable
+    ///
+    /// # Arguments
+    ///
+    /// * `acceptable_map` - The acceptable map
+    /// * `current` - The current quality
+    /// * `desired` - The desired quality
+    /// * `is_simulcast` - Whether the track is simulcast
+    ///
     fn _is_acceptable_track(
         acceptable_map: &Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
         current: TrackQuality,
