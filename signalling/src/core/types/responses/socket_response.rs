@@ -50,6 +50,12 @@ pub struct SubscribeResponse {
     pub screen_track_id: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscribeHlsLiveStreamResponse {
+    pub hls_urls: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HandleRaisingResponse {

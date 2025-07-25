@@ -37,8 +37,8 @@ pub struct R2Storage {
 
 impl R2Storage {
     /// Create a new R2Storage instance
-    pub async fn new(config: R2Config) -> Result<Self> {
-        let client = get_storage_object_client().await;
+    pub fn new(config: R2Config) -> Result<Self> {
+        let client = get_storage_object_client();
 
         Ok(Self {
             client,
@@ -48,10 +48,10 @@ impl R2Storage {
     }
 
     /// Create a new R2Storage instance with background upload worker
-    pub async fn new_with_worker(
+    pub fn new_with_worker(
         config: R2Config,
     ) -> Result<(Self, mpsc::UnboundedReceiver<UploadTask>)> {
-        let client = get_storage_object_client().await;
+        let client = get_storage_object_client();
         let (tx, rx) = mpsc::unbounded_channel();
 
         let storage = Self {

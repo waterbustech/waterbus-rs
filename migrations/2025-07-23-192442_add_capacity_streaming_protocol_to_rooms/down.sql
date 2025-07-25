@@ -1,0 +1,2 @@
+ALTER TABLE rooms DROP COLUMN IF EXISTS capacity;
+ALTER TABLE rooms DROP COLUMN IF EXISTS streaming_protocol;

@@ -6,7 +6,8 @@ use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
     LeaveRoomRequest, MigratePublisherRequest, MigratePublisherResponse,
     PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType,
-    SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest, SubscribeRequest,
+    SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest,
+    SubscribeHlsLiveStreamRequest, SubscribeHlsLiveStreamResponse, SubscribeRequest,
     SubscribeResponse,
 };
 
@@ -113,6 +114,41 @@ impl DispatcherManager {
                     let server_addr = format!("{}:{}", node_addr, self.sfu_port);
 
                     let response = self.sfu_grpc_client.subscribe(server_addr, req).await;
+
+                    match response {
+                        Ok(resp) => Ok(resp.into_inner()),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to join room on node {}: {}",
+                            node_id,
+                            e
+                        )),
+                    }
+                } else {
+                    Err(anyhow::anyhow!("Client not found!"))
+                }
+            }
+            Err(_) => Err(anyhow::anyhow!("Client not found!")),
+        }
+    }
+
+    pub async fn subscribe_hls_live_stream(
+        &self,
+        req: SubscribeHlsLiveStreamRequest,
+    ) -> Result<SubscribeHlsLiveStreamResponse, anyhow::Error> {
+        let client = self.cache_manager.get_by_participant_id(&req.target_id);
+
+        match client {
+            Ok(client) => {
+                if let Some(client) = client {
+                    let node_id = client.sfu_node_id;
+                    let node_addr = client.node_addr;
+
+                    let server_addr = format!("{}:{}", node_addr, self.sfu_port);
+
+                    let response = self
+                        .sfu_grpc_client
+                        .subscribe_hls_live_stream(server_addr, req)
+                        .await;
 
                     match response {
                         Ok(resp) => Ok(resp.into_inner()),

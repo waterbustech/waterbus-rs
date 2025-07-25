@@ -1,0 +1,2 @@
+ALTER TABLE rooms ADD COLUMN capacity INTEGER;
+ALTER TABLE rooms ADD COLUMN streaming_protocol SMALLINT;

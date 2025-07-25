@@ -330,6 +330,8 @@ mod tests {
             deleted_at: None,
             latest_message_id: None,
             type_: 0,
+            capacity: None,
+            streaming_protocol: Some(StreamingProtocol::SFU as i16),
         }
     }
 
@@ -378,6 +380,7 @@ mod tests {
             }],
             participants: vec![],
             latest_message: None,
+            is_protected: None,
         }
     }
 

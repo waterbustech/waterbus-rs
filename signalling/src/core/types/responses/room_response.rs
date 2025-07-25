@@ -15,6 +15,7 @@ pub struct RoomResponse {
     pub members: Vec<MemberResponse>,
     pub participants: Vec<ParticipantResponse>,
     pub latest_message: Option<MessageResponse>,
+    pub is_protected: Option<bool>,
 }
 
 #[derive(Debug, Serialize, ToSchema, Clone)]
@@ -25,7 +26,7 @@ pub struct MemberResponse {
     pub user: Option<User>,
 }
 
-#[derive(Debug, Serialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ParticipantResponse {
     #[serde(flatten)]

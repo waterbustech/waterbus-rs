@@ -103,7 +103,7 @@ pub async fn get_salvo_service(env: &AppEnv) -> Service {
         .allow_headers(vec!["Authorization", "Content-Type", "X-API-Key"])
         .into_handler();
 
-    let router = Router::with_path("busapi/v3")
+    let router = Router::with_path(format!("{}/v3", env.api_suffix))
         .hoop(Logger::new())
         .hoop(affix_state::inject(db_pooled_connection))
         .hoop(affix_state::inject(jwt_utils))

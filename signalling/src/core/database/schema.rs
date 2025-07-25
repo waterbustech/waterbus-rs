@@ -59,6 +59,8 @@ diesel::table! {
         status -> Int2,
         #[sql_name = "type"]
         type_ -> Int2,
+        capacity -> Nullable<Int4>,
+        streaming_protocol -> Nullable<Int2>,
     }
 }
 

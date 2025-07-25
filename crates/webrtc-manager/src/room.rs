@@ -36,9 +36,11 @@ use crate::{
     models::{
         connection_type::ConnectionType,
         params::{
-            AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse, SubscribeParams,
+            AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse,
+            SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse, SubscribeParams,
             SubscribeResponse, TrackMutexWrapper, WebRTCManagerConfigs,
         },
+        streaming_protocol::StreamingProtocol,
     },
 };
 
@@ -72,6 +74,7 @@ impl Room {
             params.is_video_enabled,
             params.is_audio_enabled,
             params.is_e2ee_enabled,
+            params.streaming_protocol,
         );
 
         if params.connection_type == ConnectionType::P2P {
@@ -149,7 +152,7 @@ impl Room {
 
                 publisher.send_rtcp_pli(track.ssrc());
 
-                let media = media.write();
+                let mut media = media.write();
                 let add_track_response = media.add_track(track, room_id);
 
                 Box::pin(async move {
@@ -353,6 +356,23 @@ impl Room {
                 })
             }
         }
+    }
+
+    pub fn subscribe_hls_live_stream(
+        &self,
+        params: SubscribeHlsLiveStreamParams,
+    ) -> Result<SubscribeHlsLiveStreamResponse, WebRTCError> {
+        let target_id = &params.target_id;
+
+        let media_arc = self._get_media(target_id)?;
+
+        if media_arc.read().streaming_protocol != StreamingProtocol::HLS {
+            return Err(WebRTCError::InvalidStreamingProtocol);
+        }
+
+        let hls_urls = media_arc.read().get_hls_urls();
+
+        Ok(SubscribeHlsLiveStreamResponse { hls_urls })
     }
 
     pub fn set_subscriber_remote_sdp(

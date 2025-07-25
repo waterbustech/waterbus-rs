@@ -9,8 +9,8 @@ use crate::{
         connection_type::ConnectionType,
         params::{
             IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
-            RenegotiationCallback, SubscribeParams, SubscribeResponse, WClient,
-            WebRTCManagerConfigs,
+            RenegotiationCallback, SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse,
+            SubscribeParams, SubscribeResponse, WClient, WebRTCManagerConfigs,
         },
     },
     room::Room,
@@ -28,6 +28,7 @@ pub struct JoinRoomReq {
     pub connection_type: u8,
     pub callback: JoinedCallback,
     pub ice_candidate_callback: IceCandidateCallback,
+    pub streaming_protocol: u8,
 }
 
 #[derive(Clone)]
@@ -81,6 +82,7 @@ impl WebRTCManager {
             connection_type: ConnectionType::from(req.connection_type),
             callback: req.callback,
             on_candidate: req.ice_candidate_callback,
+            streaming_protocol: req.streaming_protocol.into(),
         };
 
         let res = {
@@ -120,6 +122,29 @@ impl WebRTCManager {
         };
 
         let res = room.subscribe(params).await?;
+
+        Ok(res)
+    }
+
+    pub fn subscribe_hls_live_stream(
+        &self,
+        client_id: &str,
+        target_id: &str,
+    ) -> Result<SubscribeHlsLiveStreamResponse, WebRTCError> {
+        let client = self.get_client_by_id(client_id)?;
+
+        let client = client.clone();
+
+        let room_id = &client.room_id;
+        let participant_id = &client.participant_id;
+
+        let room = self._get_room_by_id(room_id)?;
+        let room = room.read();
+
+        let res = room.subscribe_hls_live_stream(SubscribeHlsLiveStreamParams {
+            target_id: target_id.to_string(),
+            participant_id: participant_id.to_string(),
+        })?;
 
         Ok(res)
     }

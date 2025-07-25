@@ -8,7 +8,8 @@ use waterbus_proto::{
     LeaveRoomRequest, LeaveRoomResponse, MigratePublisherRequest, MigratePublisherResponse,
     NewUserJoinedRequest, PublisherCandidateRequest, PublisherRenegotiationRequest,
     PublisherRenegotiationResponse, SetCameraType, SetEnabledRequest, SetScreenSharingRequest,
-    SetSubscriberSdpRequest, StatusResponse, SubscribeRequest, SubscribeResponse,
+    SetSubscriberSdpRequest, StatusResponse, SubscribeHlsLiveStreamRequest,
+    SubscribeHlsLiveStreamResponse, SubscribeRequest, SubscribeResponse,
     SubscriberCandidateRequest, SubscriberRenegotiateRequest, sfu_service_server::SfuService,
 };
 use webrtc_manager::{
@@ -123,6 +124,7 @@ impl SfuService for SfuGrpcService {
                         connection_type: req.connection_type as u8,
                         callback: joined_callback,
                         ice_candidate_callback,
+                        streaming_protocol: req.streaming_protocol as u8,
                     })
                     .await
             })
@@ -240,6 +242,28 @@ impl SfuService for SfuGrpcService {
                 Ok(Response::new(subscribe_response))
             }
             Err(err) => Err(Status::internal(format!("Failed to join room: {err}"))),
+        }
+    }
+
+    async fn subscribe_hls_live_stream(
+        &self,
+        req: Request<SubscribeHlsLiveStreamRequest>,
+    ) -> Result<Response<SubscribeHlsLiveStreamResponse>, Status> {
+        let req = req.into_inner();
+
+        let webrtc_manager = self.webrtc_manager.clone();
+
+        let response = webrtc_manager
+            .read()
+            .subscribe_hls_live_stream(&req.client_id, &req.target_id);
+
+        match response {
+            Ok(response) => Ok(Response::new(SubscribeHlsLiveStreamResponse {
+                hls_urls: response.hls_urls,
+            })),
+            Err(err) => Err(Status::internal(format!(
+                "Failed to subscribe hls live stream: {err}"
+            ))),
         }
     }
 

@@ -21,8 +21,11 @@ pub enum AuthError {
     #[error("User with ID {0} not found")]
     UserNotFound(i32),
 
-    #[error("An unexpected error occurred in channel: {0}")]
+    #[error("An unexpected error occurred in auth: {0}")]
     UnexpectedError(String),
+
+    #[error("Failed to contact Cloudflare: {0}")]
+    CloudflareError(String),
 
     #[error("General error: {0}")]
     General(#[from] GeneralError),
@@ -37,6 +40,7 @@ impl Writer for AuthError {
             AuthError::InvalidAPIKey | AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
             AuthError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AuthError::General(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AuthError::CloudflareError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         res.status_code(status);

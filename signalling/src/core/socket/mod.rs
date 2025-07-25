@@ -24,7 +24,8 @@ use tracing::{info, warn};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, LeaveRoomRequest,
     MigratePublisherRequest, PublisherRenegotiationRequest, SetCameraType, SetEnabledRequest,
-    SetScreenSharingRequest, SetSubscriberSdpRequest, SubscribeRequest,
+    SetScreenSharingRequest, SetSubscriberSdpRequest, SubscribeHlsLiveStreamRequest,
+    SubscribeRequest,
 };
 
 use crate::{
@@ -32,7 +33,7 @@ use crate::{
         dtos::socket::socket_dto::{
             AnswerSubscribeDto, JoinRoomDto, MigrateConnectionDto, PublisherCandidateDto,
             PublisherRenegotiationDto, SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto,
-            SetScreenSharingDto, SubscribeDto, SubscriberCandidateDto,
+            SetScreenSharingDto, SubscribeDto, SubscribeHlsLiveStreamDto, SubscriberCandidateDto,
         },
         env::app_env::AppEnv,
         types::{
@@ -41,8 +42,9 @@ use crate::{
             responses::socket_response::{
                 CameraTypeResponse, EnabledResponse, HandleRaisingResponse, IceCandidate,
                 JoinRoomResponse, NewUserJoinedResponse, ParticipantHasLeftResponse,
-                RenegotiateResponse, ScreenSharingResponse, SubscribeParticipantResponse,
-                SubscribeResponse, SubscriberRenegotiationResponse, SubsriberCandidateResponse,
+                RenegotiateResponse, ScreenSharingResponse, SubscribeHlsLiveStreamResponse,
+                SubscribeParticipantResponse, SubscribeResponse, SubscriberRenegotiationResponse,
+                SubsriberCandidateResponse,
             },
         },
         utils::jwt_utils::JwtUtils,
@@ -383,6 +385,10 @@ async fn on_connect<A: Adapter>(socket: SocketRef<A>, user_id: Extension<UserId>
     socket.on(WsEvent::RoomPublish.to_str(), handle_join_room);
     socket.on(WsEvent::RoomSubscribe.to_str(), handle_subscribe);
     socket.on(
+        WsEvent::RoomSubscribeHlsLiveStream.to_str(),
+        handle_subscribe_hls_live_stream,
+    );
+    socket.on(
         WsEvent::RoomAnswerSubscriber.to_str(),
         handle_answer_subscribe,
     );
@@ -449,6 +455,7 @@ async fn handle_join_room<A: Adapter>(
         participant_id: participant_id.to_string(),
         room_id: room_id.clone(),
         connection_type: data.connection_type as i32,
+        streaming_protocol: data.streaming_protocol as i32,
     };
 
     match dispatcher_manager.join_room(req).await {
@@ -506,6 +513,37 @@ async fn handle_subscribe<A: Adapter>(
                         screen_track_id: res.screen_track_id,
                     },
                     target_id,
+                },
+            )
+            .ok();
+    }
+}
+
+async fn handle_subscribe_hls_live_stream<A: Adapter>(
+    socket: SocketRef<A>,
+    Data(data): Data<SubscribeHlsLiveStreamDto>,
+    dispatcher_manager: State<DispatcherManager>,
+) {
+    let client_id = socket.id.to_string();
+    let target_id = data.target_id;
+    let room_id = data.room_id;
+    let participant_id = data.participant_id;
+
+    let req = SubscribeHlsLiveStreamRequest {
+        client_id,
+        target_id,
+        room_id,
+        participant_id,
+    };
+
+    let res = dispatcher_manager.subscribe_hls_live_stream(req).await;
+
+    if let Ok(res) = res {
+        let _ = socket
+            .emit(
+                WsEvent::RoomSubscribeHlsLiveStream.to_str(),
+                &SubscribeHlsLiveStreamResponse {
+                    hls_urls: res.hls_urls,
                 },
             )
             .ok();
