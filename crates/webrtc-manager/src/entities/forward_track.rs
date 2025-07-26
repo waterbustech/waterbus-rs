@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
-use crossbeam::channel::{Receiver, TryRecvError};
+use crossbeam::channel::{Receiver, Sender, TryRecvError, unbounded};
 use dashmap::DashMap;
 
 use tracing::{debug, warn};
@@ -32,6 +32,7 @@ pub struct ForwardTrack {
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
     multicast: Arc<MulticastSender>,
     receiver_id: String,
+    quality_change_sender: Sender<TrackQuality>,
 }
 
 impl ForwardTrack {
@@ -51,6 +52,8 @@ impl ForwardTrack {
         keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
         multicast: Arc<MulticastSender>,
     ) -> Arc<Self> {
+        let (quality_change_sender, quality_change_receiver) = unbounded();
+
         let this = Arc::new(Self {
             local_track: Arc::new(TrackLocalStaticRTP::new(codec, track_id.clone(), sid)),
             track_id: forward_track_id.clone(),
@@ -60,9 +63,10 @@ impl ForwardTrack {
             keyframe_request_callback,
             multicast,
             receiver_id: forward_track_id,
+            quality_change_sender,
         });
 
-        Self::_dynamic_receive_rtp(Arc::clone(&this), initial_receiver);
+        Self::_dynamic_receive_rtp(Arc::clone(&this), initial_receiver, quality_change_receiver);
 
         this
     }
@@ -79,6 +83,13 @@ impl ForwardTrack {
             debug!("[quality] change requested quality to: {:?}", quality);
             self.requested_quality
                 .store(quality.as_u8(), Ordering::SeqCst);
+
+            // Check if desired quality changed and notify the processing task
+            let new_desired = self.get_desired_quality();
+            if let Err(_) = self.quality_change_sender.send(new_desired) {
+                warn!("[quality] failed to send quality change notification");
+            }
+
             // Request keyframe on quality switch
             if let Some(cb) = &self.keyframe_request_callback {
                 cb(self.ssrc);
@@ -98,6 +109,12 @@ impl ForwardTrack {
             debug!("[quality] change effective quality to: {:?}", quality);
             self.effective_quality
                 .store(quality.as_u8(), Ordering::SeqCst);
+
+            // Check if desired quality changed and notify the processing task
+            let new_desired = self.get_desired_quality();
+            if let Err(_) = self.quality_change_sender.send(new_desired) {
+                warn!("[quality] failed to send quality change notification");
+            }
         }
     }
 
@@ -107,16 +124,40 @@ impl ForwardTrack {
     ///
     /// * `this` - The ForwardTrack
     /// * `initial_receiver` - The initial receiver
+    /// * `quality_change_receiver` - Receiver for quality change notifications
     ///
-    fn _dynamic_receive_rtp(this: Arc<Self>, initial_receiver: Receiver<RtpForwardInfo>) {
+    fn _dynamic_receive_rtp(
+        this: Arc<Self>,
+        initial_receiver: Receiver<RtpForwardInfo>,
+        quality_change_receiver: Receiver<TrackQuality>,
+    ) {
         tokio::spawn(async move {
             let mut current_quality = TrackQuality::Medium;
             let mut receiver = initial_receiver;
-            let mut last_quality_check = tokio::time::Instant::now();
-            const QUALITY_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
             const BATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(10);
 
             loop {
+                // Check for quality changes first (non-blocking)
+                while let Ok(new_desired_quality) = quality_change_receiver.try_recv() {
+                    if new_desired_quality != current_quality
+                        && new_desired_quality != TrackQuality::None
+                    {
+                        debug!(
+                            "[quality] switching from {:?} to {:?}",
+                            current_quality, new_desired_quality
+                        );
+
+                        // Switch receiver
+                        this.multicast
+                            .remove_receiver_for_quality(current_quality, &this.receiver_id);
+                        receiver = this.multicast.add_receiver_for_quality(
+                            new_desired_quality.clone(),
+                            this.receiver_id.clone(),
+                        );
+                        current_quality = new_desired_quality;
+                    }
+                }
+
                 let mut batch = Vec::with_capacity(32);
                 let batch_start = tokio::time::Instant::now();
 
@@ -156,22 +197,6 @@ impl ForwardTrack {
                 // Process batch if we have packets
                 if !batch.is_empty() {
                     Self::_process_batch(&this, batch).await;
-                }
-
-                // Check quality periodically
-                if last_quality_check.elapsed() >= QUALITY_CHECK_INTERVAL {
-                    let desired_quality = this.get_desired_quality();
-                    if desired_quality != current_quality && desired_quality != TrackQuality::None {
-                        // Switch receiver
-                        this.multicast
-                            .remove_receiver_for_quality(current_quality, &this.receiver_id);
-                        receiver = this.multicast.add_receiver_for_quality(
-                            desired_quality.clone(),
-                            this.receiver_id.clone(),
-                        );
-                        current_quality = desired_quality;
-                    }
-                    last_quality_check = tokio::time::Instant::now();
                 }
             }
         });

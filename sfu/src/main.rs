@@ -49,7 +49,7 @@ async fn main() -> Result<(), anyhow::Error> {
         port_max: app_env.udp_port_range.port_max,
     };
 
-    let ttl = 5;
+    let ttl = 10;
 
     let etcd_node = EtcdNode::register(
         app_env.etcd_addr,
