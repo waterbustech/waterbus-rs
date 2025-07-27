@@ -16,6 +16,7 @@ message JoinRoomRequest {
     int32 totalTracks = 8;
     int32 connectionType = 9;
     int32 streamingProtocol = 10;
+    bool isIpv6Supported = 11;
 }
 
 message SubscribeRequest {
@@ -23,6 +24,7 @@ message SubscribeRequest {
     string targetId = 2;
     string participantId = 3;
     string roomId = 4;
+    bool isIpv6Supported = 5;
 }
 
 message SubscribeHlsLiveStreamRequest {

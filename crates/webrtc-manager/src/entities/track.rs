@@ -13,7 +13,7 @@ use webrtc::util::Marshal;
 use crate::errors::WebRTCError;
 use crate::models::quality::TrackQuality;
 use crate::models::rtp_foward_info::RtpForwardInfo;
-use crate::utils::multicast_sender::MulticastSender;
+use crate::utils::multicast_sender::{MulticastSender, MulticastSenderImpl};
 
 use super::forward_track::ForwardTrack;
 
@@ -40,10 +40,10 @@ pub struct Track {
     pub capability: RTCRtpCodecCapability,
     pub kind: RTPCodecType,
     pub remote_tracks: Vec<Arc<TrackRemote>>,
-    pub forward_tracks: Arc<DashMap<String, Arc<ForwardTrack>>>,
+    pub forward_tracks: Arc<DashMap<String, Arc<ForwardTrack<MulticastSenderImpl>>>>,
     pub ssrc: u32,
     acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
-    rtp_multicast: MulticastSender,
+    rtp_multicast: MulticastSenderImpl,
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
 }
 
@@ -76,7 +76,7 @@ impl Track {
         // Determine if SVC is used based on codec
         let is_svc = matches!(codec_type, CodecType::VP9);
 
-        let rtp_multicast = MulticastSender::new();
+        let rtp_multicast = MulticastSenderImpl::new();
 
         let handler = Track {
             id: track.id(),
@@ -128,6 +128,9 @@ impl Track {
     pub fn stop(&mut self) {
         self.remote_tracks.clear();
         self.forward_tracks.clear();
+        self.acceptable_map.clear();
+        self.is_simulcast.store(false, Ordering::Relaxed);
+        self.rtp_multicast.clear();
     }
 
     /// Create a new ForwardTrack
@@ -137,19 +140,21 @@ impl Track {
     /// * `id` - The id of the ForwardTrack
     /// * `ssrc` - The ssrc of the ForwardTrack
     ///
-    pub fn new_forward_track(&self, id: &str, ssrc: u32) -> Result<Arc<ForwardTrack>, WebRTCError> {
+    pub fn new_forward_track(
+        &self,
+        id: &str,
+        ssrc: u32,
+    ) -> Result<Arc<ForwardTrack<MulticastSenderImpl>>, WebRTCError> {
         if self.forward_tracks.contains_key(id) {
             return Err(WebRTCError::FailedToAddTrack);
         }
         // Start with Medium (h) quality; ForwardTrack will switch as needed
-        let receiver = self
-            .rtp_multicast
-            .add_receiver_for_quality(TrackQuality::Medium, id.to_string());
+
         let forward_track = ForwardTrack::new(
             self.capability.clone(),
             self.id.clone(),
             self.stream_id.clone(),
-            receiver,
+            // receiver,
             id.to_string(),
             ssrc,
             self.keyframe_request_callback.clone(),
@@ -266,7 +271,6 @@ impl Track {
     ) {
         let multicast = self.rtp_multicast.clone();
         let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()).unwrap());
-        let acceptable_map = Arc::clone(&self.acceptable_map);
         let is_svc = self.is_svc;
         let is_simulcast = Arc::clone(&self.is_simulcast);
 
@@ -300,9 +304,7 @@ impl Track {
                             } else {
                                 let info = RtpForwardInfo {
                                     packet: Arc::new(rtp),
-                                    acceptable_map: acceptable_map.clone(),
                                     is_svc,
-                                    is_simulcast: is_simulcast.load(Ordering::Relaxed),
                                     track_quality: (*current_quality).clone(),
                                 };
 

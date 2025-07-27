@@ -39,6 +39,7 @@ pub struct JoinRoomParams {
     pub callback: JoinedCallback,
     pub on_candidate: IceCandidateCallback,
     pub streaming_protocol: StreamingProtocol,
+    pub is_ipv6_supported: bool,
 }
 
 #[derive(Serialize)]
@@ -54,6 +55,7 @@ pub struct SubscribeParams {
     pub participant_id: String,
     pub on_negotiation_needed: RenegotiationCallback,
     pub on_candidate: IceCandidateCallback,
+    pub is_ipv6_supported: bool,
 }
 
 #[derive(Clone)]

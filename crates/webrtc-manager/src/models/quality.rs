@@ -20,7 +20,7 @@ impl FromStr for TrackQuality {
             "q" => TrackQuality::Low,
             "h" => TrackQuality::Medium,
             "f" => TrackQuality::High,
-            _ => TrackQuality::None,
+            _ => TrackQuality::Medium,
         })
     }
 }

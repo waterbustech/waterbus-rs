@@ -29,6 +29,7 @@ pub struct JoinRoomReq {
     pub callback: JoinedCallback,
     pub ice_candidate_callback: IceCandidateCallback,
     pub streaming_protocol: u8,
+    pub is_ipv6_supported: bool,
 }
 
 #[derive(Clone)]
@@ -83,6 +84,7 @@ impl WebRTCManager {
             callback: req.callback,
             on_candidate: req.ice_candidate_callback,
             streaming_protocol: req.streaming_protocol.into(),
+            is_ipv6_supported: req.is_ipv6_supported,
         };
 
         let res = {
@@ -102,6 +104,7 @@ impl WebRTCManager {
         room_id: &str,
         renegotiation_callback: RenegotiationCallback,
         ice_candidate_callback: IceCandidateCallback,
+        is_ipv6_supported: bool,
     ) -> Result<SubscribeResponse, WebRTCError> {
         self._add_client(
             client_id,
@@ -119,6 +122,7 @@ impl WebRTCManager {
             target_id: (&target_id).to_string(),
             on_candidate: ice_candidate_callback,
             on_negotiation_needed: renegotiation_callback,
+            is_ipv6_supported,
         };
 
         let res = room.subscribe(params).await?;

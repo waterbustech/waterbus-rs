@@ -125,6 +125,7 @@ impl SfuService for SfuGrpcService {
                         callback: joined_callback,
                         ice_candidate_callback,
                         streaming_protocol: req.streaming_protocol as u8,
+                        is_ipv6_supported: req.is_ipv6_supported,
                     })
                     .await
             })
@@ -219,6 +220,7 @@ impl SfuService for SfuGrpcService {
                         &req.room_id,
                         renegotiation_callback,
                         ice_candidate_callback,
+                        req.is_ipv6_supported,
                     )
                     .await
             })

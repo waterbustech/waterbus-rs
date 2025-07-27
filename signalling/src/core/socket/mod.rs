@@ -456,6 +456,7 @@ async fn handle_join_room<A: Adapter>(
         room_id: room_id.clone(),
         connection_type: data.connection_type as i32,
         streaming_protocol: data.streaming_protocol as i32,
+        is_ipv6_supported: data.is_ipv6_supported,
     };
 
     match dispatcher_manager.join_room(req).await {
@@ -492,6 +493,7 @@ async fn handle_subscribe<A: Adapter>(
         target_id: target_id.clone(),
         participant_id,
         room_id,
+        is_ipv6_supported: data.is_ipv6_supported,
     };
 
     let res = dispatcher_manager.subscribe(req).await;

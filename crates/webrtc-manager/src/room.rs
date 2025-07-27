@@ -67,7 +67,7 @@ impl Room {
     ) -> Result<Option<JoinRoomResponse>, WebRTCError> {
         let participant_id = params.participant_id;
 
-        let pc = self._create_pc().await?;
+        let pc = self._create_pc(params.is_ipv6_supported).await?;
 
         let mut media = Media::new(
             participant_id.clone(),
@@ -283,7 +283,7 @@ impl Room {
 
                 let peer_id = self._get_subscriber_peer_id(target_id, participant_id);
 
-                let pc = self._create_pc().await?;
+                let pc = self._create_pc(params.is_ipv6_supported).await?;
 
                 self._add_subscriber(&peer_id, &pc, participant_id.clone())
                     .await;
@@ -736,7 +736,10 @@ impl Room {
         Ok(())
     }
 
-    pub async fn _create_pc(&self) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
+    pub async fn _create_pc(
+        &self,
+        is_ipv6_supported: bool,
+    ) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
         let config = RTCConfiguration {
             ice_servers: vec![],
             bundle_policy: RTCBundlePolicy::MaxBundle,
@@ -787,7 +790,14 @@ impl Room {
 
         let mut setting_engine = SettingEngine::default();
         setting_engine.set_lite(true);
-        setting_engine.set_network_types(vec![NetworkType::Udp4]);
+        setting_engine.set_network_types(vec![
+            NetworkType::Udp4,
+            if is_ipv6_supported {
+                NetworkType::Udp6
+            } else {
+                NetworkType::Udp4
+            },
+        ]);
         setting_engine.set_udp_network(UDPNetwork::Ephemeral(
             EphemeralUDP::new(self.configs.port_min, self.configs.port_max).unwrap(),
         ));

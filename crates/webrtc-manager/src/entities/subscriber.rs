@@ -32,6 +32,7 @@ use crate::{
         params::TrackMutexWrapper, quality::TrackQuality,
         track_quality_request::TrackQualityRequest,
     },
+    utils::multicast_sender::MulticastSenderImpl,
 };
 
 use super::forward_track::ForwardTrack;
@@ -51,7 +52,7 @@ const MIN_QUALITY_CHANGE_INTERVAL: Duration = Duration::from_secs(2);
 // History sizes for better stability
 const HISTORY_SIZE: usize = 10;
 
-type TrackMap = Arc<DashMap<String, Arc<ForwardTrack>>>;
+type TrackMap = Arc<DashMap<String, Arc<ForwardTrack<MulticastSenderImpl>>>>;
 
 #[derive(Debug)]
 struct NetworkStats {

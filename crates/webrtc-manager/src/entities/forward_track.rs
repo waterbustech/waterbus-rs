@@ -4,7 +4,6 @@ use std::sync::{
 };
 
 use crossbeam::channel::{Receiver, Sender, TryRecvError, unbounded};
-use dashmap::DashMap;
 
 use tracing::{debug, warn};
 use webrtc::{
@@ -19,23 +18,26 @@ use webrtc::{
     track::track_local::track_local_static_rtp::TrackLocalStaticRTP,
 };
 
-use crate::models::{quality::TrackQuality, rtp_foward_info::RtpForwardInfo};
-use crate::utils::multicast_sender::MulticastSender;
+use crate::{
+    models::{quality::TrackQuality, rtp_foward_info::RtpForwardInfo},
+    utils::multicast_sender::MulticastSender,
+};
 
 /// ForwardTrack is a track that forwards RTP packets to the local track
-pub struct ForwardTrack {
+pub struct ForwardTrack<M: MulticastSender> {
     pub local_track: Arc<TrackLocalStaticRTP>,
     pub track_id: String,
     requested_quality: Arc<AtomicU8>,
     effective_quality: Arc<AtomicU8>,
+    current_subscribed_quality: Arc<AtomicU8>, // Track which layer we're currently subscribed to
     ssrc: u32,
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
-    multicast: Arc<MulticastSender>,
+    multicast: Arc<M>,
     receiver_id: String,
     quality_change_sender: Sender<TrackQuality>,
 }
 
-impl ForwardTrack {
+impl<M: MulticastSender + 'static> ForwardTrack<M> {
     /// Create a new ForwardTrack
     ///
     /// # Arguments
@@ -46,25 +48,33 @@ impl ForwardTrack {
         codec: RTCRtpCodecCapability,
         track_id: String,
         sid: String,
-        initial_receiver: Receiver<RtpForwardInfo>,
         forward_track_id: String,
         ssrc: u32,
         keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
-        multicast: Arc<MulticastSender>,
+        multicast: Arc<M>,
     ) -> Arc<Self> {
         let (quality_change_sender, quality_change_receiver) = unbounded();
+
+        // Start with medium quality
+        let initial_quality = TrackQuality::Medium;
 
         let this = Arc::new(Self {
             local_track: Arc::new(TrackLocalStaticRTP::new(codec, track_id.clone(), sid)),
             track_id: forward_track_id.clone(),
-            requested_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
-            effective_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
+            requested_quality: Arc::new(AtomicU8::new(initial_quality.as_u8())),
+            effective_quality: Arc::new(AtomicU8::new(initial_quality.as_u8())),
+            current_subscribed_quality: Arc::new(AtomicU8::new(initial_quality.as_u8())),
             ssrc,
             keyframe_request_callback,
             multicast,
             receiver_id: forward_track_id,
             quality_change_sender,
         });
+
+        // Subscribe to initial quality layer
+        let initial_receiver = this
+            .multicast
+            .add_receiver_for_quality(initial_quality.clone(), this.receiver_id.clone());
 
         Self::_dynamic_receive_rtp(Arc::clone(&this), initial_receiver, quality_change_receiver);
 
@@ -84,7 +94,7 @@ impl ForwardTrack {
             self.requested_quality
                 .store(quality.as_u8(), Ordering::SeqCst);
 
-            // Check if desired quality changed and notify the processing task
+            // Notify quality change
             let new_desired = self.get_desired_quality();
             if let Err(_) = self.quality_change_sender.send(new_desired) {
                 warn!("[quality] failed to send quality change notification");
@@ -110,12 +120,19 @@ impl ForwardTrack {
             self.effective_quality
                 .store(quality.as_u8(), Ordering::SeqCst);
 
-            // Check if desired quality changed and notify the processing task
+            // Notify quality change
             let new_desired = self.get_desired_quality();
             if let Err(_) = self.quality_change_sender.send(new_desired) {
                 warn!("[quality] failed to send quality change notification");
             }
         }
+    }
+
+    /// Get the desired quality (minimum of requested and effective)
+    pub fn get_desired_quality(&self) -> TrackQuality {
+        let requested = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
+        let effective = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
+        requested.min(effective)
     }
 
     /// Dynamic receive RTP
@@ -132,29 +149,38 @@ impl ForwardTrack {
         quality_change_receiver: Receiver<TrackQuality>,
     ) {
         tokio::spawn(async move {
-            let mut current_quality = TrackQuality::Medium;
             let mut receiver = initial_receiver;
             const BATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(10);
 
             loop {
                 // Check for quality changes first (non-blocking)
                 while let Ok(new_desired_quality) = quality_change_receiver.try_recv() {
-                    if new_desired_quality != current_quality
+                    let current_subscribed = TrackQuality::from_u8(
+                        this.current_subscribed_quality.load(Ordering::Relaxed),
+                    );
+
+                    // Only switch if desired quality is different from currently subscribed
+                    if new_desired_quality != current_subscribed
                         && new_desired_quality != TrackQuality::None
                     {
                         debug!(
-                            "[quality] switching from {:?} to {:?}",
-                            current_quality, new_desired_quality
+                            "[quality] switching simulcast layer from {:?} to {:?}",
+                            current_subscribed, new_desired_quality
                         );
 
-                        // Switch receiver
+                        // Unsubscribe from current layer
                         this.multicast
-                            .remove_receiver_for_quality(current_quality, &this.receiver_id);
+                            .remove_receiver_for_quality(current_subscribed, &this.receiver_id);
+
+                        // Subscribe to new layer
                         receiver = this.multicast.add_receiver_for_quality(
                             new_desired_quality.clone(),
                             this.receiver_id.clone(),
                         );
-                        current_quality = new_desired_quality;
+
+                        // Update current subscribed quality
+                        this.current_subscribed_quality
+                            .store(new_desired_quality.as_u8(), Ordering::SeqCst);
                     }
                 }
 
@@ -210,64 +236,50 @@ impl ForwardTrack {
     /// * `batch` - The batch of RTP packets
     ///
     async fn _process_batch(this: &Arc<Self>, batch: Vec<RtpForwardInfo>) {
+        let desired_quality = this.get_desired_quality();
+
+        // Skip processing if no quality is desired
+        if desired_quality == TrackQuality::None {
+            return;
+        }
+
         for info in batch {
             let is_svc = info.is_svc;
-            let is_simulcast = info.is_simulcast;
-            let current_quality = info.track_quality.clone();
-            let acceptable_map = info.acceptable_map.clone();
+            let packet_quality = info.track_quality.clone();
 
-            let desired_quality = this.get_desired_quality();
-
-            if desired_quality == TrackQuality::None {
-                continue;
+            // For simulcast: Only forward packets from the exact layer we're subscribed to
+            // Since we only subscribe to one layer, all packets should match our desired quality
+            if !is_svc {
+                // For simulcast, we should only receive packets from our subscribed layer
+                // This is a safety check - ideally this should always pass
+                if packet_quality != desired_quality {
+                    tracing::info!(
+                        "[simulcast] dropping packet from quality {:?} but desired {:?}",
+                        packet_quality,
+                        desired_quality
+                    );
+                    continue;
+                }
             }
 
-            let is_video = true;
-
-            if !is_svc
-                && is_video
-                && !Self::_is_acceptable_track(
-                    &acceptable_map,
-                    current_quality.clone(),
-                    desired_quality.clone(),
-                    is_simulcast,
-                )
-            {
-                continue;
-            }
-
-            let should_forward = if is_svc && is_video {
+            // For SVC (Scalable Video Coding), check VP9 layer filtering
+            let should_forward = if is_svc {
                 let mut vp9_packet = Vp9Packet::default();
                 match vp9_packet.depacketize(&info.packet.payload) {
                     Ok(_) => desired_quality.should_forward_vp9_svc(&vp9_packet),
                     Err(err) => {
                         warn!("Failed to depacketize VP9: {}", err);
-                        true
+                        true // Forward on depacketization error
                     }
                 }
             } else {
-                true
+                true // For simulcast, always forward (we're already subscribed to correct layer)
             };
 
-            if !should_forward {
-                continue;
+            if should_forward {
+                Self::_write_rtp(&this.local_track, &info.packet).await;
             }
-
-            // Write RTP packet
-            Self::_write_rtp(&this.local_track, &info.packet).await;
         }
-    }
-
-    /// Get the desired quality
-    ///
-    /// # Arguments
-    ///
-    /// * `this` - The ForwardTrack
-    ///
-    pub fn get_desired_quality(&self) -> TrackQuality {
-        let requested = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
-        let effective = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
-        requested.min(effective)
     }
 
     /// Write RTP packet
@@ -293,28 +305,8 @@ impl ForwardTrack {
         }
     }
 
-    /// Check if the track is acceptable
-    ///
-    /// # Arguments
-    ///
-    /// * `acceptable_map` - The acceptable map
-    /// * `current` - The current quality
-    /// * `desired` - The desired quality
-    /// * `is_simulcast` - Whether the track is simulcast
-    ///
-    fn _is_acceptable_track(
-        acceptable_map: &Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
-        current: TrackQuality,
-        desired: TrackQuality,
-        is_simulcast: bool,
-    ) -> bool {
-        if !is_simulcast {
-            return true;
-        }
-
-        acceptable_map
-            .get(&(current, desired))
-            .map(|v| *v)
-            .unwrap_or(false)
+    /// Get current subscribed quality (for debugging/monitoring)
+    pub fn get_current_subscribed_quality(&self) -> TrackQuality {
+        TrackQuality::from_u8(self.current_subscribed_quality.load(Ordering::Relaxed))
     }
 }
