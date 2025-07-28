@@ -165,6 +165,7 @@ impl EtcdNode {
     ///
     /// * `self` - The EtcdNode
     ///
+    #[inline]
     pub async fn deregister(mut self) {
         info!("Revoking lease and shutting down etcd registration");
         if let Err(err) = self.client.lease_revoke(self.lease_id).await {
@@ -182,6 +183,7 @@ impl EtcdNode {
     /// * `system` - The system
     ///
     /// # Returns
+    #[inline]
     fn get_free_cpu_efficient(system: &mut System) -> Option<f32> {
         system.refresh_cpu_usage();
 
@@ -204,6 +206,7 @@ impl EtcdNode {
     /// * `system` - The system
     ///
     /// # Returns
+    #[inline]
     fn get_free_ram_efficient(system: &mut System) -> Option<f32> {
         system.refresh_memory();
 

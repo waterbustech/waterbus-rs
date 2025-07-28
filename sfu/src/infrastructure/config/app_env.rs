@@ -57,6 +57,7 @@ impl AppEnv {
         }
     }
 
+    #[inline]
     fn get_env(var: &str, default: u16) -> u16 {
         env::var(var)
             .ok()
@@ -64,6 +65,7 @@ impl AppEnv {
             .unwrap_or(default)
     }
 
+    #[inline]
     fn get_str_env(var: &str, default: String) -> String {
         env::var(var)
             .ok()
@@ -71,6 +73,7 @@ impl AppEnv {
             .unwrap_or(default)
     }
 
+    #[inline]
     fn get_node_id() -> String {
         env::var("POD_ID")
             .ok()
@@ -78,6 +81,7 @@ impl AppEnv {
             .unwrap_or(Self::get_random_node_id())
     }
 
+    #[inline]
     fn get_random_node_id() -> String {
         let node_id = format!("sfu-node-{}", nanoid!(12));
         node_id

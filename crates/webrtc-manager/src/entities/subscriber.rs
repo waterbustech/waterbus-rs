@@ -593,6 +593,7 @@ impl Subscriber {
     }
 
     // Get current network stats for monitoring
+    #[inline]
     pub async fn get_network_stats(&self) -> (TrackQuality, TrackQuality) {
         let stats = self.network_stats.read().await;
         let current = TrackQuality::from_u8(self.preferred_quality.load(Ordering::Relaxed));
@@ -600,6 +601,7 @@ impl Subscriber {
         (current, stats.twcc_quality.clone())
     }
 
+    #[inline]
     pub fn close(&self) {
         self.cancel_token.cancel();
         self.clear_all_forward_tracks();

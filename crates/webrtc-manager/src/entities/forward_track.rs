@@ -3,8 +3,9 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
-use crossbeam::channel::{Receiver, Sender, TryRecvError, unbounded};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 use webrtc::{
     Error,
@@ -53,7 +54,7 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
         keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
         multicast: Arc<M>,
     ) -> Arc<Self> {
-        let (quality_change_sender, quality_change_receiver) = unbounded();
+        let (quality_change_sender, quality_change_receiver) = crossbeam_channel::unbounded();
 
         // Start with medium quality
         let initial_quality = TrackQuality::Medium;
@@ -87,7 +88,9 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     ///
     /// * `quality` - The quality to set
     ///
+    #[inline]
     pub fn set_requested_quality(&self, quality: &TrackQuality) {
+        return;
         let current = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
         if *quality != current {
             debug!("[quality] change requested quality to: {:?}", quality);
@@ -113,7 +116,9 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     ///
     /// * `quality` - The quality to set
     ///
+    #[inline]
     pub fn set_effective_quality(&self, quality: &TrackQuality) {
+        return;
         let current = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
         if *quality != current {
             debug!("[quality] change effective quality to: {:?}", quality);
@@ -129,6 +134,7 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     }
 
     /// Get the desired quality (minimum of requested and effective)
+    #[inline]
     pub fn get_desired_quality(&self) -> TrackQuality {
         let requested = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
         let effective = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
@@ -145,87 +151,25 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     ///
     fn _dynamic_receive_rtp(
         this: Arc<Self>,
-        initial_receiver: Receiver<RtpForwardInfo>,
-        quality_change_receiver: Receiver<TrackQuality>,
+        receiver: Receiver<RtpForwardInfo>,
+        _quality_change_receiver: Receiver<TrackQuality>,
     ) {
-        tokio::spawn(async move {
-            let mut receiver = initial_receiver;
-            const BATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(10);
-
-            loop {
-                // Check for quality changes first (non-blocking)
-                while let Ok(new_desired_quality) = quality_change_receiver.try_recv() {
-                    let current_subscribed = TrackQuality::from_u8(
-                        this.current_subscribed_quality.load(Ordering::Relaxed),
-                    );
-
-                    // Only switch if desired quality is different from currently subscribed
-                    if new_desired_quality != current_subscribed
-                        && new_desired_quality != TrackQuality::None
-                    {
-                        debug!(
-                            "[quality] switching simulcast layer from {:?} to {:?}",
-                            current_subscribed, new_desired_quality
-                        );
-
-                        // Unsubscribe from current layer
-                        this.multicast
-                            .remove_receiver_for_quality(current_subscribed, &this.receiver_id);
-
-                        // Subscribe to new layer
-                        receiver = this.multicast.add_receiver_for_quality(
-                            new_desired_quality.clone(),
-                            this.receiver_id.clone(),
-                        );
-
-                        // Update current subscribed quality
-                        this.current_subscribed_quality
-                            .store(new_desired_quality.as_u8(), Ordering::SeqCst);
-                    }
-                }
-
-                let mut batch = Vec::with_capacity(10);
-                let batch_start = tokio::time::Instant::now();
-
-                // Collect a batch of packets or timeout
-                while batch.len() < 10 && batch_start.elapsed() < BATCH_TIMEOUT {
-                    match tokio::task::spawn_blocking({
-                        let receiver = receiver.clone();
-                        move || receiver.try_recv()
-                    })
-                    .await
-                    {
-                        Ok(Ok(info)) => {
-                            batch.push(info);
-                        }
-                        Ok(Err(TryRecvError::Empty)) => {
-                            // No more packets available immediately, break to process what we have
-                            if !batch.is_empty() {
-                                break;
-                            }
-                            // If batch is empty, wait a bit for new packets
-                            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-                        }
-                        Ok(Err(TryRecvError::Disconnected)) => {
-                            // Process remaining batch and exit
-                            if !batch.is_empty() {
-                                Self::_process_batch(&this, batch).await;
-                            }
-                            return;
-                        }
-                        Err(_) => {
-                            // Task error, continue
-                            break;
-                        }
-                    }
-                }
-
-                // Process batch if we have packets
-                if !batch.is_empty() {
-                    Self::_process_batch(&this, batch).await;
-                }
+        tokio::task::spawn_blocking(move || {
+            while let Ok(info) = receiver.recv() {
+                let local_track = Arc::clone(&this.local_track);
+                let desired_quality = this.get_desired_quality();
+                tokio::spawn(async move {
+                    Self::process_packet(local_track, desired_quality, info).await;
+                });
             }
         });
+
+        // let cloned = Arc::clone(&this);
+        // tokio::spawn(async move {
+        //     while let Some(info) = rx.recv().await {
+        //         cloned.process_packet(info).await;
+        //     }
+        // });
     }
 
     /// Process a batch of RTP packets
@@ -235,51 +179,43 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     /// * `this` - The ForwardTrack
     /// * `batch` - The batch of RTP packets
     ///
-    async fn _process_batch(this: &Arc<Self>, batch: Vec<RtpForwardInfo>) {
-        let desired_quality = this.get_desired_quality();
+    async fn process_packet(
+        local_track: Arc<TrackLocalStaticRTP>,
+        desired_quality: TrackQuality,
+        info: RtpForwardInfo,
+    ) {
+        let start = std::time::Instant::now();
 
-        // Skip processing if no quality is desired
         if desired_quality == TrackQuality::None {
             return;
         }
 
-        for info in batch {
-            let is_svc = info.is_svc;
-            let packet_quality = info.track_quality.clone();
+        let is_svc = info.is_svc;
+        let packet_quality = info.track_quality;
 
-            // For simulcast: Only forward packets from the exact layer we're subscribed to
-            // Since we only subscribe to one layer, all packets should match our desired quality
-            if !is_svc {
-                // For simulcast, we should only receive packets from our subscribed layer
-                // This is a safety check - ideally this should always pass
-                if packet_quality != desired_quality {
-                    tracing::info!(
-                        "[simulcast] dropping packet from quality {:?} but desired {:?}",
-                        packet_quality,
-                        desired_quality
-                    );
-                    continue;
-                }
-            }
-
-            // For SVC (Scalable Video Coding), check VP9 layer filtering
-            let should_forward = if is_svc {
-                let mut vp9_packet = Vp9Packet::default();
-                match vp9_packet.depacketize(&info.packet.payload) {
-                    Ok(_) => desired_quality.should_forward_vp9_svc(&vp9_packet),
-                    Err(err) => {
-                        warn!("Failed to depacketize VP9: {}", err);
-                        true // Forward on depacketization error
-                    }
-                }
-            } else {
-                true // For simulcast, always forward (we're already subscribed to correct layer)
-            };
-
-            if should_forward {
-                Self::_write_rtp(&this.local_track, &info.packet).await;
-            }
+        if !is_svc && packet_quality != desired_quality {
+            return;
         }
+
+        let should_forward = if is_svc {
+            let mut vp9_packet = Vp9Packet::default();
+            match vp9_packet.depacketize(&info.packet.payload) {
+                Ok(_) => desired_quality.should_forward_vp9_svc(&vp9_packet),
+                Err(err) => {
+                    warn!("Failed to depacketize VP9: {}", err);
+                    true
+                }
+            }
+        } else {
+            true
+        };
+
+        if should_forward {
+            Self::_write_rtp(&local_track, &info.packet).await;
+        }
+        let end = std::time::Instant::now();
+        let duration = end.duration_since(start);
+        println!("====> Process packet duration: {:?}", duration);
     }
 
     /// Write RTP packet
@@ -289,6 +225,7 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     /// * `local_track` - The local track
     /// * `rtp` - The RTP packet
     ///
+    #[inline]
     async fn _write_rtp(local_track: &Arc<TrackLocalStaticRTP>, rtp: &Packet) {
         if let Err(err) = local_track
             .write_rtp_with_extensions(
@@ -303,10 +240,5 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
                 warn!("[track] output track write_rtp got error: {err}");
             }
         }
-    }
-
-    /// Get current subscribed quality (for debugging/monitoring)
-    pub fn get_current_subscribed_quality(&self) -> TrackQuality {
-        TrackQuality::from_u8(self.current_subscribed_quality.load(Ordering::Relaxed))
     }
 }

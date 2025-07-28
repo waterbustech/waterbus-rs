@@ -101,6 +101,7 @@ impl Media {
     ///
     /// * `sdp` - The sdp to cache
     ///
+    #[inline]
     pub fn cache_sdp(&mut self, sdp: String) {
         self.sdp = Some(sdp);
     }
@@ -111,6 +112,7 @@ impl Media {
     ///
     /// * `self` - The Media
     ///
+    #[inline]
     pub fn get_sdp(&mut self) -> Option<String> {
         let sdp = self.sdp.clone();
 
@@ -193,6 +195,7 @@ impl Media {
     ///
     /// * `rtp_track` - The rtp track to add
     ///
+    #[inline]
     pub fn add_track_to_hls_writer(&self, rtp_track: Arc<TrackRemote>) -> Option<Arc<HlsWriter>> {
         if self.streaming_protocol == StreamingProtocol::HLS {
             let hls_writer = self._initialize_hls_writer(&rtp_track.id());
@@ -237,6 +240,7 @@ impl Media {
     /// * `is_enabled` - Whether the screen sharing is enabled
     /// * `screen_track_id` - The id of the screen track
     ///
+    #[inline]
     pub fn set_screen_sharing(&self, is_enabled: bool, screen_track_id: Option<String>) {
         let mut state = self.state.write();
         if state.is_screen_sharing != is_enabled {
@@ -258,6 +262,7 @@ impl Media {
     ///
     /// * `is_enabled` - Whether the hand raising is enabled
     ///
+    #[inline]
     pub fn set_hand_rasing(&self, is_enabled: bool) {
         let mut state = self.state.write();
         state.is_hand_raising = is_enabled;
@@ -269,6 +274,7 @@ impl Media {
     ///
     /// * `self` - The Media
     ///
+    #[inline]
     fn remove_screen_track(&self) {
         let screen_track_id_opt = {
             let state = self.state.read();
@@ -298,6 +304,7 @@ impl Media {
     ///
     /// * `self` - The Media
     ///
+    #[inline]
     pub fn remove_all_tracks(&self) {
         for entry in self.tracks.iter() {
             let track_mutex = entry.value().clone();
@@ -315,6 +322,7 @@ impl Media {
     ///
     /// * `camera_type` - The camera type
     ///
+    #[inline]
     pub fn set_camera_type(&self, camera_type: u8) {
         self.state.write().camera_type = camera_type;
     }
@@ -325,6 +333,7 @@ impl Media {
     ///
     /// * `is_enabled` - Whether the video is enabled
     ///
+    #[inline]
     pub fn set_video_enabled(&self, is_enabled: bool) {
         self.state.write().video_enabled = is_enabled;
     }
@@ -335,6 +344,7 @@ impl Media {
     ///
     /// * `is_enabled` - Whether the audio is enabled
     ///
+    #[inline]
     pub fn set_audio_enabled(&self, is_enabled: bool) {
         self.state.write().audio_enabled = is_enabled;
     }
@@ -345,6 +355,7 @@ impl Media {
     ///
     /// * `is_enabled` - Whether the e2ee is enabled
     ///
+    #[inline]
     pub fn set_e2ee_enabled(&self, is_enabled: bool) {
         self.state.write().is_e2ee_enabled = is_enabled;
     }
@@ -389,6 +400,7 @@ impl Media {
     ///
     /// * `rtp_track` - The rtp track
     ///
+    #[inline]
     fn _log_track_added(&self, rtp_track: Arc<TrackRemote>) {
         let rid = if rtp_track.kind() == RTPCodecType::Audio {
             "audio"
@@ -415,6 +427,7 @@ impl Media {
     ///
     /// * `self` - The Media
     ///
+    #[inline]
     pub fn get_hls_urls(&self) -> Vec<String> {
         self.hls_writers
             .read()

@@ -534,6 +534,7 @@ impl Room {
         })
     }
 
+    #[inline]
     pub fn leave_room(&mut self, participant_id: &str) {
         self._remove_all_subscribers_with_target_id(participant_id);
 
@@ -542,6 +543,7 @@ impl Room {
         }
     }
 
+    #[inline]
     pub fn set_e2ee_enabled(
         &self,
         participant_id: &str,
@@ -556,6 +558,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_camera_type(
         &self,
         participant_id: &str,
@@ -570,6 +573,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_video_enabled(
         &self,
         participant_id: &str,
@@ -584,6 +588,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_audio_enabled(
         &self,
         participant_id: &str,
@@ -598,6 +603,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_screen_sharing(
         &self,
         participant_id: &str,
@@ -613,6 +619,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_hand_raising(
         &self,
         participant_id: &str,
@@ -627,6 +634,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     fn _get_publisher(&self, participant_id: &str) -> Result<Arc<Publisher>, WebRTCError> {
         let result = self
             .publishers
@@ -637,11 +645,13 @@ impl Room {
         Ok(result)
     }
 
+    #[inline]
     fn _add_publisher(&self, participant_id: &str, participant: &Arc<Publisher>) {
         self.publishers
             .insert(participant_id.to_owned(), participant.clone());
     }
 
+    #[inline]
     async fn _add_subscriber(&self, peer_id: &str, pc: &Arc<RTCPeerConnection>, user_id: String) {
         let subscriber = Subscriber::new(pc.clone(), user_id).await;
         let subscriber = Arc::new(subscriber);
@@ -649,6 +659,7 @@ impl Room {
         self.subscribers.insert(peer_id.to_owned(), subscriber);
     }
 
+    #[inline]
     fn _get_subscriber_peer(
         &self,
         target_id: &str,
@@ -666,6 +677,7 @@ impl Room {
         }
     }
 
+    #[inline]
     fn _get_subscriber(
         &self,
         target_id: &str,
@@ -683,17 +695,20 @@ impl Room {
         }
     }
 
+    #[inline]
     fn _get_subscriber_peer_id(&self, target_id: &str, participant_id: &str) -> String {
         let key = format!("p_{target_id}_{participant_id}");
 
         key
     }
 
+    #[inline]
     fn _get_media(&self, participant_id: &str) -> Result<Arc<RwLock<Media>>, WebRTCError> {
         let participant = self._get_publisher(participant_id)?;
         Ok(Arc::clone(&participant.media))
     }
 
+    #[inline]
     fn _remove_all_subscribers_with_target_id(&self, participant_id: &str) {
         let prefix = format!("p_{participant_id}_");
 
@@ -714,6 +729,7 @@ impl Room {
         }
     }
 
+    #[inline]
     async fn _add_track_to_subscribers(
         subscribers_lock: Arc<DashMap<String, Arc<Subscriber>>>,
         remote_track: TrackMutexWrapper,
@@ -838,6 +854,7 @@ impl Room {
         Ok(peer)
     }
 
+    #[inline]
     async fn _extract_subscribe_response(
         &self,
         media_arc: &Arc<RwLock<Media>>,
@@ -858,6 +875,7 @@ impl Room {
         }
     }
 
+    #[inline]
     async fn _forward_all_tracks(
         &self,
         subscriber: Arc<Subscriber>,

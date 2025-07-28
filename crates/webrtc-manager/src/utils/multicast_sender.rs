@@ -1,11 +1,18 @@
 use std::sync::Arc;
 
-use crossbeam::channel::{self, Receiver, Sender};
+use crossbeam_channel::{self, Receiver, Sender};
 use dashmap::DashMap;
-use tracing::debug;
 
 use crate::models::quality::TrackQuality;
 use crate::models::rtp_foward_info::RtpForwardInfo;
+
+const MAX_BUFFER: usize = 5;
+
+#[derive(Debug, Clone)]
+pub struct CrossbeamChannel<T> {
+    tx: Sender<T>,
+    rx: Receiver<T>,
+}
 
 /// Trait for multicast sender
 pub trait MulticastSender: Send + Sync {
@@ -22,7 +29,7 @@ pub trait MulticastSender: Send + Sync {
 /// Multi-cast sender wrapper for broadcasting to multiple receivers per quality layer
 #[derive(Debug, Clone)]
 pub struct MulticastSenderImpl {
-    quality_senders: Arc<DashMap<TrackQuality, DashMap<String, Sender<RtpForwardInfo>>>>,
+    quality_senders: Arc<DashMap<TrackQuality, DashMap<String, CrossbeamChannel<RtpForwardInfo>>>>,
 }
 
 impl Default for MulticastSenderImpl {
@@ -57,9 +64,9 @@ impl MulticastSender for MulticastSenderImpl {
         quality: TrackQuality,
         id: String,
     ) -> Receiver<RtpForwardInfo> {
-        let (tx, rx) = channel::bounded(1024);
+        let (tx, rx) = crossbeam_channel::bounded(MAX_BUFFER);
         if let Some(map) = self.quality_senders.get(&quality) {
-            map.insert(id, tx);
+            map.insert(id, CrossbeamChannel { tx, rx: rx.clone() });
         }
         rx
     }
@@ -88,16 +95,14 @@ impl MulticastSender for MulticastSenderImpl {
         if let Some(map) = self.quality_senders.get(&quality) {
             let mut to_remove = Vec::new();
             for entry in map.iter() {
-                match entry.value().try_send(info.clone()) {
+                let CrossbeamChannel { tx, rx } = entry.value();
+                match tx.try_send(info.clone()) {
                     Ok(_) => {}
-                    Err(crossbeam::channel::TrySendError::Full(_)) => {
-                        debug!(
-                            "Channel full for receiver {} (quality {:?}), dropping packet",
-                            entry.key(),
-                            quality
-                        );
+                    Err(crossbeam_channel::TrySendError::Full(_)) => {
+                        let _ = rx.try_recv();
+                        tx.send(info.clone()).unwrap();
                     }
-                    Err(crossbeam::channel::TrySendError::Disconnected(_)) => {
+                    Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
                         to_remove.push(entry.key().clone());
                     }
                 }

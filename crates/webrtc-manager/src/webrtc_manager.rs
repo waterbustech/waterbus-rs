@@ -282,6 +282,7 @@ impl WebRTCManager {
         Ok(client)
     }
 
+    #[inline]
     pub fn set_audio_enabled(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -298,6 +299,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_video_enabled(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -314,6 +316,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_camera_type(&self, client_id: &str, camera_type: u8) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -330,6 +333,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_e2ee_enabled(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -346,6 +350,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_screen_sharing(
         &self,
         client_id: &str,
@@ -367,6 +372,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_hand_raising(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -383,16 +389,19 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn _add_client(&self, client_id: &str, info: WClient) {
         if !self.clients.contains_key(client_id) {
             self.clients.insert(client_id.to_string(), info);
         }
     }
 
+    #[inline]
     pub fn _remove_client(&self, client_id: &str) {
         self.clients.remove(client_id);
     }
 
+    #[inline]
     fn _add_room(&self, room_id: &str) -> Result<Arc<RwLock<Room>>, WebRTCError> {
         let room_value = Arc::new(RwLock::new(Room::new(self.configs.clone())));
 
@@ -402,6 +411,7 @@ impl WebRTCManager {
         Ok(room_value)
     }
 
+    #[inline]
     pub fn get_client_by_id(&self, client_id: &str) -> Result<WClient, WebRTCError> {
         if let Some(client) = self.clients.get(client_id) {
             Ok(client.clone())
@@ -410,6 +420,7 @@ impl WebRTCManager {
         }
     }
 
+    #[inline]
     pub fn _get_room_by_id(&self, room_id: &str) -> Result<Arc<RwLock<Room>>, WebRTCError> {
         if let Some(room) = self.rooms.get(room_id) {
             Ok(room.clone())
