@@ -37,23 +37,27 @@ impl AppEnv {
         dotenv().ok();
 
         Self {
-            group_id: env::var("GROUP_ID").unwrap_or_else(|_| "waterbus-group-1".to_string()),
-            public_ip: env::var("PUBLIC_IP").unwrap_or_else(|_| "".to_string()),
+            group_id: env::var("DIST_GROUP_ID").unwrap_or_else(|_| "waterbus-group-0".to_string()),
+            public_ip: env::var("RTC_EXTERNAL_IP").unwrap_or_else(|_| "".to_string()),
             node_id: Self::get_node_id(),
-            etcd_addr: env::var("ETCD_URI").expect("ETCD_URI must be set"),
+            etcd_addr: env::var("DIST_ETCD_URI").expect("DIST_ETCD_URI must be set"),
             udp_port_range: UdpPortRange {
-                port_min: Self::get_env("PORT_MIN_UDP", 19200),
-                port_max: Self::get_env("PORT_MAX_UDP", 19250),
+                port_min: Self::get_env("RTC_PORT_MIN", 19200),
+                port_max: Self::get_env("RTC_PORT_MAX", 19250),
             },
             grpc_configs: GrpcConfigs {
-                sfu_host: Self::get_str_env("SFU_HOST", "http://[::1]".to_owned()),
-                sfu_port: Self::get_env("SFU_PORT", 50051),
-                dispatcher_host: Self::get_str_env("DISPATCHER_HOST", "http://[::1]".to_owned()),
-                dispatcher_port: Self::get_env("DISPATCHER_PORT", 50052),
+                sfu_host: Self::get_str_env("DIST_SFU_HOST", "http://[::1]".to_owned()),
+                sfu_port: Self::get_env("DIST_SFU_PORT", 50051),
+                dispatcher_host: Self::get_str_env(
+                    "DIST_DISPATCHER_HOST",
+                    "http://[::1]".to_owned(),
+                ),
+                dispatcher_port: Self::get_env("DIST_DISPATCHER_PORT", 50052),
             },
         }
     }
 
+    #[inline]
     fn get_env(var: &str, default: u16) -> u16 {
         env::var(var)
             .ok()
@@ -61,6 +65,7 @@ impl AppEnv {
             .unwrap_or(default)
     }
 
+    #[inline]
     fn get_str_env(var: &str, default: String) -> String {
         env::var(var)
             .ok()
@@ -68,6 +73,7 @@ impl AppEnv {
             .unwrap_or(default)
     }
 
+    #[inline]
     fn get_node_id() -> String {
         env::var("POD_ID")
             .ok()
@@ -75,6 +81,7 @@ impl AppEnv {
             .unwrap_or(Self::get_random_node_id())
     }
 
+    #[inline]
     fn get_random_node_id() -> String {
         let node_id = format!("sfu-node-{}", nanoid!(12));
         node_id

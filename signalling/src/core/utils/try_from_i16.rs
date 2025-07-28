@@ -10,6 +10,7 @@ macro_rules! impl_from_i16_with_default {
                 }
             }
         }
+
         impl From<$enum_name> for i16 {
             fn from(value: $enum_name) -> i16 {
                 value as i16

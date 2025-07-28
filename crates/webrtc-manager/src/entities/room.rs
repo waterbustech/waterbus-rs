@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
@@ -25,7 +25,7 @@ use webrtc::{
         sdp::session_description::RTCSessionDescription,
     },
     rtp_transceiver::{
-        RTCPFeedback, TYPE_RTCP_FB_GOOG_REMB, TYPE_RTCP_FB_NACK, TYPE_RTCP_FB_TRANSPORT_CC,
+        RTCPFeedback, TYPE_RTCP_FB_CCM, TYPE_RTCP_FB_GOOG_REMB, TYPE_RTCP_FB_TRANSPORT_CC,
         rtp_codec::{RTCRtpHeaderExtensionCapability, RTPCodecType},
     },
 };
@@ -36,9 +36,11 @@ use crate::{
     models::{
         connection_type::ConnectionType,
         params::{
-            AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse, SubscribeParams,
+            AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse,
+            SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse, SubscribeParams,
             SubscribeResponse, TrackMutexWrapper, WebRTCManagerConfigs,
         },
+        streaming_protocol::StreamingProtocol,
     },
 };
 
@@ -65,13 +67,14 @@ impl Room {
     ) -> Result<Option<JoinRoomResponse>, WebRTCError> {
         let participant_id = params.participant_id;
 
-        let pc = self._create_pc().await?;
+        let pc = self._create_pc(params.is_ipv6_supported).await?;
 
         let mut media = Media::new(
             participant_id.clone(),
             params.is_video_enabled,
             params.is_audio_enabled,
             params.is_e2ee_enabled,
+            params.streaming_protocol,
         );
 
         if params.connection_type == ConnectionType::P2P {
@@ -280,7 +283,7 @@ impl Room {
 
                 let peer_id = self._get_subscriber_peer_id(target_id, participant_id);
 
-                let pc = self._create_pc().await?;
+                let pc = self._create_pc(params.is_ipv6_supported).await?;
 
                 self._add_subscriber(&peer_id, &pc, participant_id.clone())
                     .await;
@@ -353,6 +356,23 @@ impl Room {
                 })
             }
         }
+    }
+
+    pub fn subscribe_hls_live_stream(
+        &self,
+        params: SubscribeHlsLiveStreamParams,
+    ) -> Result<SubscribeHlsLiveStreamResponse, WebRTCError> {
+        let target_id = &params.target_id;
+
+        let media_arc = self._get_media(target_id)?;
+
+        if media_arc.read().streaming_protocol != StreamingProtocol::HLS {
+            return Err(WebRTCError::InvalidStreamingProtocol);
+        }
+
+        let hls_urls = media_arc.read().get_hls_urls();
+
+        Ok(SubscribeHlsLiveStreamResponse { hls_urls })
     }
 
     pub fn set_subscriber_remote_sdp(
@@ -514,6 +534,7 @@ impl Room {
         })
     }
 
+    #[inline]
     pub fn leave_room(&mut self, participant_id: &str) {
         self._remove_all_subscribers_with_target_id(participant_id);
 
@@ -522,6 +543,7 @@ impl Room {
         }
     }
 
+    #[inline]
     pub fn set_e2ee_enabled(
         &self,
         participant_id: &str,
@@ -536,6 +558,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_camera_type(
         &self,
         participant_id: &str,
@@ -550,6 +573,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_video_enabled(
         &self,
         participant_id: &str,
@@ -564,6 +588,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_audio_enabled(
         &self,
         participant_id: &str,
@@ -578,6 +603,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_screen_sharing(
         &self,
         participant_id: &str,
@@ -593,6 +619,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     pub fn set_hand_raising(
         &self,
         participant_id: &str,
@@ -607,6 +634,7 @@ impl Room {
         Ok(())
     }
 
+    #[inline]
     fn _get_publisher(&self, participant_id: &str) -> Result<Arc<Publisher>, WebRTCError> {
         let result = self
             .publishers
@@ -617,11 +645,13 @@ impl Room {
         Ok(result)
     }
 
+    #[inline]
     fn _add_publisher(&self, participant_id: &str, participant: &Arc<Publisher>) {
         self.publishers
             .insert(participant_id.to_owned(), participant.clone());
     }
 
+    #[inline]
     async fn _add_subscriber(&self, peer_id: &str, pc: &Arc<RTCPeerConnection>, user_id: String) {
         let subscriber = Subscriber::new(pc.clone(), user_id).await;
         let subscriber = Arc::new(subscriber);
@@ -629,6 +659,7 @@ impl Room {
         self.subscribers.insert(peer_id.to_owned(), subscriber);
     }
 
+    #[inline]
     fn _get_subscriber_peer(
         &self,
         target_id: &str,
@@ -646,6 +677,7 @@ impl Room {
         }
     }
 
+    #[inline]
     fn _get_subscriber(
         &self,
         target_id: &str,
@@ -663,17 +695,20 @@ impl Room {
         }
     }
 
+    #[inline]
     fn _get_subscriber_peer_id(&self, target_id: &str, participant_id: &str) -> String {
         let key = format!("p_{target_id}_{participant_id}");
 
         key
     }
 
+    #[inline]
     fn _get_media(&self, participant_id: &str) -> Result<Arc<RwLock<Media>>, WebRTCError> {
         let participant = self._get_publisher(participant_id)?;
         Ok(Arc::clone(&participant.media))
     }
 
+    #[inline]
     fn _remove_all_subscribers_with_target_id(&self, participant_id: &str) {
         let prefix = format!("p_{participant_id}_");
 
@@ -694,6 +729,7 @@ impl Room {
         }
     }
 
+    #[inline]
     async fn _add_track_to_subscribers(
         subscribers_lock: Arc<DashMap<String, Arc<Subscriber>>>,
         remote_track: TrackMutexWrapper,
@@ -716,7 +752,10 @@ impl Room {
         Ok(())
     }
 
-    pub async fn _create_pc(&self) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
+    pub async fn _create_pc(
+        &self,
+        is_ipv6_supported: bool,
+    ) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
         let config = RTCConfiguration {
             ice_servers: vec![],
             bundle_policy: RTCBundlePolicy::MaxBundle,
@@ -739,8 +778,12 @@ impl Room {
                 parameter: "".to_string(),
             },
             RTCPFeedback {
-                typ: TYPE_RTCP_FB_NACK.to_owned(),
-                parameter: "".to_string(),
+                typ: TYPE_RTCP_FB_CCM.to_owned(),
+                parameter: "fir".to_string(),
+            },
+            RTCPFeedback {
+                typ: TYPE_RTCP_FB_CCM.to_owned(),
+                parameter: "pli".to_string(),
             },
         ];
 
@@ -767,10 +810,24 @@ impl Room {
 
         let mut setting_engine = SettingEngine::default();
         setting_engine.set_lite(true);
-        setting_engine.set_network_types(vec![NetworkType::Udp4]);
+        setting_engine.set_ice_timeouts(
+            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(25)),
+            Some(Duration::from_secs(1)),
+        );
+
+        let mut network_types = vec![];
+        if is_ipv6_supported {
+            network_types.push(NetworkType::Udp6);
+        } else {
+            network_types.push(NetworkType::Udp4);
+        }
+
+        setting_engine.set_network_types(network_types);
         setting_engine.set_udp_network(UDPNetwork::Ephemeral(
             EphemeralUDP::new(self.configs.port_min, self.configs.port_max).unwrap(),
         ));
+
         if !self.configs.public_ip.is_empty() {
             setting_engine.set_nat_1to1_ips(
                 vec![self.configs.public_ip.to_owned()],
@@ -797,6 +854,7 @@ impl Room {
         Ok(peer)
     }
 
+    #[inline]
     async fn _extract_subscribe_response(
         &self,
         media_arc: &Arc<RwLock<Media>>,
@@ -817,6 +875,7 @@ impl Room {
         }
     }
 
+    #[inline]
     async fn _forward_all_tracks(
         &self,
         subscriber: Arc<Subscriber>,

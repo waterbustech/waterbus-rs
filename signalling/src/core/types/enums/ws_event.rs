@@ -2,6 +2,7 @@
 pub enum WsEvent {
     RoomPublish,
     RoomSubscribe,
+    RoomSubscribeHlsLiveStream,
     RoomAnswerSubscriber,
     RoomLeave,
     RoomReconnect,
@@ -38,6 +39,7 @@ impl WsEvent {
         match self {
             WsEvent::RoomPublish => "room.publish",
             WsEvent::RoomSubscribe => "room.subscribe",
+            WsEvent::RoomSubscribeHlsLiveStream => "room.subscribe_hls_live_stream",
             WsEvent::RoomAnswerSubscriber => "room.answer_subscriber",
             WsEvent::RoomLeave => "room.leave",
             WsEvent::RoomReconnect => "room.reconnect",

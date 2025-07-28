@@ -32,6 +32,7 @@ use crate::{
         params::TrackMutexWrapper, quality::TrackQuality,
         track_quality_request::TrackQualityRequest,
     },
+    utils::multicast_sender::MulticastSenderImpl,
 };
 
 use super::forward_track::ForwardTrack;
@@ -51,7 +52,7 @@ const MIN_QUALITY_CHANGE_INTERVAL: Duration = Duration::from_secs(2);
 // History sizes for better stability
 const HISTORY_SIZE: usize = 10;
 
-type TrackMap = Arc<DashMap<String, Arc<ForwardTrack>>>;
+type TrackMap = Arc<DashMap<String, Arc<ForwardTrack<MulticastSenderImpl>>>>;
 
 #[derive(Debug)]
 struct NetworkStats {
@@ -592,6 +593,7 @@ impl Subscriber {
     }
 
     // Get current network stats for monitoring
+    #[inline]
     pub async fn get_network_stats(&self) -> (TrackQuality, TrackQuality) {
         let stats = self.network_stats.read().await;
         let current = TrackQuality::from_u8(self.preferred_quality.load(Ordering::Relaxed));
@@ -599,6 +601,7 @@ impl Subscriber {
         (current, stats.twcc_quality.clone())
     }
 
+    #[inline]
     pub fn close(&self) {
         self.cancel_token.cancel();
         self.clear_all_forward_tracks();

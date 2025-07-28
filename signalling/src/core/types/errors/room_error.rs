@@ -6,7 +6,7 @@ use salvo::prelude::*;
 use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Debug, Error, ToSchema, Serialize, Clone)]
+#[derive(Debug, Error, ToSchema, Serialize, Clone, PartialEq)]
 pub enum RoomError {
     #[error("Room with ID {0} not found")]
     RoomNotFound(i32),
@@ -22,6 +22,8 @@ pub enum RoomError {
     PasswordIncorrect,
     #[error("An unexpected error occurred in channel: {0}")]
     UnexpectedError(String),
+    #[error("Room is full")]
+    RoomIsFull,
     #[error("General error: {0}")]
     General(#[from] GeneralError),
 }
@@ -38,6 +40,7 @@ impl Writer for RoomError {
             RoomError::PasswordIncorrect => StatusCode::UNAUTHORIZED,
             RoomError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             RoomError::General(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            RoomError::RoomIsFull => StatusCode::BAD_REQUEST,
         };
         res.status_code(status);
         res.render(Json(serde_json::json!({ "message": self.to_string() })));

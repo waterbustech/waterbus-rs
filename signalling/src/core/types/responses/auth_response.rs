@@ -7,6 +7,7 @@ use crate::core::entities::models::User;
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[salvo(schema(example = json!({"token": "123123", "refresh_token": "123123", "user": {"id": 1, "full_name": "John Doe", "user_name": "john_doe", "bio": "I am a software engineer", "external_id": "123123", "avatar": "https://example.com/avatar.png"}})))]
 pub struct AuthResponse {
     pub token: String,
     pub refresh_token: String,

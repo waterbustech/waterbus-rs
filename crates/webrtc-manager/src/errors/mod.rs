@@ -43,4 +43,7 @@ pub enum WebRTCError {
 
     #[error("Room not found")]
     RoomNotFound,
+
+    #[error("Invalid streaming protocol")]
+    InvalidStreamingProtocol,
 }

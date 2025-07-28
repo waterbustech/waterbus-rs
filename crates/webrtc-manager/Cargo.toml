@@ -10,6 +10,7 @@ parking_lot = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_repr = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -17,7 +18,7 @@ tracing = { workspace = true }
 nanoid = { workspace = true }
 webrtc = { workspace = true }
 egress-manager = { workspace = true }
-crossbeam = { workspace = true }
+kanal = { workspace = true }
 bytes = { workspace = true }
 
 [dev-dependencies]

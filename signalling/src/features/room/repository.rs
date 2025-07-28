@@ -7,7 +7,7 @@ use diesel::{
     update,
 };
 use salvo::async_trait;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use chrono::NaiveDateTime;
 
@@ -204,6 +204,7 @@ impl RoomRepository for RoomRepositoryImpl {
                     members,
                     participants,
                     latest_message,
+                    is_protected: None,
                 }
             })
             .collect::<Vec<_>>();
@@ -278,6 +279,7 @@ impl RoomRepository for RoomRepositoryImpl {
             members: member_responses,
             participants: participant_responses,
             latest_message: None,
+            is_protected: None,
         };
 
         Ok(response)
@@ -327,11 +329,14 @@ impl RoomRepository for RoomRepositoryImpl {
             .next()
             .ok_or(RoomError::RoomCodeNotFound(room_code.to_string()))?;
 
+        let is_protected = Some(room.password.is_some());
+
         let response = RoomResponse {
             room,
             members: member_responses,
             participants: participant_responses,
             latest_message: None,
+            is_protected,
         };
 
         Ok(response)
@@ -351,6 +356,7 @@ impl RoomRepository for RoomRepositoryImpl {
             members: Vec::new(),
             participants: Vec::new(),
             latest_message: None,
+            is_protected: None,
         };
 
         Ok(room_response)
@@ -390,6 +396,7 @@ impl RoomRepository for RoomRepositoryImpl {
                 }],
                 participants: vec![],
                 latest_message: None,
+                is_protected: None,
             };
 
             Ok(response)
@@ -409,6 +416,9 @@ impl RoomRepository for RoomRepositoryImpl {
                 rooms::latest_message_created_at.eq(room.latest_message_created_at),
                 rooms::latest_message_id.eq(room.latest_message_id),
                 rooms::status.eq(room.status),
+                rooms::type_.eq(room.type_),
+                rooms::streaming_protocol.eq(room.streaming_protocol),
+                rooms::capacity.eq(room.capacity),
             ))
             .returning(Room::as_select())
             .get_result(&mut conn)
@@ -576,7 +586,7 @@ impl RoomRepository for RoomRepositoryImpl {
             })?;
 
         if deleted_rows == 0 {
-            warn!("No participants found for node_id: {}", node_id);
+            debug!("No participants found for node_id: {}", node_id);
         }
 
         Ok(())

@@ -11,11 +11,22 @@ pub struct JoinRoomDto {
     pub is_e2ee_enabled: bool,
     pub total_tracks: u8,
     pub connection_type: u8,
+    pub streaming_protocol: u8,
+    pub is_ipv6_supported: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscribeDto {
+    pub target_id: String,
+    pub room_id: String,
+    pub participant_id: String,
+    pub is_ipv6_supported: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscribeHlsLiveStreamDto {
     pub target_id: String,
     pub room_id: String,
     pub participant_id: String,

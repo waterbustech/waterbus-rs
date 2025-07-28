@@ -10,10 +10,12 @@ use crate::{
 };
 
 impl Media {
+    #[inline]
     pub fn set_track_subscribed_callback(&mut self, callback: TrackSubscribedCallback) {
         self.track_subscribed_callback = Some(callback);
     }
 
+    #[inline]
     pub fn create_event_channel(&mut self) -> mpsc::UnboundedReceiver<TrackSubscribedMessage> {
         let (sender, receiver) = mpsc::unbounded_channel();
         self.track_event_sender = Some(sender);
@@ -95,6 +97,7 @@ impl Media {
     }
 
     // Helper function to check if track subscription state changed
+    #[inline]
     fn track_subscribed_changed(old_state: &TrackSubscribed, new_state: &TrackSubscribed) -> bool {
         // Check if simulcast status changed
         if old_state.is_simulcast != new_state.is_simulcast {
@@ -121,6 +124,7 @@ impl Media {
     }
 
     // Helper function to get the highest quality layer with active subscribers
+    #[inline]
     fn get_highest_active_quality(track_subscribed: &TrackSubscribed) -> Option<TrackQuality> {
         if !track_subscribed.is_simulcast {
             return None;

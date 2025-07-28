@@ -14,9 +14,12 @@ use socketioxide::{
     handler::ConnectHandler,
     socket::Sid,
 };
+#[cfg(feature = "redis-cluster")]
+use socketioxide_redis::drivers::redis::ClusterDriver;
+#[cfg(not(feature = "redis-cluster"))]
+use socketioxide_redis::drivers::redis::RedisDriver;
 use socketioxide_redis::{
-    ClusterAdapter, CustomRedisAdapter, RedisAdapterCtr,
-    drivers::redis::{ClusterDriver, redis_client as redis},
+    CustomRedisAdapter, RedisAdapterCtr, drivers::redis::redis_client as redis,
 };
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
@@ -24,7 +27,8 @@ use tracing::{info, warn};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, LeaveRoomRequest,
     MigratePublisherRequest, PublisherRenegotiationRequest, SetCameraType, SetEnabledRequest,
-    SetScreenSharingRequest, SetSubscriberSdpRequest, SubscribeRequest,
+    SetScreenSharingRequest, SetSubscriberSdpRequest, SubscribeHlsLiveStreamRequest,
+    SubscribeRequest,
 };
 
 use crate::{
@@ -32,7 +36,7 @@ use crate::{
         dtos::socket::socket_dto::{
             AnswerSubscribeDto, JoinRoomDto, MigrateConnectionDto, PublisherCandidateDto,
             PublisherRenegotiationDto, SetCameraTypeDto, SetEnabledDto, SetHandRaisingDto,
-            SetScreenSharingDto, SubscribeDto, SubscriberCandidateDto,
+            SetScreenSharingDto, SubscribeDto, SubscribeHlsLiveStreamDto, SubscriberCandidateDto,
         },
         env::app_env::AppEnv,
         types::{
@@ -41,8 +45,9 @@ use crate::{
             responses::socket_response::{
                 CameraTypeResponse, EnabledResponse, HandleRaisingResponse, IceCandidate,
                 JoinRoomResponse, NewUserJoinedResponse, ParticipantHasLeftResponse,
-                RenegotiateResponse, ScreenSharingResponse, SubscribeParticipantResponse,
-                SubscribeResponse, SubscriberRenegotiationResponse, SubsriberCandidateResponse,
+                RenegotiateResponse, ScreenSharingResponse, SubscribeHlsLiveStreamResponse,
+                SubscribeParticipantResponse, SubscribeResponse, SubscriberRenegotiationResponse,
+                SubsriberCandidateResponse,
             },
         },
         utils::jwt_utils::JwtUtils,
@@ -56,6 +61,12 @@ use crate::{
     },
 };
 
+#[cfg(feature = "redis-cluster")]
+type DefaultDriver = ClusterDriver;
+
+#[cfg(not(feature = "redis-cluster"))]
+type DefaultDriver = RedisDriver;
+
 #[derive(Clone)]
 pub struct UserId(pub String);
 
@@ -63,10 +74,41 @@ pub struct UserId(pub String);
 async fn version() -> &'static str {
     "[v3] Waterbus Service written in Rust"
 }
+
+#[cfg(feature = "redis-cluster")]
 #[derive(Clone)]
 struct RemoteUserCnt(redis::cluster_async::ClusterConnection);
+
+#[cfg(feature = "redis-cluster")]
 impl RemoteUserCnt {
     fn new(conn: redis::cluster_async::ClusterConnection) -> Self {
+        Self(conn)
+    }
+    async fn add_user(&self) -> Result<usize, redis::RedisError> {
+        let mut conn = self.0.clone();
+        let num_users: usize = redis::cmd("INCR")
+            .arg("num_users")
+            .query_async(&mut conn)
+            .await?;
+        Ok(num_users)
+    }
+    async fn remove_user(&self) -> Result<usize, redis::RedisError> {
+        let mut conn = self.0.clone();
+        let num_users: usize = redis::cmd("DECR")
+            .arg("num_users")
+            .query_async(&mut conn)
+            .await?;
+        Ok(num_users)
+    }
+}
+
+#[cfg(not(feature = "redis-cluster"))]
+#[derive(Clone)]
+struct RemoteUserCnt(redis::aio::MultiplexedConnection);
+
+#[cfg(not(feature = "redis-cluster"))]
+impl RemoteUserCnt {
+    fn new(conn: redis::aio::MultiplexedConnection) -> Self {
         Self(conn)
     }
     async fn add_user(&self) -> Result<usize, redis::RedisError> {
@@ -93,9 +135,23 @@ pub async fn get_socket_router(
     room_service: RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>,
     message_receiver: Receiver<AppEvent>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
-    let client = redis::cluster::ClusterClient::new(env.clone().redis_uris).unwrap();
-    let adapter = RedisAdapterCtr::new_with_cluster(&client).await?;
-    let conn = client.get_async_connection().await?;
+    let (adapter, conn);
+
+    #[cfg(feature = "redis-cluster")]
+    {
+        let client = redis::cluster::ClusterClient::new(env.clone().redis_uris)
+            .expect("Failed to create Redis cluster client");
+        adapter = RedisAdapterCtr::new_with_cluster(&client).await?;
+        conn = client.get_async_connection().await?;
+    }
+
+    #[cfg(not(feature = "redis-cluster"))]
+    {
+        let client = redis::Client::open(env.clone().redis_uris.first().unwrap().as_str())?;
+
+        adapter = RedisAdapterCtr::new_with_redis(&client).await?;
+        conn = client.get_multiplexed_tokio_connection().await?;
+    }
 
     let env_clone = env.clone();
 
@@ -112,16 +168,39 @@ pub async fn get_socket_router(
 
     let dispatcher = DispatcherManager::new(configs).await;
 
-    let (layer, io) = SocketIo::builder()
-        .with_state(RemoteUserCnt::new(conn))
-        .with_state(jwt_utils.clone())
-        .with_state(room_service.clone())
-        .with_state(dispatcher)
-        .with_adapter::<ClusterAdapter<_>>(adapter)
-        .with_parser(ParserConfig::msgpack())
-        .ping_interval(Duration::from_secs(5))
-        .ping_timeout(Duration::from_secs(2))
-        .build_layer();
+    let (layer, io);
+
+    #[cfg(feature = "redis-cluster")]
+    {
+        use socketioxide_redis::ClusterAdapter;
+
+        (layer, io) = SocketIo::builder()
+            .with_state(RemoteUserCnt::new(conn))
+            .with_state(jwt_utils.clone())
+            .with_state(room_service.clone())
+            .with_state(dispatcher)
+            .with_adapter::<ClusterAdapter<_>>(adapter)
+            .with_parser(ParserConfig::msgpack())
+            .ping_interval(Duration::from_secs(5))
+            .ping_timeout(Duration::from_secs(2))
+            .build_layer()
+    }
+
+    #[cfg(not(feature = "redis-cluster"))]
+    {
+        use socketioxide_redis::RedisAdapter;
+
+        (layer, io) = SocketIo::builder()
+            .with_state(RemoteUserCnt::new(conn))
+            .with_state(jwt_utils.clone())
+            .with_state(room_service.clone())
+            .with_state(dispatcher)
+            .with_adapter::<RedisAdapter<_>>(adapter)
+            .with_parser(ParserConfig::msgpack())
+            .ping_interval(Duration::from_secs(5))
+            .ping_timeout(Duration::from_secs(2))
+            .build_layer()
+    }
 
     let layer = ServiceBuilder::new()
         .layer(CorsLayer::permissive()) // Enable CORS policy
@@ -147,7 +226,7 @@ pub async fn get_socket_router(
 }
 
 pub async fn handle_dispatcher_callback(
-    io: SocketIo<CustomRedisAdapter<Emitter, ClusterDriver>>,
+    io: SocketIo<CustomRedisAdapter<Emitter, DefaultDriver>>,
     receiver: Receiver<DispatcherCallback>,
     room_service: RoomServiceImpl<RoomRepositoryImpl, UserRepositoryImpl>,
 ) {
@@ -293,7 +372,7 @@ pub async fn handle_dispatcher_callback(
 }
 
 pub async fn handle_message_update(
-    io: SocketIo<CustomRedisAdapter<Emitter, ClusterDriver>>,
+    io: SocketIo<CustomRedisAdapter<Emitter, DefaultDriver>>,
     receiver: Receiver<AppEvent>,
 ) {
     // Non-blocking check for any new messages on the channel
@@ -383,6 +462,10 @@ async fn on_connect<A: Adapter>(socket: SocketRef<A>, user_id: Extension<UserId>
     socket.on(WsEvent::RoomPublish.to_str(), handle_join_room);
     socket.on(WsEvent::RoomSubscribe.to_str(), handle_subscribe);
     socket.on(
+        WsEvent::RoomSubscribeHlsLiveStream.to_str(),
+        handle_subscribe_hls_live_stream,
+    );
+    socket.on(
         WsEvent::RoomAnswerSubscriber.to_str(),
         handle_answer_subscribe,
     );
@@ -449,6 +532,8 @@ async fn handle_join_room<A: Adapter>(
         participant_id: participant_id.to_string(),
         room_id: room_id.clone(),
         connection_type: data.connection_type as i32,
+        streaming_protocol: data.streaming_protocol as i32,
+        is_ipv6_supported: data.is_ipv6_supported,
     };
 
     match dispatcher_manager.join_room(req).await {
@@ -485,6 +570,7 @@ async fn handle_subscribe<A: Adapter>(
         target_id: target_id.clone(),
         participant_id,
         room_id,
+        is_ipv6_supported: data.is_ipv6_supported,
     };
 
     let res = dispatcher_manager.subscribe(req).await;
@@ -506,6 +592,37 @@ async fn handle_subscribe<A: Adapter>(
                         screen_track_id: res.screen_track_id,
                     },
                     target_id,
+                },
+            )
+            .ok();
+    }
+}
+
+async fn handle_subscribe_hls_live_stream<A: Adapter>(
+    socket: SocketRef<A>,
+    Data(data): Data<SubscribeHlsLiveStreamDto>,
+    dispatcher_manager: State<DispatcherManager>,
+) {
+    let client_id = socket.id.to_string();
+    let target_id = data.target_id;
+    let room_id = data.room_id;
+    let participant_id = data.participant_id;
+
+    let req = SubscribeHlsLiveStreamRequest {
+        client_id,
+        target_id,
+        room_id,
+        participant_id,
+    };
+
+    let res = dispatcher_manager.subscribe_hls_live_stream(req).await;
+
+    if let Ok(res) = res {
+        let _ = socket
+            .emit(
+                WsEvent::RoomSubscribeHlsLiveStream.to_str(),
+                &SubscribeHlsLiveStreamResponse {
+                    hls_urls: res.hls_urls,
                 },
             )
             .ok();

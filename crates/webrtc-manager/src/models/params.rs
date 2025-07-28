@@ -3,7 +3,7 @@ use std::{pin::Pin, sync::Arc};
 use parking_lot::RwLock;
 use serde::Serialize;
 
-use crate::entities::track::Track;
+use crate::{entities::track::Track, models::streaming_protocol::StreamingProtocol};
 
 use super::connection_type::ConnectionType;
 
@@ -38,6 +38,8 @@ pub struct JoinRoomParams {
     pub connection_type: ConnectionType,
     pub callback: JoinedCallback,
     pub on_candidate: IceCandidateCallback,
+    pub streaming_protocol: StreamingProtocol,
+    pub is_ipv6_supported: bool,
 }
 
 #[derive(Serialize)]
@@ -53,6 +55,13 @@ pub struct SubscribeParams {
     pub participant_id: String,
     pub on_negotiation_needed: RenegotiationCallback,
     pub on_candidate: IceCandidateCallback,
+    pub is_ipv6_supported: bool,
+}
+
+#[derive(Clone)]
+pub struct SubscribeHlsLiveStreamParams {
+    pub target_id: String,
+    pub participant_id: String,
 }
 
 #[derive(Serialize)]
@@ -67,6 +76,12 @@ pub struct SubscribeResponse {
     pub is_e2ee_enabled: bool,
     pub video_codec: String,
     pub screen_track_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscribeHlsLiveStreamResponse {
+    pub hls_urls: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

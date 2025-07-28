@@ -69,6 +69,7 @@ impl Publisher {
         publisher
     }
 
+    #[inline]
     pub fn send_rtcp_pli(&self, media_ssrc: u32) {
         let pc2 = Arc::downgrade(&self.peer_connection);
         let cancel = self.cancel_token.clone();
@@ -99,6 +100,7 @@ impl Publisher {
         });
     }
 
+    #[inline]
     pub fn send_rtcp_pli_once(&self, media_ssrc: u32) {
         let pc2 = Arc::downgrade(&self.peer_connection);
 
@@ -114,15 +116,18 @@ impl Publisher {
         });
     }
 
+    #[inline]
     pub fn set_connection_type(&self, connection_type: ConnectionType) {
         self.connection_type
             .store(connection_type.into(), Ordering::Relaxed);
     }
 
+    #[inline]
     pub fn get_connection_type(&self) -> ConnectionType {
         self.connection_type.load(Ordering::Relaxed).into()
     }
 
+    #[inline]
     pub fn close(&self) {
         let pc = self.peer_connection.clone();
         let media = self.media.clone();

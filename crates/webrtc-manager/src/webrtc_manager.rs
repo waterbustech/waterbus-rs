@@ -4,16 +4,16 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 
 use crate::{
+    entities::room::Room,
     errors::WebRTCError,
     models::{
         connection_type::ConnectionType,
         params::{
             IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
-            RenegotiationCallback, SubscribeParams, SubscribeResponse, WClient,
-            WebRTCManagerConfigs,
+            RenegotiationCallback, SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse,
+            SubscribeParams, SubscribeResponse, WClient, WebRTCManagerConfigs,
         },
     },
-    room::Room,
 };
 
 pub struct JoinRoomReq {
@@ -28,6 +28,8 @@ pub struct JoinRoomReq {
     pub connection_type: u8,
     pub callback: JoinedCallback,
     pub ice_candidate_callback: IceCandidateCallback,
+    pub streaming_protocol: u8,
+    pub is_ipv6_supported: bool,
 }
 
 #[derive(Clone)]
@@ -81,6 +83,8 @@ impl WebRTCManager {
             connection_type: ConnectionType::from(req.connection_type),
             callback: req.callback,
             on_candidate: req.ice_candidate_callback,
+            streaming_protocol: req.streaming_protocol.into(),
+            is_ipv6_supported: req.is_ipv6_supported,
         };
 
         let res = {
@@ -100,6 +104,7 @@ impl WebRTCManager {
         room_id: &str,
         renegotiation_callback: RenegotiationCallback,
         ice_candidate_callback: IceCandidateCallback,
+        is_ipv6_supported: bool,
     ) -> Result<SubscribeResponse, WebRTCError> {
         self._add_client(
             client_id,
@@ -117,9 +122,33 @@ impl WebRTCManager {
             target_id: (&target_id).to_string(),
             on_candidate: ice_candidate_callback,
             on_negotiation_needed: renegotiation_callback,
+            is_ipv6_supported,
         };
 
         let res = room.subscribe(params).await?;
+
+        Ok(res)
+    }
+
+    pub fn subscribe_hls_live_stream(
+        &self,
+        client_id: &str,
+        target_id: &str,
+    ) -> Result<SubscribeHlsLiveStreamResponse, WebRTCError> {
+        let client = self.get_client_by_id(client_id)?;
+
+        let client = client.clone();
+
+        let room_id = &client.room_id;
+        let participant_id = &client.participant_id;
+
+        let room = self._get_room_by_id(room_id)?;
+        let room = room.read();
+
+        let res = room.subscribe_hls_live_stream(SubscribeHlsLiveStreamParams {
+            target_id: target_id.to_string(),
+            participant_id: participant_id.to_string(),
+        })?;
 
         Ok(res)
     }
@@ -253,6 +282,7 @@ impl WebRTCManager {
         Ok(client)
     }
 
+    #[inline]
     pub fn set_audio_enabled(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -269,6 +299,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_video_enabled(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -285,6 +316,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_camera_type(&self, client_id: &str, camera_type: u8) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -301,6 +333,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_e2ee_enabled(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -317,6 +350,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_screen_sharing(
         &self,
         client_id: &str,
@@ -338,6 +372,7 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn set_hand_raising(&self, client_id: &str, is_enabled: bool) -> Result<(), WebRTCError> {
         let client = self.get_client_by_id(client_id)?;
 
@@ -354,16 +389,19 @@ impl WebRTCManager {
         Ok(())
     }
 
+    #[inline]
     pub fn _add_client(&self, client_id: &str, info: WClient) {
         if !self.clients.contains_key(client_id) {
             self.clients.insert(client_id.to_string(), info);
         }
     }
 
+    #[inline]
     pub fn _remove_client(&self, client_id: &str) {
         self.clients.remove(client_id);
     }
 
+    #[inline]
     fn _add_room(&self, room_id: &str) -> Result<Arc<RwLock<Room>>, WebRTCError> {
         let room_value = Arc::new(RwLock::new(Room::new(self.configs.clone())));
 
@@ -373,6 +411,7 @@ impl WebRTCManager {
         Ok(room_value)
     }
 
+    #[inline]
     pub fn get_client_by_id(&self, client_id: &str) -> Result<WClient, WebRTCError> {
         if let Some(client) = self.clients.get(client_id) {
             Ok(client.clone())
@@ -381,6 +420,7 @@ impl WebRTCManager {
         }
     }
 
+    #[inline]
     pub fn _get_room_by_id(&self, room_id: &str) -> Result<Arc<RwLock<Room>>, WebRTCError> {
         if let Some(room) = self.rooms.get(room_id) {
             Ok(room.clone())

@@ -4,7 +4,8 @@ use waterbus_proto::{
     LeaveRoomRequest, LeaveRoomResponse, MigratePublisherRequest, MigratePublisherResponse,
     PublisherRenegotiationRequest, PublisherRenegotiationResponse, SetCameraType,
     SetEnabledRequest, SetScreenSharingRequest, SetSubscriberSdpRequest, StatusResponse,
-    SubscribeRequest, SubscribeResponse, sfu_service_client::SfuServiceClient,
+    SubscribeHlsLiveStreamRequest, SubscribeHlsLiveStreamResponse, SubscribeRequest,
+    SubscribeResponse, sfu_service_client::SfuServiceClient,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -42,6 +43,21 @@ impl SfuGrpcClient {
             .await
             .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
         let response = client.subscribe(Request::new(request)).await?;
+        Ok(response)
+    }
+
+    pub async fn subscribe_hls_live_stream(
+        &self,
+        server_address: String,
+        request: SubscribeHlsLiveStreamRequest,
+    ) -> Result<tonic::Response<SubscribeHlsLiveStreamResponse>, tonic::Status> {
+        let mut client = self
+            .get_client(server_address)
+            .await
+            .map_err(|e| Status::unavailable(format!("Failed to connect to SFU: {e}")))?;
+        let response = client
+            .subscribe_hls_live_stream(Request::new(request))
+            .await?;
         Ok(response)
     }
 
