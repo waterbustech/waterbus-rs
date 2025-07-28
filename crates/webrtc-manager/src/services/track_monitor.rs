@@ -12,7 +12,7 @@ pub struct TrackSubscribed {
 pub struct LayerInfo {
     pub quality: TrackQuality,
     pub subscriber_count: usize,
-    pub subscribers: Vec<String>, // forward_track_ids
+    pub subscribers: Vec<String>,
 }
 
 impl Track {
@@ -120,6 +120,7 @@ impl Track {
     }
 
     /// Get a summary of subscriber counts for each layer
+    #[inline]
     pub fn get_layer_subscriber_summary(&self) -> HashMap<TrackQuality, usize> {
         let track_subscribed = self.get_track_subscribed();
         track_subscribed
@@ -130,6 +131,7 @@ impl Track {
     }
 
     /// Check if any subscribers exist for simulcast layers
+    #[inline]
     pub fn has_simulcast_subscribers(&self) -> bool {
         if !self.is_simulcast.load(Ordering::Relaxed) {
             return false;
@@ -143,6 +145,7 @@ impl Track {
     }
 
     /// Get the most demanded quality layer
+    #[inline]
     pub fn get_most_demanded_quality(&self) -> Option<TrackQuality> {
         let track_subscribed = self.get_track_subscribed();
 

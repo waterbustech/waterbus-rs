@@ -18,7 +18,7 @@ tracing = { workspace = true }
 nanoid = { workspace = true }
 webrtc = { workspace = true }
 egress-manager = { workspace = true }
-crossbeam-channel = { workspace = true }
+kanal = { workspace = true }
 bytes = { workspace = true }
 
 [dev-dependencies]

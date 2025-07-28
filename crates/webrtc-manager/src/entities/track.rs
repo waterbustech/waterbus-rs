@@ -42,7 +42,7 @@ pub struct Track {
     pub remote_tracks: Vec<Arc<TrackRemote>>,
     pub forward_tracks: Arc<DashMap<String, Arc<ForwardTrack<MulticastSenderImpl>>>>,
     pub ssrc: u32,
-    acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
+    // acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
     rtp_multicast: Arc<MulticastSenderImpl>,
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
 }
@@ -90,13 +90,13 @@ impl Track {
             kind,
             remote_tracks: vec![track.clone()],
             forward_tracks: Arc::new(DashMap::new()),
-            acceptable_map: Arc::new(DashMap::new()),
+            // acceptable_map: Arc::new(DashMap::new()),
             ssrc: track.ssrc(),
             rtp_multicast,
             keyframe_request_callback: keyframe_request_callback.clone(),
         };
 
-        handler.rebuild_acceptable_map();
+        // handler.rebuild_acceptable_map();
 
         handler._forward_rtp(track, hls_writer, moq_writer, kind);
 
@@ -109,10 +109,11 @@ impl Track {
     ///
     /// * `track` - The track to add to the Track
     ///
+    #[inline]
     pub fn add_track(&mut self, track: Arc<TrackRemote>) {
         self.remote_tracks.push(track.clone());
 
-        self.rebuild_acceptable_map();
+        // self.rebuild_acceptable_map();
 
         self._forward_rtp(track, None, None, self.kind);
 
@@ -125,10 +126,11 @@ impl Track {
     ///
     /// * `track` - The track to stop
     ///
+    #[inline]
     pub fn stop(&mut self) {
         self.remote_tracks.clear();
         self.forward_tracks.clear();
-        self.acceptable_map.clear();
+        // self.acceptable_map.clear();
         self.is_simulcast.store(false, Ordering::Relaxed);
         self.rtp_multicast.clear();
     }
@@ -171,6 +173,7 @@ impl Track {
     ///
     /// * `id` - The id of the ForwardTrack
     ///
+    #[inline]
     pub fn remove_forward_track(&self, id: &str) {
         // Remove from all quality lines
         self.rtp_multicast
@@ -188,70 +191,70 @@ impl Track {
     ///
     /// * `self` - The Track
     ///
-    pub fn rebuild_acceptable_map(&self) {
-        let available_qualities: Vec<TrackQuality> = self
-            .remote_tracks
-            .iter()
-            .map(|track| TrackQuality::from_str(track.rid()).unwrap())
-            .collect::<std::collections::HashSet<_>>() // Remove duplicates
-            .into_iter()
-            .collect();
+    // pub fn rebuild_acceptable_map(&self) {
+    //     let available_qualities: Vec<TrackQuality> = self
+    //         .remote_tracks
+    //         .iter()
+    //         .map(|track| TrackQuality::from_str(track.rid()).unwrap())
+    //         .collect::<std::collections::HashSet<_>>() // Remove duplicates
+    //         .into_iter()
+    //         .collect();
 
-        self.acceptable_map.clear();
+    //     self.acceptable_map.clear();
 
-        // Pre-calculate quality fallback mapping
-        let quality_fallback = |desired: &TrackQuality| -> TrackQuality {
-            if available_qualities.contains(desired) {
-                return desired.clone();
-            }
+    //     // Pre-calculate quality fallback mapping
+    //     let quality_fallback = |desired: &TrackQuality| -> TrackQuality {
+    //         if available_qualities.contains(desired) {
+    //             return desired.clone();
+    //         }
 
-            // Smart fallback logic
-            match desired {
-                TrackQuality::High => available_qualities
-                    .iter()
-                    .find(|&q| matches!(q, TrackQuality::Medium))
-                    .or_else(|| {
-                        available_qualities
-                            .iter()
-                            .find(|&q| matches!(q, TrackQuality::Low))
-                    })
-                    .unwrap_or(&TrackQuality::Low)
-                    .clone(),
-                TrackQuality::Medium => available_qualities
-                    .iter()
-                    .find(|&q| matches!(q, TrackQuality::Low))
-                    .or_else(|| {
-                        available_qualities
-                            .iter()
-                            .find(|&q| matches!(q, TrackQuality::High))
-                    })
-                    .unwrap_or(&TrackQuality::Low)
-                    .clone(),
-                TrackQuality::Low => available_qualities
-                    .iter()
-                    .find(|&q| matches!(q, TrackQuality::Medium))
-                    .or_else(|| {
-                        available_qualities
-                            .iter()
-                            .find(|&q| matches!(q, TrackQuality::High))
-                    })
-                    .unwrap_or(&TrackQuality::Low)
-                    .clone(),
-                _ => TrackQuality::Low,
-            }
-        };
+    //         // Smart fallback logic
+    //         match desired {
+    //             TrackQuality::High => available_qualities
+    //                 .iter()
+    //                 .find(|&q| matches!(q, TrackQuality::Medium))
+    //                 .or_else(|| {
+    //                     available_qualities
+    //                         .iter()
+    //                         .find(|&q| matches!(q, TrackQuality::Low))
+    //                 })
+    //                 .unwrap_or(&TrackQuality::Low)
+    //                 .clone(),
+    //             TrackQuality::Medium => available_qualities
+    //                 .iter()
+    //                 .find(|&q| matches!(q, TrackQuality::Low))
+    //                 .or_else(|| {
+    //                     available_qualities
+    //                         .iter()
+    //                         .find(|&q| matches!(q, TrackQuality::High))
+    //                 })
+    //                 .unwrap_or(&TrackQuality::Low)
+    //                 .clone(),
+    //             TrackQuality::Low => available_qualities
+    //                 .iter()
+    //                 .find(|&q| matches!(q, TrackQuality::Medium))
+    //                 .or_else(|| {
+    //                     available_qualities
+    //                         .iter()
+    //                         .find(|&q| matches!(q, TrackQuality::High))
+    //                 })
+    //                 .unwrap_or(&TrackQuality::Low)
+    //                 .clone(),
+    //             _ => TrackQuality::Low,
+    //         }
+    //     };
 
-        // Build mapping more efficiently
-        for current in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-            for desired in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-                let target_quality = quality_fallback(desired);
-                let acceptable = current == &target_quality;
+    //     // Build mapping more efficiently
+    //     for current in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
+    //         for desired in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
+    //             let target_quality = quality_fallback(desired);
+    //             let acceptable = current == &target_quality;
 
-                self.acceptable_map
-                    .insert((current.clone(), desired.clone()), acceptable);
-            }
-        }
-    }
+    //             self.acceptable_map
+    //                 .insert((current.clone(), desired.clone()), acceptable);
+    //         }
+    //     }
+    // }
 
     /// Forward RTP
     ///

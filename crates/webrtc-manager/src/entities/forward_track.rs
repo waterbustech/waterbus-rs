@@ -3,9 +3,8 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
+use kanal::{AsyncReceiver, ReceiveError, Receiver, Sender};
 
-use tokio::sync::mpsc;
 use tracing::{debug, warn};
 use webrtc::{
     Error,
@@ -30,7 +29,7 @@ pub struct ForwardTrack<M: MulticastSender> {
     pub track_id: String,
     requested_quality: Arc<AtomicU8>,
     effective_quality: Arc<AtomicU8>,
-    current_subscribed_quality: Arc<AtomicU8>, // Track which layer we're currently subscribed to
+    current_subscribed_quality: Arc<AtomicU8>,
     ssrc: u32,
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
     multicast: Arc<M>,
@@ -54,7 +53,7 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
         keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
         multicast: Arc<M>,
     ) -> Arc<Self> {
-        let (quality_change_sender, quality_change_receiver) = crossbeam_channel::unbounded();
+        let (quality_change_sender, quality_change_receiver) = kanal::bounded(0);
 
         // Start with medium quality
         let initial_quality = TrackQuality::Medium;
@@ -77,7 +76,7 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
             .multicast
             .add_receiver_for_quality(initial_quality.clone(), this.receiver_id.clone());
 
-        Self::_dynamic_receive_rtp(Arc::clone(&this), initial_receiver, quality_change_receiver);
+        Self::dynamic_receive_rtp(Arc::clone(&this), initial_receiver, quality_change_receiver);
 
         this
     }
@@ -90,7 +89,6 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     ///
     #[inline]
     pub fn set_requested_quality(&self, quality: &TrackQuality) {
-        return;
         let current = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
         if *quality != current {
             debug!("[quality] change requested quality to: {:?}", quality);
@@ -118,7 +116,6 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     ///
     #[inline]
     pub fn set_effective_quality(&self, quality: &TrackQuality) {
-        return;
         let current = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
         if *quality != current {
             debug!("[quality] change effective quality to: {:?}", quality);
@@ -141,7 +138,44 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
         requested.min(effective)
     }
 
-    /// Dynamic receive RTP
+    /// Switch the subscription to a new quality channel if needed
+    ///
+    /// # Arguments
+    ///
+    /// * `new_quality` - The new desired quality
+    /// * `this` - Arc<Self> for ForwardTrack
+    /// * `receiver_id` - The receiver id
+    /// * `multicast` - The multicast sender
+    ///
+    fn switch_subscription(
+        this: &Arc<Self>,
+        new_quality: TrackQuality,
+    ) -> AsyncReceiver<RtpForwardInfo> {
+        let old_quality =
+            TrackQuality::from_u8(this.current_subscribed_quality.load(Ordering::Relaxed));
+        if old_quality != new_quality {
+            // Remove old receiver
+            this.multicast
+                .remove_receiver_for_quality(old_quality, &this.receiver_id);
+            // Add new receiver
+            let new_receiver = this
+                .multicast
+                .add_receiver_for_quality(new_quality, this.receiver_id.clone());
+            this.current_subscribed_quality
+                .store(new_quality.as_u8(), Ordering::SeqCst);
+            debug!(
+                "[quality] switched subscription from {:?} to {:?}",
+                old_quality, new_quality
+            );
+            new_receiver
+        } else {
+            // Already subscribed to the correct quality, just return a dummy receiver (will not be used)
+            this.multicast
+                .add_receiver_for_quality(new_quality, format!("{}_dummy", this.receiver_id))
+        }
+    }
+
+    /// Dynamic receive RTP with fast, performant channel switching based on desired quality
     ///
     /// # Arguments
     ///
@@ -149,27 +183,37 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     /// * `initial_receiver` - The initial receiver
     /// * `quality_change_receiver` - Receiver for quality change notifications
     ///
-    fn _dynamic_receive_rtp(
+    fn dynamic_receive_rtp(
         this: Arc<Self>,
-        receiver: Receiver<RtpForwardInfo>,
-        _quality_change_receiver: Receiver<TrackQuality>,
+        mut receiver: AsyncReceiver<RtpForwardInfo>,
+        quality_change_receiver: Receiver<TrackQuality>,
     ) {
-        tokio::task::spawn_blocking(move || {
-            while let Ok(info) = receiver.recv() {
-                let local_track = Arc::clone(&this.local_track);
-                let desired_quality = this.get_desired_quality();
-                tokio::spawn(async move {
-                    Self::process_packet(local_track, desired_quality, info).await;
-                });
+        tokio::spawn(async move {
+            loop {
+                match quality_change_receiver.try_recv() {
+                    Ok(Some(new_quality)) => {
+                        let new_receiver = Self::switch_subscription(&this, new_quality);
+                        receiver = new_receiver;
+                    }
+                    Ok(None) => {}
+                    Err(ReceiveError::Closed) | Err(ReceiveError::SendClosed) => {
+                        break;
+                    }
+                }
+
+                match receiver.recv().await {
+                    Ok(info) => {
+                        let local_track = Arc::clone(&this.local_track);
+                        tokio::spawn(async move {
+                            Self::process_packet(local_track, info).await;
+                        });
+                    }
+                    Err(_) => {
+                        break;
+                    }
+                }
             }
         });
-
-        // let cloned = Arc::clone(&this);
-        // tokio::spawn(async move {
-        //     while let Some(info) = rx.recv().await {
-        //         cloned.process_packet(info).await;
-        //     }
-        // });
     }
 
     /// Process a batch of RTP packets
@@ -179,43 +223,27 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     /// * `this` - The ForwardTrack
     /// * `batch` - The batch of RTP packets
     ///
-    async fn process_packet(
-        local_track: Arc<TrackLocalStaticRTP>,
-        desired_quality: TrackQuality,
-        info: RtpForwardInfo,
-    ) {
-        let start = std::time::Instant::now();
-
-        if desired_quality == TrackQuality::None {
-            return;
-        }
-
+    ///
+    async fn process_packet(local_track: Arc<TrackLocalStaticRTP>, info: RtpForwardInfo) {
         let is_svc = info.is_svc;
-        let packet_quality = info.track_quality;
 
-        if !is_svc && packet_quality != desired_quality {
-            return;
-        }
-
-        let should_forward = if is_svc {
-            let mut vp9_packet = Vp9Packet::default();
-            match vp9_packet.depacketize(&info.packet.payload) {
-                Ok(_) => desired_quality.should_forward_vp9_svc(&vp9_packet),
-                Err(err) => {
-                    warn!("Failed to depacketize VP9: {}", err);
-                    true
+        let should_forward = match is_svc {
+            false => true,
+            true => {
+                let mut vp9_packet = Vp9Packet::default();
+                match vp9_packet.depacketize(&info.packet.payload) {
+                    Ok(_) => info.track_quality.should_forward_vp9_svc(&vp9_packet),
+                    Err(err) => {
+                        warn!("Failed to depacketize VP9: {}", err);
+                        true
+                    }
                 }
             }
-        } else {
-            true
         };
 
         if should_forward {
             Self::_write_rtp(&local_track, &info.packet).await;
         }
-        let end = std::time::Instant::now();
-        let duration = end.duration_since(start);
-        println!("====> Process packet duration: {:?}", duration);
     }
 
     /// Write RTP packet

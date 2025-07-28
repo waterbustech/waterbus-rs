@@ -52,6 +52,7 @@ impl Publisher {
         }
     }
 
+    #[inline]
     pub async fn start_data_channel_handler(&mut self) {
         if let Some(mut receiver) = self.track_event_receiver.take() {
             let data_channel = self.data_channel.clone();
@@ -77,6 +78,7 @@ impl Publisher {
         }
     }
 
+    #[inline]
     async fn send_track_subscribed_message(
         data_channel: &Arc<RTCDataChannel>,
         message: TrackSubscribedMessage,
@@ -89,6 +91,7 @@ impl Publisher {
         Ok(())
     }
 
+    #[inline]
     pub async fn create_data_channel(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let data_channel = self
             .peer_connection

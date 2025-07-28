@@ -1,18 +1,14 @@
 use std::sync::Arc;
 
-use crossbeam_channel::{self, Receiver, Sender};
 use dashmap::DashMap;
+use kanal::{self, AsyncReceiver, AsyncSender};
 
 use crate::models::quality::TrackQuality;
 use crate::models::rtp_foward_info::RtpForwardInfo;
+use std::sync::Mutex;
+use std::thread;
 
-const MAX_BUFFER: usize = 5;
-
-#[derive(Debug, Clone)]
-pub struct CrossbeamChannel<T> {
-    tx: Sender<T>,
-    rx: Receiver<T>,
-}
+const MAX_BUFFER: usize = 1;
 
 /// Trait for multicast sender
 pub trait MulticastSender: Send + Sync {
@@ -20,7 +16,7 @@ pub trait MulticastSender: Send + Sync {
         &self,
         quality: TrackQuality,
         id: String,
-    ) -> Receiver<RtpForwardInfo>;
+    ) -> AsyncReceiver<RtpForwardInfo>;
     fn remove_receiver_for_quality(&self, quality: TrackQuality, id: &str);
     fn send_to_quality(&self, quality: TrackQuality, info: RtpForwardInfo);
     fn clear(&self);
@@ -29,7 +25,7 @@ pub trait MulticastSender: Send + Sync {
 /// Multi-cast sender wrapper for broadcasting to multiple receivers per quality layer
 #[derive(Debug, Clone)]
 pub struct MulticastSenderImpl {
-    quality_senders: Arc<DashMap<TrackQuality, DashMap<String, CrossbeamChannel<RtpForwardInfo>>>>,
+    quality_senders: Arc<DashMap<TrackQuality, DashMap<String, AsyncSender<RtpForwardInfo>>>>,
 }
 
 impl Default for MulticastSenderImpl {
@@ -59,14 +55,15 @@ impl MulticastSender for MulticastSenderImpl {
     /// * `quality` - The quality to add the receiver for
     /// * `id` - The id of the receiver
     ///
+    #[inline]
     fn add_receiver_for_quality(
         &self,
         quality: TrackQuality,
         id: String,
-    ) -> Receiver<RtpForwardInfo> {
-        let (tx, rx) = crossbeam_channel::bounded(MAX_BUFFER);
+    ) -> AsyncReceiver<RtpForwardInfo> {
+        let (tx, rx) = kanal::bounded_async(MAX_BUFFER);
         if let Some(map) = self.quality_senders.get(&quality) {
-            map.insert(id, CrossbeamChannel { tx, rx: rx.clone() });
+            map.insert(id, tx);
         }
         rx
     }
@@ -78,6 +75,7 @@ impl MulticastSender for MulticastSenderImpl {
     /// * `quality` - The quality to remove the receiver for
     /// * `id` - The id of the receiver
     ///
+    #[inline]
     fn remove_receiver_for_quality(&self, quality: TrackQuality, id: &str) {
         if let Some(map) = self.quality_senders.get(&quality) {
             map.remove(id);
@@ -93,27 +91,34 @@ impl MulticastSender for MulticastSenderImpl {
     ///
     fn send_to_quality(&self, quality: TrackQuality, info: RtpForwardInfo) {
         if let Some(map) = self.quality_senders.get(&quality) {
-            let mut to_remove = Vec::new();
-            for entry in map.iter() {
-                let CrossbeamChannel { tx, rx } = entry.value();
-                match tx.try_send(info.clone()) {
-                    Ok(_) => {}
-                    Err(crossbeam_channel::TrySendError::Full(_)) => {
-                        let _ = rx.try_recv();
-                        tx.send(info.clone()).unwrap();
-                    }
-                    Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
-                        to_remove.push(entry.key().clone());
-                    }
+            let to_remove = Arc::new(Mutex::new(Vec::new()));
+
+            thread::scope(|s| {
+                for entry in map.iter() {
+                    let tx = entry.value().clone_sync();
+                    let id = entry.key().clone();
+                    let info = info.clone();
+                    let to_remove = Arc::clone(&to_remove);
+
+                    s.spawn(move || match tx.send(info) {
+                        Ok(_) => {}
+                        Err(kanal::SendError::ReceiveClosed) | Err(kanal::SendError::Closed) => {
+                            to_remove.lock().unwrap().push(id);
+                        }
+                    });
                 }
-            }
-            for id in to_remove {
-                map.remove(&id);
+            });
+
+            // Remove closed channels
+            let to_remove = to_remove.lock().unwrap();
+            for id in to_remove.iter() {
+                map.remove(id);
             }
         }
     }
 
     /// Clear the multicast sender
+    #[inline]
     fn clear(&self) {
         self.quality_senders.clear();
     }
