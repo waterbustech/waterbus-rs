@@ -27,13 +27,15 @@ salvo = { version = "0.81.0", features = [
     "serve-static",
 ] }
 serde = "1.0.219"
-socketioxide = { version = "0.17.1", features = [
+socketioxide = { git = "https://github.com/Totodore/socketioxide.git", rev = "ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963", features = [
     "extensions",
     "state",
     "msgpack",
 ] }
-socketioxide-redis = { version = "0.2.2", features = ["redis-cluster"] }
-tokio = { version = "1.46.1", features = ["full"] }
+socketioxide-redis = { git = "https://github.com/Totodore/socketioxide.git", rev = "ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963", features = [
+    "redis-cluster",
+] }
+tokio = { version = "1.47.0", features = ["full"] }
 tokio-util = "0.7.15"
 tower = { version = "0.5.2", default-features = false }
 tower-http = { version = "0.6.4", features = ["cors", "fs", "auth"] }
@@ -87,7 +89,11 @@ tonic = "0.13.1"
 etcd-client = "0.16.1"
 sysinfo = "0.36.1"
 futures-util = "0.3.31"
-redis = { version = "0.32.4", features = ["cluster"] }
+redis = { version = "0.32.4", features = [
+    "cluster",
+    "tls-native-tls",
+    "tokio-native-tls-comp",
+] }
 reqwest = { version = "0.12.22", features = ["json"] }
 
 # Local crates

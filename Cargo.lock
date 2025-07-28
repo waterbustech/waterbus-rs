@@ -1656,7 +1656,7 @@ dependencies = [
  "etcd-client",
  "futures-util",
  "prost",
- "redis 0.32.4",
+ "redis",
  "serde",
  "serde_json",
  "tokio",
@@ -1817,8 +1817,7 @@ dependencies = [
 [[package]]
 name = "engineioxide"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb6d2ef56d20b87b7f02bc08935e21bd7cfd88da6b82b129d5d89a28ddf3a389"
+source = "git+https://github.com/Totodore/socketioxide.git?rev=ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963#ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -1844,8 +1843,7 @@ dependencies = [
 [[package]]
 name = "engineioxide-core"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e5d58eb7374df380cbb53ef65f9c35f544c9c217528adb1458c8df05978475"
+source = "git+https://github.com/Totodore/socketioxide.git?rev=ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963#ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -4900,11 +4898,10 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.30.0"
+version = "0.32.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "438a4e5f8e9aa246d6f3666d6978441bf1b37d5f417b50c4dd220be09f5fcc17"
+checksum = "e1f66bf4cac9733a23bcdf1e0e01effbaaad208567beba68be8f67e5f4af3ee1"
 dependencies = [
- "arc-swap",
  "bytes",
  "cfg-if",
  "combine",
@@ -4913,32 +4910,17 @@ dependencies = [
  "futures-util",
  "itoa",
  "log",
+ "native-tls",
  "num-bigint",
  "percent-encoding",
  "pin-project-lite",
  "rand 0.9.2",
  "ryu",
- "socket2 0.5.9",
- "tokio",
- "tokio-util",
- "url",
-]
-
-[[package]]
-name = "redis"
-version = "0.32.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1f66bf4cac9733a23bcdf1e0e01effbaaad208567beba68be8f67e5f4af3ee1"
-dependencies = [
- "combine",
- "crc16",
- "itoa",
- "num-bigint",
- "percent-encoding",
- "rand 0.9.2",
- "ryu",
  "sha1_smol",
  "socket2 0.6.0",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-util",
  "url",
 ]
 
@@ -6158,9 +6140,8 @@ dependencies = [
 
 [[package]]
 name = "socketioxide"
-version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "476190583b592f1e3d55584269600f2d3c4f18af36adad03c41c27e82dcb6bd5"
+version = "0.17.1"
+source = "git+https://github.com/Totodore/socketioxide.git?rev=ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963#ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963"
 dependencies = [
  "bytes",
  "engineioxide",
@@ -6185,8 +6166,7 @@ dependencies = [
 [[package]]
 name = "socketioxide-core"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b07b95089a961994921d23dd6e70792a06f5daa250b5ec8919f6f9de371d2cc5"
+source = "git+https://github.com/Totodore/socketioxide.git?rev=ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963#ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963"
 dependencies = [
  "arbitrary",
  "bytes",
@@ -6200,8 +6180,7 @@ dependencies = [
 [[package]]
 name = "socketioxide-parser-common"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fe3b57122bf9c17fe8c2f364e1d307983068396cfb1b0407ec897de411f8033"
+source = "git+https://github.com/Totodore/socketioxide.git?rev=ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963#ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963"
 dependencies = [
  "bytes",
  "itoa",
@@ -6213,8 +6192,7 @@ dependencies = [
 [[package]]
 name = "socketioxide-parser-msgpack"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d815cc0ea52f2026d16435c3d075d2234d26bcff53ae381031870bbb6a3611ae"
+source = "git+https://github.com/Totodore/socketioxide.git?rev=ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963#ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963"
 dependencies = [
  "bytes",
  "rmp",
@@ -6226,14 +6204,13 @@ dependencies = [
 [[package]]
 name = "socketioxide-redis"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "997d1017a354c2ed1edf013ac330d8595a2bb2baf0ece9efa782e9182e08dd1c"
+source = "git+https://github.com/Totodore/socketioxide.git?rev=ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963#ba71aa5f07ca72a22ae0ecaf3e026ea0ec114963"
 dependencies = [
  "bytes",
  "futures-core",
  "futures-util",
  "pin-project-lite",
- "redis 0.30.0",
+ "redis",
  "rmp",
  "rmp-serde",
  "serde",
@@ -6581,9 +6558,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.46.1"
+version = "1.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc3a2344dafbe23a245241fe8b09735b521110d30fcefbbd5feb1797ca35d17"
+checksum = "43864ed400b6043a4757a25c7a64a8efde741aed79a056a2fb348a406701bb35"
 dependencies = [
  "backtrace",
  "bytes",
@@ -6594,9 +6571,9 @@ dependencies = [
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
- "socket2 0.5.9",
+ "socket2 0.6.0",
  "tokio-macros",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
@@ -25,7 +25,7 @@ use webrtc::{
         sdp::session_description::RTCSessionDescription,
     },
     rtp_transceiver::{
-        RTCPFeedback, TYPE_RTCP_FB_GOOG_REMB, TYPE_RTCP_FB_NACK, TYPE_RTCP_FB_TRANSPORT_CC,
+        RTCPFeedback, TYPE_RTCP_FB_CCM, TYPE_RTCP_FB_GOOG_REMB, TYPE_RTCP_FB_TRANSPORT_CC,
         rtp_codec::{RTCRtpHeaderExtensionCapability, RTPCodecType},
     },
 };
@@ -762,8 +762,12 @@ impl Room {
                 parameter: "".to_string(),
             },
             RTCPFeedback {
-                typ: TYPE_RTCP_FB_NACK.to_owned(),
-                parameter: "".to_string(),
+                typ: TYPE_RTCP_FB_CCM.to_owned(),
+                parameter: "fir".to_string(),
+            },
+            RTCPFeedback {
+                typ: TYPE_RTCP_FB_CCM.to_owned(),
+                parameter: "pli".to_string(),
             },
         ];
 
@@ -790,17 +794,26 @@ impl Room {
 
         let mut setting_engine = SettingEngine::default();
         setting_engine.set_lite(true);
-        setting_engine.set_network_types(vec![
-            NetworkType::Udp4,
-            if is_ipv6_supported {
-                NetworkType::Udp6
-            } else {
-                NetworkType::Udp4
-            },
-        ]);
+        setting_engine.set_ice_timeouts(
+            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(25)),
+            Some(Duration::from_secs(1)),
+        );
+
+        let mut network_types = vec![];
+        if is_ipv6_supported {
+            println!("===> ipv6 supported");
+            network_types.push(NetworkType::Udp6);
+        } else {
+            println!("===>ipv4 supported");
+            network_types.push(NetworkType::Udp4);
+        }
+
+        setting_engine.set_network_types(network_types);
         setting_engine.set_udp_network(UDPNetwork::Ephemeral(
             EphemeralUDP::new(self.configs.port_min, self.configs.port_max).unwrap(),
         ));
+
         if !self.configs.public_ip.is_empty() {
             setting_engine.set_nat_1to1_ips(
                 vec![self.configs.public_ip.to_owned()],

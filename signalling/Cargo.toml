@@ -39,5 +39,9 @@ async-channel = { workspace = true }
 rust-embed = { workspace = true }
 reqwest = { workspace = true }
 
-dispatcher = { workspace = true }
+dispatcher = { workspace = true, features = [] }
 waterbus-proto = { workspace = true }
+
+[features]
+default = []
+redis-cluster = ["dispatcher/redis-cluster"]

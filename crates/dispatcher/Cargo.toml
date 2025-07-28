@@ -16,3 +16,8 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 futures-util = { workspace = true }
 redis = { workspace = true }
+
+[features]
+default = []
+
+redis-cluster = []

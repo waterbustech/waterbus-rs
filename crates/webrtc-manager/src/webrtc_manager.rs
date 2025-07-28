@@ -4,6 +4,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 
 use crate::{
+    entities::room::Room,
     errors::WebRTCError,
     models::{
         connection_type::ConnectionType,
@@ -13,7 +14,6 @@ use crate::{
             SubscribeParams, SubscribeResponse, WClient, WebRTCManagerConfigs,
         },
     },
-    room::Room,
 };
 
 pub struct JoinRoomReq {

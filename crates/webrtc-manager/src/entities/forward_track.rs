@@ -184,11 +184,11 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
                     }
                 }
 
-                let mut batch = Vec::with_capacity(32);
+                let mut batch = Vec::with_capacity(10);
                 let batch_start = tokio::time::Instant::now();
 
                 // Collect a batch of packets or timeout
-                while batch.len() < 32 && batch_start.elapsed() < BATCH_TIMEOUT {
+                while batch.len() < 10 && batch_start.elapsed() < BATCH_TIMEOUT {
                     match tokio::task::spawn_blocking({
                         let receiver = receiver.clone();
                         move || receiver.try_recv()

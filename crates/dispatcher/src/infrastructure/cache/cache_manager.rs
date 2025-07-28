@@ -1,6 +1,17 @@
-use redis::{Commands, cluster::ClusterClient};
+use redis::Commands;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+
+#[cfg(not(feature = "redis-cluster"))]
+use redis::Client;
+#[cfg(feature = "redis-cluster")]
+use redis::cluster::ClusterClient;
+
+#[cfg(feature = "redis-cluster")]
+type DefaultClient = ClusterClient;
+
+#[cfg(not(feature = "redis-cluster"))]
+type DefaultClient = Client;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ClientMetadata {
@@ -23,12 +34,23 @@ impl CacheKey {
 
 #[derive(Clone)]
 pub struct CacheManager {
-    client: Arc<Mutex<ClusterClient>>,
+    client: Arc<Mutex<DefaultClient>>,
 }
 
 impl CacheManager {
     pub fn new(urls: Vec<String>) -> Self {
-        let client = ClusterClient::new(urls).unwrap();
+        let client: DefaultClient = {
+            #[cfg(feature = "redis-cluster")]
+            {
+                ClusterClient::new(urls).expect("Failed to create ClusterClient")
+            }
+
+            #[cfg(not(feature = "redis-cluster"))]
+            {
+                Client::open(urls.first().unwrap().as_str()).expect("Failed to create Redis Client")
+            }
+        };
+
         Self {
             client: Arc::new(Mutex::new(client)),
         }
