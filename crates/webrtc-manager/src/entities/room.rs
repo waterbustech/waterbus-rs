@@ -802,10 +802,8 @@ impl Room {
 
         let mut network_types = vec![];
         if is_ipv6_supported {
-            println!("===> ipv6 supported");
             network_types.push(NetworkType::Udp6);
         } else {
-            println!("===>ipv4 supported");
             network_types.push(NetworkType::Udp4);
         }
 

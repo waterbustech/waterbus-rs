@@ -7,7 +7,7 @@ use diesel::{
     update,
 };
 use salvo::async_trait;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use chrono::NaiveDateTime;
 
@@ -586,7 +586,7 @@ impl RoomRepository for RoomRepositoryImpl {
             })?;
 
         if deleted_rows == 0 {
-            warn!("No participants found for node_id: {}", node_id);
+            debug!("No participants found for node_id: {}", node_id);
         }
 
         Ok(())

@@ -1,5 +1,5 @@
 signalling:
-	cargo run --bin signalling --release
+	cargo run --bin signalling
 sfu:
 	cargo run --bin sfu --release
 build-proto:

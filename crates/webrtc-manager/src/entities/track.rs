@@ -43,7 +43,7 @@ pub struct Track {
     pub forward_tracks: Arc<DashMap<String, Arc<ForwardTrack<MulticastSenderImpl>>>>,
     pub ssrc: u32,
     acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
-    rtp_multicast: MulticastSenderImpl,
+    rtp_multicast: Arc<MulticastSenderImpl>,
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
 }
 
@@ -76,7 +76,7 @@ impl Track {
         // Determine if SVC is used based on codec
         let is_svc = matches!(codec_type, CodecType::VP9);
 
-        let rtp_multicast = MulticastSenderImpl::new();
+        let rtp_multicast = Arc::new(MulticastSenderImpl::new());
 
         let handler = Track {
             id: track.id(),
@@ -158,7 +158,7 @@ impl Track {
             id.to_string(),
             ssrc,
             self.keyframe_request_callback.clone(),
-            Arc::new(self.rtp_multicast.clone()), // pass Arc<MulticastSender>
+            self.rtp_multicast.clone(), // pass Arc<MulticastSender>
         );
         self.forward_tracks
             .insert(id.to_owned(), forward_track.clone());
@@ -186,7 +186,7 @@ impl Track {
     ///
     /// # Arguments
     ///
-    /// * `id` - The id of the ForwardTrack
+    /// * `self` - The Track
     ///
     pub fn rebuild_acceptable_map(&self) {
         let available_qualities: Vec<TrackQuality> = self
