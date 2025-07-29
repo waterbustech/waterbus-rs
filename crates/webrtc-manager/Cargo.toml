@@ -1,7 +1,7 @@
 [package]
 name = "webrtc-manager"
 version = "0.2.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -16,7 +16,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 nanoid = { workspace = true }
-webrtc = { workspace = true }
+str0m = "0.1.0"
 egress-manager = { workspace = true }
 kanal = { workspace = true }
 bytes = { workspace = true }

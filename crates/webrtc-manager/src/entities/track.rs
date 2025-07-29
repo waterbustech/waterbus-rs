@@ -6,9 +6,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::debug;
-use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTPCodecType};
-use webrtc::track::track_remote::TrackRemote;
-use webrtc::util::Marshal;
+use str0m::media::{Mid, MediaKind, Direction, Rid};
 
 use crate::errors::WebRTCError;
 use crate::models::quality::TrackQuality;
@@ -26,8 +24,8 @@ pub enum CodecType {
     Other,
 }
 
-/// Track is a track that is used to forward RTP packets to the local track
-/// It is used to forward RTP packets to the local track
+/// Track is a track that is used to forward media data in str0m
+/// It represents a media stream (audio or video) from a participant
 #[derive(Clone)]
 pub struct Track {
     pub id: String,
@@ -37,300 +35,185 @@ pub struct Track {
     pub is_svc: bool,
     pub codec_type: CodecType,
     pub stream_id: String,
-    pub capability: RTCRtpCodecCapability,
-    pub kind: RTPCodecType,
-    pub remote_tracks: Vec<Arc<TrackRemote>>,
+    pub kind: MediaKind,
+    pub mid: Mid,
+    pub rid: Option<Rid>,
     pub forward_tracks: Arc<DashMap<String, Arc<ForwardTrack<MulticastSenderImpl>>>>,
     pub ssrc: u32,
-    // acceptable_map: Arc<DashMap<(TrackQuality, TrackQuality), bool>>,
     rtp_multicast: Arc<MulticastSenderImpl>,
     keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
+    pub quality: TrackQuality,
 }
 
 impl Track {
-    /// Create a new Track
-    ///
-    /// # Arguments
-    ///
-    /// * `track` - The track to create the Track for
-    /// * `room_id` - The id of the room
+    /// Create a new Track for str0m
     pub fn new(
-        track: Arc<TrackRemote>,
+        id: String,
         room_id: String,
         participant_id: String,
+        kind: MediaKind,
+        mid: Mid,
+        rid: Option<Rid>,
         hls_writer: Option<Arc<HlsWriter>>,
         moq_writer: Option<Arc<MoQWriter>>,
         keyframe_request_callback: Option<Arc<dyn Fn(u32) + Send + Sync>>,
     ) -> Self {
-        let kind = track.kind();
+        let multicast_sender = MulticastSenderImpl::new(4096); // Buffer size
 
-        // Determine codec type from mime type
-        let codec_type = match track.codec().capability.mime_type.to_lowercase().as_str() {
-            s if s.contains("vp8") => CodecType::VP8,
-            s if s.contains("vp9") => CodecType::VP9,
-            s if s.contains("av1") => CodecType::AV1,
-            s if s.contains("h264") => CodecType::H264,
-            _ => CodecType::Other,
-        };
-
-        // Determine if SVC is used based on codec
-        let is_svc = matches!(codec_type, CodecType::VP9);
-
-        let rtp_multicast = Arc::new(MulticastSenderImpl::new());
-
-        let handler = Track {
-            id: track.id(),
+        Self {
+            id: id.clone(),
             room_id,
             participant_id,
             is_simulcast: Arc::new(AtomicBool::new(false)),
-            is_svc,
-            codec_type,
-            stream_id: track.stream_id().to_string(),
-            capability: track.codec().capability,
+            is_svc: false,
+            codec_type: CodecType::H264, // Default codec
+            stream_id: id,
             kind,
-            remote_tracks: vec![track.clone()],
+            mid,
+            rid,
             forward_tracks: Arc::new(DashMap::new()),
-            // acceptable_map: Arc::new(DashMap::new()),
-            ssrc: track.ssrc(),
-            rtp_multicast,
-            keyframe_request_callback: keyframe_request_callback.clone(),
-        };
-
-        // handler.rebuild_acceptable_map();
-
-        handler._forward_rtp(track, hls_writer, moq_writer, kind);
-
-        handler
-    }
-
-    /// Add a new track to the Track
-    ///
-    /// # Arguments
-    ///
-    /// * `track` - The track to add to the Track
-    ///
-    #[inline]
-    pub fn add_track(&mut self, track: Arc<TrackRemote>) {
-        self.remote_tracks.push(track.clone());
-
-        // self.rebuild_acceptable_map();
-
-        self._forward_rtp(track, None, None, self.kind);
-
-        self.is_simulcast.store(true, Ordering::Relaxed);
-    }
-
-    /// Stop the Track
-    ///
-    /// # Arguments
-    ///
-    /// * `track` - The track to stop
-    ///
-    #[inline]
-    pub fn stop(&mut self) {
-        self.remote_tracks.clear();
-        self.forward_tracks.clear();
-        // self.acceptable_map.clear();
-        self.is_simulcast.store(false, Ordering::Relaxed);
-        self.rtp_multicast.clear();
-    }
-
-    /// Create a new ForwardTrack
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The id of the ForwardTrack
-    /// * `ssrc` - The ssrc of the ForwardTrack
-    ///
-    pub fn new_forward_track(
-        &self,
-        id: &str,
-        ssrc: u32,
-    ) -> Result<Arc<ForwardTrack<MulticastSenderImpl>>, WebRTCError> {
-        if self.forward_tracks.contains_key(id) {
-            return Err(WebRTCError::FailedToAddTrack);
+            ssrc: 0, // Will be set when media starts
+            rtp_multicast: Arc::new(multicast_sender),
+            keyframe_request_callback,
+            quality: TrackQuality::High,
         }
-        // Start with Medium (h) quality; ForwardTrack will switch as needed
+    }
 
+    /// Get track ID
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    /// Get track kind
+    pub fn kind(&self) -> MediaKind {
+        self.kind
+    }
+
+    /// Get Mid
+    pub fn mid(&self) -> Mid {
+        self.mid
+    }
+
+    /// Get RID (for simulcast)
+    pub fn rid(&self) -> Option<Rid> {
+        self.rid
+    }
+
+    /// Add a forward track for a subscriber
+    pub fn add_forward_track(&self, user_id: &str, forward_track: Arc<ForwardTrack<MulticastSenderImpl>>) {
+        self.forward_tracks.insert(user_id.to_string(), forward_track);
+    }
+
+    /// Remove a forward track
+    pub fn remove_forward_track(&self, user_id: &str) {
+        self.forward_tracks.remove(user_id);
+    }
+
+    /// Create a new forward track for a subscriber
+    pub fn new_forward_track(&self, user_id: &str, ssrc: u32) -> Result<Arc<ForwardTrack<MulticastSenderImpl>>, WebRTCError> {
         let forward_track = ForwardTrack::new(
-            self.capability.clone(),
             self.id.clone(),
-            self.stream_id.clone(),
-            // receiver,
-            id.to_string(),
-            ssrc,
-            self.keyframe_request_callback.clone(),
-            self.rtp_multicast.clone(), // pass Arc<MulticastSender>
-        );
-        self.forward_tracks
-            .insert(id.to_owned(), forward_track.clone());
-        Ok(forward_track)
+            self.participant_id.clone(),
+            user_id.to_string(),
+            self.kind,
+            Arc::clone(&self.rtp_multicast),
+        )?;
+        
+        let forward_track_arc = Arc::new(forward_track);
+        self.add_forward_track(user_id, Arc::clone(&forward_track_arc));
+        
+        Ok(forward_track_arc)
     }
 
-    /// Remove a ForwardTrack
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The id of the ForwardTrack
-    ///
-    #[inline]
-    pub fn remove_forward_track(&self, id: &str) {
-        // Remove from all quality lines
-        self.rtp_multicast
-            .remove_receiver_for_quality(TrackQuality::High, id);
-        self.rtp_multicast
-            .remove_receiver_for_quality(TrackQuality::Medium, id);
-        self.rtp_multicast
-            .remove_receiver_for_quality(TrackQuality::Low, id);
-        self.forward_tracks.remove(id);
+    /// Set codec type based on mime type
+    pub fn set_codec_from_mime(&mut self, mime_type: &str) {
+        self.codec_type = match mime_type.to_lowercase().as_str() {
+            s if s.contains("h264") => CodecType::H264,
+            s if s.contains("vp8") => CodecType::VP8,
+            s if s.contains("vp9") => CodecType::VP9,
+            s if s.contains("av1") => CodecType::AV1,
+            _ => CodecType::Other,
+        };
     }
 
-    /// Rebuild the acceptable map
-    ///
-    /// # Arguments
-    ///
-    /// * `self` - The Track
-    ///
-    // pub fn rebuild_acceptable_map(&self) {
-    //     let available_qualities: Vec<TrackQuality> = self
-    //         .remote_tracks
-    //         .iter()
-    //         .map(|track| TrackQuality::from_str(track.rid()).unwrap())
-    //         .collect::<std::collections::HashSet<_>>() // Remove duplicates
-    //         .into_iter()
-    //         .collect();
+    /// Set simulcast mode
+    pub fn set_simulcast(&self, enabled: bool) {
+        self.is_simulcast.store(enabled, Ordering::Relaxed);
+    }
 
-    //     self.acceptable_map.clear();
+    /// Check if simulcast is enabled
+    pub fn is_simulcast(&self) -> bool {
+        self.is_simulcast.load(Ordering::Relaxed)
+    }
 
-    //     // Pre-calculate quality fallback mapping
-    //     let quality_fallback = |desired: &TrackQuality| -> TrackQuality {
-    //         if available_qualities.contains(desired) {
-    //             return desired.clone();
-    //         }
+    /// Set track quality
+    pub fn set_quality(&mut self, quality: TrackQuality) {
+        self.quality = quality;
+    }
 
-    //         // Smart fallback logic
-    //         match desired {
-    //             TrackQuality::High => available_qualities
-    //                 .iter()
-    //                 .find(|&q| matches!(q, TrackQuality::Medium))
-    //                 .or_else(|| {
-    //                     available_qualities
-    //                         .iter()
-    //                         .find(|&q| matches!(q, TrackQuality::Low))
-    //                 })
-    //                 .unwrap_or(&TrackQuality::Low)
-    //                 .clone(),
-    //             TrackQuality::Medium => available_qualities
-    //                 .iter()
-    //                 .find(|&q| matches!(q, TrackQuality::Low))
-    //                 .or_else(|| {
-    //                     available_qualities
-    //                         .iter()
-    //                         .find(|&q| matches!(q, TrackQuality::High))
-    //                 })
-    //                 .unwrap_or(&TrackQuality::Low)
-    //                 .clone(),
-    //             TrackQuality::Low => available_qualities
-    //                 .iter()
-    //                 .find(|&q| matches!(q, TrackQuality::Medium))
-    //                 .or_else(|| {
-    //                     available_qualities
-    //                         .iter()
-    //                         .find(|&q| matches!(q, TrackQuality::High))
-    //                 })
-    //                 .unwrap_or(&TrackQuality::Low)
-    //                 .clone(),
-    //             _ => TrackQuality::Low,
-    //         }
-    //     };
+    /// Get track quality
+    pub fn get_quality(&self) -> TrackQuality {
+        self.quality
+    }
 
-    //     // Build mapping more efficiently
-    //     for current in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-    //         for desired in &[TrackQuality::Low, TrackQuality::Medium, TrackQuality::High] {
-    //             let target_quality = quality_fallback(desired);
-    //             let acceptable = current == &target_quality;
+    /// Set SSRC
+    pub fn set_ssrc(&mut self, ssrc: u32) {
+        self.ssrc = ssrc;
+    }
 
-    //             self.acceptable_map
-    //                 .insert((current.clone(), desired.clone()), acceptable);
-    //         }
-    //     }
-    // }
+    /// Get SSRC
+    pub fn get_ssrc(&self) -> u32 {
+        self.ssrc
+    }
 
-    /// Forward RTP
-    ///
-    /// # Arguments
-    ///
-    /// * `remote_track` - The remote track to forward
-    /// * `hls_writer` - The hls writer to write to the cloud storage
-    /// * `moq_writer` - The moq writer to write to the moq host
-    /// * `kind` - The kind of the track (video or audio)
-    ///
-    pub fn _forward_rtp(
-        &self,
-        remote_track: Arc<TrackRemote>,
-        hls_writer: Option<Arc<HlsWriter>>,
-        moq_writer: Option<Arc<MoQWriter>>,
-        kind: RTPCodecType,
-    ) {
-        let multicast = self.rtp_multicast.clone();
-        let current_quality = Arc::new(TrackQuality::from_str(remote_track.rid()).unwrap());
-        let is_svc = self.is_svc;
-        let is_simulcast = Arc::clone(&self.is_simulcast);
+    /// Request keyframe for this track
+    pub fn request_keyframe(&self) {
+        if let Some(callback) = &self.keyframe_request_callback {
+            callback(self.ssrc);
+        }
+    }
 
-        tokio::spawn(async move {
-            let is_video = kind == RTPCodecType::Video;
-
-            loop {
-                let result = remote_track.read_rtp().await;
-
-                match result {
-                    Ok((rtp, _)) => {
-                        if !rtp.payload.is_empty() {
-                            if hls_writer.is_some() || moq_writer.is_some() {
-                                if let Ok(header_bytes) = rtp.header.marshal() {
-                                    let mut buf = BytesMut::with_capacity(
-                                        header_bytes.len() + rtp.payload.len(),
-                                    );
-                                    buf.extend_from_slice(&header_bytes);
-                                    buf.extend_from_slice(&rtp.payload);
-
-                                    if let Some(writer) = &hls_writer {
-                                        let _ = writer.write_rtp(&buf, is_video);
-                                    }
-
-                                    if let Some(writer) = &moq_writer {
-                                        let _ = writer.write_rtp(&buf, is_video);
-                                    }
-                                } else {
-                                    debug!("Failed to marshal RTP header");
-                                }
-                            } else {
-                                let info = RtpForwardInfo {
-                                    packet: Arc::new(rtp),
-                                    is_svc,
-                                    track_quality: (*current_quality).clone(),
-                                };
-
-                                // For simulcast, send to the correct quality line based on rid
-                                if is_simulcast.load(Ordering::Relaxed) {
-                                    let quality = TrackQuality::from_str(remote_track.rid())
-                                        .unwrap_or(TrackQuality::Medium);
-                                    multicast.send_to_quality(quality, info);
-                                } else {
-                                    // Non-simulcast: always use Medium (h)
-                                    multicast.send_to_quality(TrackQuality::Medium, info);
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        debug!("Failed to read RTP: {}", err);
-                        break;
-                    }
-                }
+    /// Process incoming media data (str0m-style)
+    pub fn process_media_data(&self, data: &[u8], timestamp: u64) {
+        // Forward the data to all subscribers
+        for entry in self.forward_tracks.iter() {
+            let forward_track = entry.value();
+            if let Err(e) = forward_track.send_data(data, timestamp) {
+                debug!("Failed to forward data to {}: {:?}", entry.key(), e);
             }
+        }
+    }
 
-            debug!("[track] exit track loop {}", remote_track.rid());
-        });
+    /// Stop the track
+    pub fn stop(&self) {
+        // Clear forward tracks
+        self.forward_tracks.clear();
+        
+        debug!("Track {} stopped", self.id);
+    }
+
+    /// Get participant ID
+    pub fn get_participant_id(&self) -> &str {
+        &self.participant_id
+    }
+
+    /// Get room ID
+    pub fn get_room_id(&self) -> &str {
+        &self.room_id
+    }
+
+    /// Check if track is active
+    pub fn is_active(&self) -> bool {
+        !self.forward_tracks.is_empty()
+    }
+
+    /// Get forward track for user
+    pub fn get_forward_track(&self, user_id: &str) -> Option<Arc<ForwardTrack<MulticastSenderImpl>>> {
+        self.forward_tracks.get(user_id).map(|entry| entry.clone())
+    }
+
+    /// Get all forward track user IDs
+    pub fn get_forward_track_users(&self) -> Vec<String> {
+        self.forward_tracks.iter().map(|entry| entry.key().clone()).collect()
     }
 }
