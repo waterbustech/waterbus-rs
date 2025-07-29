@@ -1,21 +1,48 @@
-services:
-  waterbus-signalling:
-    image: docker.io/lambiengcode/waterbus-signalling
-    container_name: waterbus-signalling
-    env_file:
-      - .env
-    ports:
-      - "5998:5998/tcp"
-      - "5998:5998/udp"
-      - "50052:50052/tcp"
-    restart: unless-stopped
+version: '3.8'
 
-  waterbus-sfu:
-    image: docker.io/lambiengcode/waterbus-sfu
-    container_name: waterbus-sfu
-    env_file:
-      - .env
-    ports:
-      - "49152-65535:49152-65535/udp"
-      - "50051:50051/tcp"
+services:
+  postgres:
+    image: postgres:17
+    container_name: postgres
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 12345678
+      POSTGRES_DB: waterbusdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.13
+    container_name: etcd
+    restart: unless-stopped
+    command: >
+      /usr/local/bin/etcd
+      --name etcd-node
+      --data-dir /etcd-data
+      --initial-advertise-peer-urls http://0.0.0.0:2380
+      --listen-peer-urls http://0.0.0.0:2380
+      --listen-client-urls http://0.0.0.0:2379
+      --advertise-client-urls http://0.0.0.0:2379
+      --initial-cluster etcd-node=http://0.0.0.0:2380
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - etcd_data:/etcd-data
+
+volumes:
+  pg_data:
+  redis_data:
+  etcd_data:

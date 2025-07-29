@@ -86,10 +86,20 @@ mv example.env .env
 diesel migration run
 ```
 
+- Run etcd, postgresql and redis
+
+```
+docker-compose up -d
+```
+
 - Build & Run the Server
 
 ```bash
-cargo run --release
+# Start Signalling
+cargo run --bin signalling
+
+# Start SFU
+cargo run --bin sfu
 ```
 
 ### 🐳 Run with Docker

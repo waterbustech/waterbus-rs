@@ -1,7 +1,7 @@
 signalling:
 	cargo run --bin signalling
 sfu:
-	cargo run --bin sfu --release
+	cargo run --bin sfu
 build-proto:
 	cargo build -p waterbus-proto 
 build-signalling:
