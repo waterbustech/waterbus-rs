@@ -9,6 +9,7 @@ use str0m::{
     media::{KeyframeRequest, MediaData, Mid},
 };
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 use crate::{
     entities::{media::Media, room::TrackIn, subscriber::Subscriber},
@@ -92,11 +93,20 @@ impl Publisher {
     }
 
     pub fn handle_track_open(&self, track_in: Arc<TrackIn>) {
+        info!(
+            "🎵 Publisher {} handling track open - mid: {:?}, kind: {:?}",
+            self.participant_id, track_in.mid, track_in.kind
+        );
         let mut media = self.media.write();
         media.add_track(track_in.mid, track_in.kind);
     }
 
     pub fn handle_media_data_out(&self, _origin_id: &str, data: &MediaData) {
+        info!(
+            "📹 Publisher {} forwarding media data to {} subscribers",
+            self.participant_id,
+            self.media.read().subscribers.len()
+        );
         let media = self.media.read();
 
         // Forward media to all subscribers of this publisher
@@ -116,6 +126,10 @@ impl Publisher {
     }
 
     pub fn handle_keyframe_request(&self, req: KeyframeRequest, mid_in: Mid) {
+        info!(
+            "🎬 Publisher {} handling keyframe request for mid: {:?}",
+            self.participant_id, mid_in
+        );
         let media = self.media.read();
 
         // Check if this publisher has the incoming track
@@ -125,6 +139,10 @@ impl Publisher {
         });
 
         if !has_incoming_track {
+            info!(
+                "❌ Publisher {} doesn't have incoming track for mid: {:?}",
+                self.participant_id, mid_in
+            );
             return;
         }
 

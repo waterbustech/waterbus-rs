@@ -7,6 +7,7 @@ use str0m::{
     Rtc,
     media::{KeyframeRequest, MediaData, MediaKind, Mid},
 };
+use tracing::info;
 use tracing::warn;
 
 use crate::{
@@ -95,27 +96,64 @@ impl Media {
     }
 
     pub fn cache_sdp(&mut self, sdp: String) {
+        info!(
+            "📋 Caching SDP for participant: {} ({} chars)",
+            self.participant_id,
+            sdp.len()
+        );
         self.cached_sdp = Some(sdp);
     }
 
     pub fn get_sdp(&self) -> Option<String> {
+        let has_cached = self.cached_sdp.is_some();
+        if has_cached {
+            info!(
+                "📋 Retrieved cached SDP for participant: {}",
+                self.participant_id
+            );
+        }
         self.cached_sdp.clone()
     }
 
     pub fn add_track(&mut self, mid: Mid, kind: MediaKind) {
+        info!(
+            "🎵 Adding track - mid: {:?}, kind: {:?}, participant: {}",
+            mid, kind, self.participant_id
+        );
         let track_info = TrackInfo::new(mid, kind, self.participant_id.clone());
         self.tracks.insert(mid, track_info);
     }
 
     pub fn remove_track(&mut self, mid: Mid) {
+        info!(
+            "🗑️ Removing track - mid: {:?}, participant: {}",
+            mid, self.participant_id
+        );
         self.tracks.remove(&mid);
     }
 
+    pub fn remove_all_tracks(&mut self) {
+        let track_count = self.tracks.len();
+        info!(
+            "🗑️ Removing all {} tracks for participant: {}",
+            track_count, self.participant_id
+        );
+        self.tracks.clear();
+    }
+
     pub fn add_subscriber(&mut self, subscriber_id: String, subscriber: Arc<Subscriber>) {
+        info!(
+            "➕ Adding subscriber {} to participant: {}",
+            subscriber_id, self.participant_id
+        );
         self.subscribers.insert(subscriber_id, subscriber);
     }
 
     pub fn remove_subscriber(&mut self, subscriber_id: &str) {
+        info!(
+            "➖ Removing subscriber {} from participant: {}",
+            subscriber_id, self.participant_id
+        );
         self.subscribers.remove(subscriber_id);
     }
 

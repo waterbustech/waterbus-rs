@@ -84,89 +84,192 @@ impl Room {
     }
 
     pub fn join_room(
-        &mut self,
+        &self,
         params: JoinRoomParams,
         _room_id: &str,
     ) -> Result<Option<JoinRoomResponse>, WebRTCError> {
         let participant_id = params.participant_id.clone();
+        info!(
+            "🔄 Joining room - participant: {}, connection_type: {:?}",
+            participant_id, params.connection_type
+        );
 
         // Create RTC instance following str0m pattern
         let mut rtc = Rtc::builder().set_ice_lite(true).build();
+        info!(
+            "🔧 Created RTC instance for participant: {}",
+            participant_id
+        );
 
         // Add the shared UDP socket as a host candidate
         let addr = self.udp_socket.local_addr().unwrap();
         let candidate = Candidate::host(addr, "udp").expect("a host candidate");
         rtc.add_local_candidate(candidate).unwrap();
+        info!("📡 Added host candidate: {}", addr);
 
         // Create publisher with the new str0m-based architecture
         let publisher = Publisher::new(rtc, params.clone());
+        info!("🔧 Created publisher for participant: {}", participant_id);
 
         self._add_publisher(&participant_id, &publisher);
+        info!(
+            "✅ Publisher created and added for participant: {}",
+            participant_id
+        );
 
-        // Create response
-        let response = JoinRoomResponse {
-            sdp: "".to_string(), // This will be set by the publisher
-            is_recording: false,
-        };
+        // Handle P2P vs SFU logic like webrtc-manager
+        if params.connection_type == ConnectionType::P2P {
+            info!(
+                "🤝 P2P mode - caching SDP for participant: {}",
+                participant_id
+            );
+            // For P2P, cache the SDP and return None (no immediate response)
+            let mut media = publisher.media.write();
+            media.cache_sdp(params.sdp.clone());
 
-        Ok(Some(response))
+            // Execute callback for P2P
+            tokio::spawn(async move {
+                (params.callback)(false).await;
+            });
+
+            info!("📋 P2P SDP cached, returning None");
+            Ok(None)
+        } else {
+            info!(
+                "🌐 SFU mode - creating SDP answer for participant: {}",
+                participant_id
+            );
+            // For SFU, create SDP answer and return it
+            let offer = SdpOffer::from_sdp_string(&params.sdp)
+                .map_err(|_| WebRTCError::FailedToCreateOffer)?;
+
+            let answer = {
+                let mut rtc = publisher.rtc.write();
+                rtc.sdp_api()
+                    .accept_offer(offer)
+                    .map_err(|_| WebRTCError::FailedToCreateAnswer)?
+            };
+
+            let answer_json = serde_json::to_string(&answer).unwrap();
+            info!("📄 SFU SDP answer created: {} chars", answer_json.len());
+
+            // Create response with real SDP
+            let response = JoinRoomResponse {
+                sdp: answer_json,
+                is_recording: false,
+            };
+
+            info!(
+                "✅ SFU join room successful for participant: {}",
+                participant_id
+            );
+            Ok(Some(response))
+        }
     }
 
-    pub fn subscribe(&mut self, params: SubscribeParams) -> Result<SubscribeResponse, WebRTCError> {
+    pub fn subscribe(&self, params: SubscribeParams) -> Result<SubscribeResponse, WebRTCError> {
         let target_id = &params.target_id;
         let _participant_id = &params.participant_id;
 
+        info!(
+            "🔍 Subscribe request - target: {}, participant: {}",
+            target_id, _participant_id
+        );
+
         // Get the target publisher
         let publisher = self._get_publisher(target_id)?;
+        info!("📡 Found target publisher: {}", target_id);
 
-        // Create a new RTC instance for the subscriber
-        let mut subscriber_rtc = Rtc::builder().set_ice_lite(true).build();
-
-        // Add the shared UDP socket as a host candidate
-        let addr = self.udp_socket.local_addr().unwrap();
-        let candidate = Candidate::host(addr, "udp").expect("a host candidate");
-        subscriber_rtc.add_local_candidate(candidate).unwrap();
-
-        // Create SDP offer for the subscriber before passing RTC to subscriber
-        let (offer, _pending) = {
-            let mut change = subscriber_rtc.sdp_api();
-
-            // Add media for each track in the publisher
+        // Check if we have cached SDP for P2P (like webrtc-manager)
+        let cached_sdp = {
             let media = publisher.media.read();
-            for track_entry in media.tracks.iter() {
-                let (_mid, track_info) = track_entry.pair();
-                let stream_id = track_info.origin.clone();
-                let _new_mid = change.add_media(
-                    track_info.kind,
-                    Direction::SendOnly,
-                    Some(stream_id),
-                    None,
-                    None,
-                );
-            }
-
-            change.apply().ok_or(WebRTCError::FailedToCreateOffer)?
+            media.get_sdp()
         };
 
-        // Create subscriber with the RTC instance
-        let _subscriber = publisher.subscribe_to_publisher(params, subscriber_rtc)?;
+        if let Some(sdp) = cached_sdp {
+            info!("📋 Found cached P2P SDP for target: {}", target_id);
+            // Return cached SDP for P2P connections
+            let media_state = publisher.get_media_state();
 
-        // Get media state for response
-        let media_state = publisher.get_media_state();
+            Ok(SubscribeResponse {
+                offer: sdp,
+                camera_type: media_state.camera_type,
+                video_enabled: media_state.video_enabled,
+                audio_enabled: media_state.audio_enabled,
+                is_screen_sharing: media_state.is_screen_sharing,
+                is_hand_raising: media_state.is_hand_raising,
+                is_e2ee_enabled: media_state.is_e2ee_enabled,
+                video_codec: media_state.codec,
+                screen_track_id: media_state.screen_track_id,
+            })
+        } else {
+            info!(
+                "🌐 No cached SDP, creating SFU subscriber for target: {}",
+                target_id
+            );
+            // For SFU, create a new subscriber
+            let connection_type = publisher.get_connection_type();
 
-        let offer_json = serde_json::to_string(&offer).unwrap();
+            if connection_type == ConnectionType::P2P {
+                info!("❌ Target is P2P but no cached SDP found");
+                return Err(WebRTCError::PeerNotFound);
+            }
 
-        Ok(SubscribeResponse {
-            offer: offer_json,
-            camera_type: media_state.camera_type,
-            video_enabled: media_state.video_enabled,
-            audio_enabled: media_state.audio_enabled,
-            is_screen_sharing: media_state.is_screen_sharing,
-            is_hand_raising: media_state.is_hand_raising,
-            is_e2ee_enabled: media_state.is_e2ee_enabled,
-            video_codec: media_state.codec,
-            screen_track_id: media_state.screen_track_id,
-        })
+            // Create a new RTC instance for the subscriber
+            let mut subscriber_rtc = Rtc::builder().set_ice_lite(true).build();
+
+            // Add the shared UDP socket as a host candidate
+            let addr = self.udp_socket.local_addr().unwrap();
+            let candidate = Candidate::host(addr, "udp").expect("a host candidate");
+            subscriber_rtc.add_local_candidate(candidate).unwrap();
+            info!("📡 Added host candidate for subscriber: {}", addr);
+
+            // Create SDP offer for the subscriber BEFORE passing RTC to subscriber
+            let (offer, _pending) = {
+                let mut change = subscriber_rtc.sdp_api();
+
+                // Add media for each track in the publisher
+                let media = publisher.media.read();
+                let track_count = media.tracks.len();
+                info!("🎵 Adding {} tracks to subscriber", track_count);
+
+                for track_entry in media.tracks.iter() {
+                    let (_mid, track_info) = track_entry.pair();
+                    let stream_id = track_info.origin.clone();
+                    let _new_mid = change.add_media(
+                        track_info.kind,
+                        Direction::SendOnly,
+                        Some(stream_id),
+                        None,
+                        None,
+                    );
+                }
+
+                change.apply().ok_or(WebRTCError::FailedToCreateOffer)?
+            };
+
+            // Create subscriber with the RTC instance
+            let _subscriber = publisher.subscribe_to_publisher(params.clone(), subscriber_rtc)?;
+            info!("✅ Subscriber created for target: {}", target_id);
+
+            // Get media state for response
+            let media_state = publisher.get_media_state();
+
+            let offer_json = serde_json::to_string(&offer).unwrap();
+            info!("📄 SFU offer created: {} chars", offer_json.len());
+
+            Ok(SubscribeResponse {
+                offer: offer_json,
+                camera_type: media_state.camera_type,
+                video_enabled: media_state.video_enabled,
+                audio_enabled: media_state.audio_enabled,
+                is_screen_sharing: media_state.is_screen_sharing,
+                is_hand_raising: media_state.is_hand_raising,
+                is_e2ee_enabled: media_state.is_e2ee_enabled,
+                video_codec: media_state.codec,
+                screen_track_id: media_state.screen_track_id,
+            })
+        }
     }
 
     pub fn subscribe_hls_live_stream(
@@ -242,6 +345,7 @@ impl Room {
         publisher.set_connection_type(connection_type.clone());
 
         if connection_type == ConnectionType::SFU {
+            // For SFU, create SDP answer and return it
             let offer =
                 SdpOffer::from_sdp_string(sdp).map_err(|_| WebRTCError::FailedToCreateOffer)?;
 
@@ -256,8 +360,9 @@ impl Room {
 
             Ok(Some(answer_json))
         } else {
-            // For P2P, cache the SDP
+            // For P2P, cache the SDP and clear all tracks
             let mut media = publisher.media.write();
+            media.remove_all_tracks();
             media.cache_sdp(sdp.to_owned());
             Ok(None)
         }
@@ -358,14 +463,24 @@ impl Room {
 
     /// Run the main UDP socket loop for handling WebRTC traffic
     pub fn run_udp_loop(&mut self) -> Result<(), WebRTCError> {
+        info!("🚀 Starting UDP loop for room");
         let mut to_propagate: VecDeque<Propagated> = VecDeque::new();
+        let mut buf = vec![0; 2000];
 
         loop {
             // Clean out disconnected publishers
+            let before_count = self.publishers.len();
             self.publishers.retain(|_, publisher| {
                 let rtc = publisher.rtc.read();
                 rtc.is_alive()
             });
+            let after_count = self.publishers.len();
+            if before_count != after_count {
+                info!(
+                    "🧹 Cleaned up {} disconnected publishers",
+                    before_count - after_count
+                );
+            }
 
             // Poll all publishers until they return timeout
             let mut timeout = Instant::now() + Duration::from_millis(100);
@@ -379,6 +494,7 @@ impl Room {
 
             // If we have an item to propagate, do that
             if let Some(p) = to_propagate.pop_front() {
+                info!("📤 Propagating event: {:?}", p);
                 self.propagate(&p);
                 continue;
             }
@@ -390,9 +506,11 @@ impl Room {
                 .set_read_timeout(Some(duration))
                 .expect("setting socket read timeout");
 
-            // Handle socket input - for now, we'll skip complex input handling
-            // and focus on getting the basic propagation working
-            let _input = self.read_socket_input();
+            // Handle socket input - simplified to avoid borrow checker issues
+            let _input = self.read_socket_input(&mut buf);
+            if _input.is_some() {
+                info!("📡 Received UDP input (handling simplified)");
+            }
 
             // Drive time forward in all publishers.
             let now = Instant::now();
@@ -437,6 +555,8 @@ impl Room {
             return;
         };
 
+        info!("🔄 Propagating to {} publishers", self.publishers.len());
+
         for publisher in self.publishers.iter_mut() {
             if publisher.key() == publisher_id {
                 // Do not propagate to originating publisher.
@@ -445,14 +565,27 @@ impl Room {
 
             match propagated {
                 Propagated::TrackOpen(_, track_in) => {
+                    info!(
+                        "🎵 Propagating track open to publisher: {}",
+                        publisher.key()
+                    );
                     publisher.value().handle_track_open(track_in.clone());
                 }
                 Propagated::MediaData(origin_id, data) => {
+                    info!(
+                        "📹 Propagating media data from {} to publisher: {}",
+                        origin_id,
+                        publisher.key()
+                    );
                     publisher.value().handle_media_data_out(origin_id, data);
                 }
                 Propagated::KeyframeRequest(_, req, origin_id, mid_in) => {
                     // Only the origin publisher handles the keyframe request.
                     if publisher.key() == origin_id {
+                        info!(
+                            "🎬 Propagating keyframe request to origin publisher: {}",
+                            origin_id
+                        );
                         publisher.value().handle_keyframe_request(*req, *mid_in);
                     }
                 }
@@ -471,10 +604,15 @@ impl Room {
                     Output::Event(event) => {
                         match event {
                             Event::MediaData(media_data) => {
+                                info!("📹 Media data from publisher: {}", publisher.participant_id);
                                 // Propagate media data to subscribers
                                 Propagated::MediaData(publisher.participant_id.clone(), media_data)
                             }
                             Event::KeyframeRequest(req) => {
+                                info!(
+                                    "🎬 Keyframe request from publisher: {}",
+                                    publisher.participant_id
+                                );
                                 // Handle keyframe requests
                                 let participant_id = publisher.participant_id.clone();
                                 Propagated::KeyframeRequest(
@@ -485,6 +623,10 @@ impl Room {
                                 )
                             }
                             Event::MediaAdded(e) => {
+                                info!(
+                                    "🎵 Media added for publisher: {} - mid: {:?}, kind: {:?}",
+                                    publisher.participant_id, e.mid, e.kind
+                                );
                                 // Handle new media tracks
                                 let track_in = Arc::new(TrackIn {
                                     origin: publisher.participant_id.clone(),
@@ -514,16 +656,16 @@ impl Room {
     }
 
     /// Read socket input following str0m pattern
-    fn read_socket_input(&mut self) -> Option<Input> {
-        self.buf.resize(2000, 0);
+    fn read_socket_input<'a>(&mut self, buf: &'a mut Vec<u8>) -> Option<Input<'a>> {
+        buf.resize(2000, 0);
 
-        match self.udp_socket.recv_from(&mut self.buf) {
+        match self.udp_socket.recv_from(buf) {
             Ok((n, source)) => {
-                self.buf.truncate(n);
+                buf.truncate(n);
 
                 // Parse data to a DatagramRecv, which help preparse network data to
                 // figure out the multiplexing of all protocols on one UDP port.
-                let Ok(contents) = self.buf.as_slice().try_into() else {
+                let Ok(contents) = buf.as_slice().try_into() else {
                     return None;
                 };
 

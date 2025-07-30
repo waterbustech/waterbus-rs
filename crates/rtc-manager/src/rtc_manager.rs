@@ -1,7 +1,9 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use tracing::info;
 
 use crate::{
     entities::room::Room,
@@ -53,6 +55,11 @@ impl RtcManager {
         let room_id = &req.room_id;
         let participant_id = &req.participant_id;
 
+        info!(
+            "🎯 Join room request - client: {}, participant: {}, room: {}",
+            client_id, participant_id, room_id
+        );
+
         self._add_client(
             client_id,
             GlobalClient {
@@ -61,13 +68,23 @@ impl RtcManager {
             },
         );
 
+        info!("📝 Client added to global clients");
+
         let room = {
             let room_result = self._get_room_by_id(room_id);
             match room_result {
-                Ok(room) => room,
-                Err(_) => self._add_room(room_id)?,
+                Ok(room) => {
+                    info!("📋 Found existing room: {}", room_id);
+                    room
+                }
+                Err(_) => {
+                    info!("🏗️ Creating new room: {}", room_id);
+                    self._add_room(room_id)?
+                }
             }
         };
+
+        info!("🔧 Room obtained, creating join params");
 
         let params = JoinRoomParams {
             participant_id: participant_id.to_string(),
@@ -82,11 +99,16 @@ impl RtcManager {
             is_ipv6_supported: req.is_ipv6_supported,
         };
 
+        info!(
+            "🔧 Calling room.join_room for participant: {}",
+            participant_id
+        );
         let res = {
-            let mut room = room.write();
+            let room = room.read();
             room.join_room(params, room_id)?
         };
 
+        info!("✅ Join room completed for participant: {}", participant_id);
         Ok(res)
     }
 
@@ -109,7 +131,7 @@ impl RtcManager {
         );
 
         let room = self._get_room_by_id(room_id)?;
-        let mut room = room.write();
+        let room = room.read();
 
         let params = SubscribeParams {
             participant_id: participant_id.to_string(),
@@ -389,21 +411,20 @@ impl RtcManager {
 
     #[inline]
     fn _add_room(&self, room_id: &str) -> Result<Arc<RwLock<Room>>, WebRTCError> {
+        info!("🏗️ Creating new room instance for room: {}", room_id);
         let room_value = Arc::new(RwLock::new(Room::new(self.config.clone())));
 
-        // Start the UDP loop for this room in a separate thread
-        let room_clone = room_value.clone();
-        let room_id_clone = room_id.to_string();
-        std::thread::spawn(move || {
-            let mut room = room_clone.write();
-            if let Err(e) = room.run_udp_loop() {
-                tracing::error!("UDP loop failed for room {}: {:?}", room_id_clone, e);
-            }
-        });
+        // TODO: Re-enable UDP loop once basic functionality works
+        // For now, just create the room without UDP loop to test join functionality
+        info!(
+            "🚀 Room created (UDP loop disabled for testing) for room: {}",
+            room_id
+        );
 
         self.rooms
             .insert(room_id.to_string(), Arc::clone(&room_value));
 
+        info!("✅ Room created for room: {}", room_id);
         Ok(room_value)
     }
 
