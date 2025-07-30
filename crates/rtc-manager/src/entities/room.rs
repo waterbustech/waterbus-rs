@@ -104,8 +104,8 @@ impl Room {
         // Add the shared UDP socket as a host candidate
         let addr = self.udp_socket.local_addr().unwrap();
         let candidate = Candidate::host(addr, "udp").expect("a host candidate");
-        rtc.add_local_candidate(candidate).unwrap();
-        info!("📡 Added host candidate: {}", addr);
+        rtc.add_local_candidate(candidate.clone()).unwrap();
+        info!("📡 Added host candidate: {:?}", candidate.to_sdp_string());
 
         // Create publisher with the new str0m-based architecture
         let publisher = Publisher::new(rtc, params.clone());
@@ -150,14 +150,15 @@ impl Room {
                     .map_err(|_| WebRTCError::FailedToCreateAnswer)?
             };
 
-            let answer_json = serde_json::to_string(&answer).unwrap();
-            info!("📄 SFU SDP answer created: {} chars", answer_json.len());
-
             // Create response with real SDP
             let response = JoinRoomResponse {
-                sdp: answer_json,
+                sdp: answer.to_sdp_string(),
                 is_recording: false,
             };
+
+            tokio::spawn(async move {
+                (params.callback)(false).await;
+            });
 
             info!(
                 "✅ SFU join room successful for participant: {}",

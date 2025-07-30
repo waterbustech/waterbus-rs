@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -108,7 +107,7 @@ impl RtcManager {
             room.join_room(params, room_id)?
         };
 
-        info!("✅ Join room completed for participant: {}", participant_id);
+        info!("✅ Join room completed for participant: {}", res.as_ref().unwrap().sdp.len());
         Ok(res)
     }
 
