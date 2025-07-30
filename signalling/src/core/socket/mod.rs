@@ -544,6 +544,7 @@ async fn handle_join_room<A: Adapter>(
                 let response = JoinRoomResponse {
                     sdp: res.sdp,
                     is_recording: res.is_recording,
+                    candidate: Some(res.candidate),
                 };
 
                 let _ = socket.emit(WsEvent::RoomPublish.to_str(), &response).ok();
@@ -639,6 +640,7 @@ async fn handle_answer_subscribe<A: Adapter>(
         let response = JoinRoomResponse {
             sdp: data.sdp,
             is_recording: false,
+            candidate: None,
         };
         let _ = socket
             .broadcast()

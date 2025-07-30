@@ -71,10 +71,10 @@ pub struct Room {
 impl Room {
     pub fn new(_config: RtcManagerConfig) -> Self {
         let host_addr = select_host_address();
-        let socket_addr = format!("{}:0", host_addr);
-        let udp_socket = UdpSocket::bind(socket_addr).unwrap();
+        let udp_socket =
+            UdpSocket::bind(format!("{host_addr}:0")).expect("binding a random UDP port");
         let addr = udp_socket.local_addr().expect("a local socket address");
-        info!("Bound UDP port: {}", addr);
+        info!(event = "udp_bound", port = %addr);
 
         Self {
             publishers: Arc::new(DashMap::new()),
@@ -90,38 +90,42 @@ impl Room {
     ) -> Result<Option<JoinRoomResponse>, WebRTCError> {
         let participant_id = params.participant_id.clone();
         info!(
-            "🔄 Joining room - participant: {}, connection_type: {:?}",
-            participant_id, params.connection_type
+            event = "join_room_requested",
+            participant_id = %participant_id,
+            connection_type = ?params.connection_type
         );
 
         // Create RTC instance following str0m pattern
-        let mut rtc = Rtc::builder().set_ice_lite(true).build();
+        let mut rtc = Rtc::builder()
+            // .set_ice_lite(true)
+            .build();
         info!(
-            "🔧 Created RTC instance for participant: {}",
-            participant_id
+            event = "rtc_instance_created",
+            participant_id = %participant_id
         );
 
         // Add the shared UDP socket as a host candidate
         let addr = self.udp_socket.local_addr().unwrap();
         let candidate = Candidate::host(addr, "udp").expect("a host candidate");
         rtc.add_local_candidate(candidate.clone()).unwrap();
-        info!("📡 Added host candidate: {:?}", candidate.to_sdp_string());
+        let candidate_json = serde_json::to_string(&candidate).unwrap();
+        info!(event = "host_candidate_added", candidate = %candidate_json);
 
         // Create publisher with the new str0m-based architecture
         let publisher = Publisher::new(rtc, params.clone());
-        info!("🔧 Created publisher for participant: {}", participant_id);
+        info!(event = "publisher_created", participant_id = %participant_id);
 
         self._add_publisher(&participant_id, &publisher);
         info!(
-            "✅ Publisher created and added for participant: {}",
-            participant_id
+            event = "publisher_added",
+            participant_id = %participant_id
         );
 
         // Handle P2P vs SFU logic like webrtc-manager
         if params.connection_type == ConnectionType::P2P {
             info!(
-                "🤝 P2P mode - caching SDP for participant: {}",
-                participant_id
+                event = "p2p_mode_caching_sdp",
+                participant_id = %participant_id
             );
             // For P2P, cache the SDP and return None (no immediate response)
             let mut media = publisher.media.write();
@@ -132,12 +136,12 @@ impl Room {
                 (params.callback)(false).await;
             });
 
-            info!("📋 P2P SDP cached, returning None");
+            info!(event = "p2p_sdp_cached");
             Ok(None)
         } else {
             info!(
-                "🌐 SFU mode - creating SDP answer for participant: {}",
-                participant_id
+                event = "sfu_mode_creating_answer",
+                participant_id = %participant_id
             );
             // For SFU, create SDP answer and return it
             let offer = SdpOffer::from_sdp_string(&params.sdp)
@@ -153,6 +157,7 @@ impl Room {
             // Create response with real SDP
             let response = JoinRoomResponse {
                 sdp: answer.to_sdp_string(),
+                candidate: candidate_json,
                 is_recording: false,
             };
 
@@ -161,8 +166,8 @@ impl Room {
             });
 
             info!(
-                "✅ SFU join room successful for participant: {}",
-                participant_id
+                event = "sfu_join_successful",
+                participant_id = %participant_id
             );
             Ok(Some(response))
         }
@@ -173,13 +178,14 @@ impl Room {
         let _participant_id = &params.participant_id;
 
         info!(
-            "🔍 Subscribe request - target: {}, participant: {}",
-            target_id, _participant_id
+            event = "subscribe_requested",
+            target_id = %target_id,
+            participant_id = %_participant_id
         );
 
         // Get the target publisher
         let publisher = self._get_publisher(target_id)?;
-        info!("📡 Found target publisher: {}", target_id);
+        info!(event = "target_publisher_found", target_id = %target_id);
 
         // Check if we have cached SDP for P2P (like webrtc-manager)
         let cached_sdp = {
@@ -188,7 +194,7 @@ impl Room {
         };
 
         if let Some(sdp) = cached_sdp {
-            info!("📋 Found cached P2P SDP for target: {}", target_id);
+            info!(event = "cached_p2p_sdp_found", target_id = %target_id);
             // Return cached SDP for P2P connections
             let media_state = publisher.get_media_state();
 
@@ -205,14 +211,14 @@ impl Room {
             })
         } else {
             info!(
-                "🌐 No cached SDP, creating SFU subscriber for target: {}",
-                target_id
+                event = "no_cached_sdp_creating_sfu_subscriber",
+                target_id = %target_id
             );
             // For SFU, create a new subscriber
             let connection_type = publisher.get_connection_type();
 
             if connection_type == ConnectionType::P2P {
-                info!("❌ Target is P2P but no cached SDP found");
+                info!(event = "target_p2p_no_cached_sdp", target_id = %target_id);
                 return Err(WebRTCError::PeerNotFound);
             }
 
@@ -223,7 +229,7 @@ impl Room {
             let addr = self.udp_socket.local_addr().unwrap();
             let candidate = Candidate::host(addr, "udp").expect("a host candidate");
             subscriber_rtc.add_local_candidate(candidate).unwrap();
-            info!("📡 Added host candidate for subscriber: {}", addr);
+            info!(event = "subscriber_host_candidate_added", addr = %addr);
 
             // Create SDP offer for the subscriber BEFORE passing RTC to subscriber
             let (offer, _pending) = {
@@ -232,7 +238,10 @@ impl Room {
                 // Add media for each track in the publisher
                 let media = publisher.media.read();
                 let track_count = media.tracks.len();
-                info!("🎵 Adding {} tracks to subscriber", track_count);
+                info!(
+                    event = "adding_tracks_to_subscriber",
+                    track_count = track_count
+                );
 
                 for track_entry in media.tracks.iter() {
                     let (_mid, track_info) = track_entry.pair();
@@ -251,13 +260,13 @@ impl Room {
 
             // Create subscriber with the RTC instance
             let _subscriber = publisher.subscribe_to_publisher(params.clone(), subscriber_rtc)?;
-            info!("✅ Subscriber created for target: {}", target_id);
+            info!(event = "subscriber_created", target_id = %target_id);
 
             // Get media state for response
             let media_state = publisher.get_media_state();
 
             let offer_json = serde_json::to_string(&offer).unwrap();
-            info!("📄 SFU offer created: {} chars", offer_json.len());
+            info!(event = "sfu_offer_created", offer_length = offer_json.len());
 
             Ok(SubscribeResponse {
                 offer: offer_json,
@@ -371,20 +380,60 @@ impl Room {
 
     pub fn add_publisher_candidate(
         &self,
-        _participant_id: &str,
-        _candidate: IceCandidate,
+        participant_id: &str,
+        candidate: IceCandidate,
     ) -> Result<(), WebRTCError> {
-        // In str0m, ICE candidates are handled automatically
+        // Get the publisher
+        let publisher = self._get_publisher(participant_id)?;
+
+        // Parse the ICE candidate string to create a str0m Candidate
+        let str0m_candidate = Candidate::from_sdp_string(&candidate.candidate).map_err(|e| {
+            warn!(event = "ice_candidate_parse_failed", error = %e);
+            WebRTCError::InvalidIceCandidate
+        })?;
+
+        // Add the remote candidate to the RTC instance
+        {
+            let mut rtc = publisher.rtc.write();
+            rtc.add_remote_candidate(str0m_candidate);
+        }
+
+        info!(
+            event = "publisher_ice_candidate_added",
+            participant_id = %participant_id
+        );
         Ok(())
     }
 
     pub fn add_subscriber_candidate(
         &self,
-        _target_id: &str,
-        _participant_id: &str,
-        _candidate: IceCandidate,
+        target_id: &str,
+        participant_id: &str,
+        candidate: IceCandidate,
     ) -> Result<(), WebRTCError> {
-        // In str0m, ICE candidates are handled automatically
+        // Get the target publisher
+        let publisher = self._get_publisher(target_id)?;
+
+        // Get the subscriber from the publisher
+        let subscriber = publisher.get_subscriber(participant_id)?;
+
+        // Parse the ICE candidate string to create a str0m Candidate
+        let str0m_candidate = Candidate::from_sdp_string(&candidate.candidate).map_err(|e| {
+            warn!(event = "ice_candidate_parse_failed", error = %e);
+            WebRTCError::InvalidIceCandidate
+        })?;
+
+        // Add the remote candidate to the subscriber's RTC instance
+        {
+            let mut rtc = subscriber.rtc.write();
+            rtc.add_remote_candidate(str0m_candidate);
+        }
+
+        info!(
+            event = "subscriber_ice_candidate_added",
+            participant_id = %participant_id,
+            target_id = %target_id
+        );
         Ok(())
     }
 
@@ -464,7 +513,7 @@ impl Room {
 
     /// Run the main UDP socket loop for handling WebRTC traffic
     pub fn run_udp_loop(&mut self) -> Result<(), WebRTCError> {
-        info!("🚀 Starting UDP loop for room");
+        info!(event = "udp_loop_started");
         let mut to_propagate: VecDeque<Propagated> = VecDeque::new();
         let mut buf = vec![0; 2000];
 
@@ -478,8 +527,8 @@ impl Room {
             let after_count = self.publishers.len();
             if before_count != after_count {
                 info!(
-                    "🧹 Cleaned up {} disconnected publishers",
-                    before_count - after_count
+                    event = "disconnected_publishers_cleaned",
+                    cleaned_count = before_count - after_count
                 );
             }
 
@@ -495,7 +544,7 @@ impl Room {
 
             // If we have an item to propagate, do that
             if let Some(p) = to_propagate.pop_front() {
-                info!("📤 Propagating event: {:?}", p);
+                info!(event = "propagating_event", event_type = ?p);
                 self.propagate(&p);
                 continue;
             }
@@ -510,7 +559,7 @@ impl Room {
             // Handle socket input - simplified to avoid borrow checker issues
             let _input = self.read_socket_input(&mut buf);
             if _input.is_some() {
-                info!("📡 Received UDP input (handling simplified)");
+                info!(event = "udp_input_received");
             }
 
             // Drive time forward in all publishers.
@@ -556,7 +605,10 @@ impl Room {
             return;
         };
 
-        info!("🔄 Propagating to {} publishers", self.publishers.len());
+        info!(
+            event = "propagating_to_publishers",
+            publisher_count = self.publishers.len()
+        );
 
         for publisher in self.publishers.iter_mut() {
             if publisher.key() == publisher_id {
@@ -567,16 +619,16 @@ impl Room {
             match propagated {
                 Propagated::TrackOpen(_, track_in) => {
                     info!(
-                        "🎵 Propagating track open to publisher: {}",
-                        publisher.key()
+                        event = "track_open_propagated",
+                        target_publisher = %publisher.key()
                     );
                     publisher.value().handle_track_open(track_in.clone());
                 }
                 Propagated::MediaData(origin_id, data) => {
                     info!(
-                        "📹 Propagating media data from {} to publisher: {}",
-                        origin_id,
-                        publisher.key()
+                        event = "media_data_propagated",
+                        origin_id = %origin_id,
+                        target_publisher = %publisher.key()
                     );
                     publisher.value().handle_media_data_out(origin_id, data);
                 }
@@ -584,8 +636,8 @@ impl Room {
                     // Only the origin publisher handles the keyframe request.
                     if publisher.key() == origin_id {
                         info!(
-                            "🎬 Propagating keyframe request to origin publisher: {}",
-                            origin_id
+                            event = "keyframe_request_propagated",
+                            origin_id = %origin_id
                         );
                         publisher.value().handle_keyframe_request(*req, *mid_in);
                     }
@@ -605,14 +657,14 @@ impl Room {
                     Output::Event(event) => {
                         match event {
                             Event::MediaData(media_data) => {
-                                info!("📹 Media data from publisher: {}", publisher.participant_id);
+                                info!(event = "media_data_from_publisher", participant_id = %publisher.participant_id);
                                 // Propagate media data to subscribers
                                 Propagated::MediaData(publisher.participant_id.clone(), media_data)
                             }
                             Event::KeyframeRequest(req) => {
                                 info!(
-                                    "🎬 Keyframe request from publisher: {}",
-                                    publisher.participant_id
+                                    event = "keyframe_request_from_publisher",
+                                    participant_id = %publisher.participant_id
                                 );
                                 // Handle keyframe requests
                                 let participant_id = publisher.participant_id.clone();
@@ -625,8 +677,10 @@ impl Room {
                             }
                             Event::MediaAdded(e) => {
                                 info!(
-                                    "🎵 Media added for publisher: {} - mid: {:?}, kind: {:?}",
-                                    publisher.participant_id, e.mid, e.kind
+                                    event = "media_added",
+                                    participant_id = %publisher.participant_id,
+                                    mid = ?e.mid,
+                                    kind = ?e.kind
                                 );
                                 // Handle new media tracks
                                 let track_in = Arc::new(TrackIn {
@@ -642,7 +696,7 @@ impl Room {
                     Output::Transmit(transmit) => {
                         // Transmit data on the socket
                         if let Err(e) = socket.send_to(&transmit.contents, transmit.destination) {
-                            warn!("Failed to transmit data: {:?}", e);
+                            warn!(event = "transmit_failed", error = ?e);
                         }
                         Propagated::Noop
                     }

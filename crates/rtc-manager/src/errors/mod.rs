@@ -29,6 +29,12 @@ pub enum WebRTCError {
     #[error("Failed to add candidate")]
     FailedToAddCandidate,
 
+    #[error("Failed to add ICE candidate")]
+    FailedToAddIceCandidate,
+
+    #[error("Invalid ICE candidate")]
+    InvalidIceCandidate,
+
     #[error("Failed to renegotiate")]
     FailedToRenegotiate,
 

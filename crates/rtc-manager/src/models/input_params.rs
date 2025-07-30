@@ -44,6 +44,7 @@ pub struct JoinRoomParams {
 pub struct JoinRoomResponse {
     pub sdp: String,
     pub is_recording: bool,
+    pub candidate: String,
 }
 
 #[derive(Clone)]

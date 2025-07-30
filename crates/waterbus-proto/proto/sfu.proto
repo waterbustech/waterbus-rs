@@ -88,6 +88,7 @@ message SetCameraType {
 message JoinRoomResponse {
     string sdp = 1;
     bool is_recording = 2;
+    string candidate = 3;
 }
 
 message SubscribeResponse {

@@ -111,6 +111,7 @@ impl SfuService for SfuGrpcService {
                     let join_room_response = JoinRoomResponse {
                         sdp: response.sdp,
                         is_recording: response.is_recording,
+                        candidate: response.candidate,
                     };
                     Ok(Response::new(join_room_response))
                 }
@@ -118,6 +119,7 @@ impl SfuService for SfuGrpcService {
                     let join_room_response = JoinRoomResponse {
                         sdp: "".to_string(),
                         is_recording: false,
+                        candidate: "".to_string(),
                     };
                     Ok(Response::new(join_room_response))
                 }

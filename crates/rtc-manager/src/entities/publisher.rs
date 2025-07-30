@@ -9,7 +9,7 @@ use str0m::{
     media::{KeyframeRequest, MediaData, Mid},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     entities::{media::Media, room::TrackIn, subscriber::Subscriber},
@@ -88,24 +88,27 @@ impl Publisher {
     pub fn handle_input(&self, input: Input) {
         let mut rtc = self.rtc.write();
         if let Err(e) = rtc.handle_input(input) {
-            tracing::warn!("Publisher ({}) input failed: {:?}", self.participant_id, e);
+            warn!(event = "publisher_input_failed", participant_id = %self.participant_id, error = ?e);
         }
     }
 
     pub fn handle_track_open(&self, track_in: Arc<TrackIn>) {
         info!(
-            "🎵 Publisher {} handling track open - mid: {:?}, kind: {:?}",
-            self.participant_id, track_in.mid, track_in.kind
+            event = "track_opened",
+            participant_id = %self.participant_id,
+            mid = ?track_in.mid,
+            kind = ?track_in.kind
         );
         let mut media = self.media.write();
         media.add_track(track_in.mid, track_in.kind);
     }
 
     pub fn handle_media_data_out(&self, _origin_id: &str, data: &MediaData) {
+        let subscriber_count = self.media.read().subscribers.len();
         info!(
-            "📹 Publisher {} forwarding media data to {} subscribers",
-            self.participant_id,
-            self.media.read().subscribers.len()
+            event = "media_data_forwarded",
+            participant_id = %self.participant_id,
+            subscriber_count = subscriber_count
         );
         let media = self.media.read();
 
@@ -115,10 +118,11 @@ impl Publisher {
                 if let Err(e) =
                     writer.write(data.pt, std::time::Instant::now(), data.time, &*data.data)
                 {
-                    tracing::warn!(
-                        "Failed to forward media to subscriber {}: {:?}",
-                        subscriber.value().participant_id,
-                        e
+                    warn!(
+                        event = "media_forward_failed",
+                        publisher_id = %self.participant_id,
+                        subscriber_id = %subscriber.value().participant_id,
+                        error = ?e
                     );
                 }
             }
@@ -127,8 +131,9 @@ impl Publisher {
 
     pub fn handle_keyframe_request(&self, req: KeyframeRequest, mid_in: Mid) {
         info!(
-            "🎬 Publisher {} handling keyframe request for mid: {:?}",
-            self.participant_id, mid_in
+            event = "keyframe_request_received",
+            participant_id = %self.participant_id,
+            mid = ?mid_in
         );
         let media = self.media.read();
 
@@ -140,8 +145,9 @@ impl Publisher {
 
         if !has_incoming_track {
             info!(
-                "❌ Publisher {} doesn't have incoming track for mid: {:?}",
-                self.participant_id, mid_in
+                event = "keyframe_request_no_track",
+                participant_id = %self.participant_id,
+                mid = ?mid_in
             );
             return;
         }
@@ -150,10 +156,11 @@ impl Publisher {
         for subscriber in media.subscribers.iter() {
             if let Some(mut writer) = subscriber.value().rtc.write().writer(req.mid) {
                 if let Err(e) = writer.request_keyframe(req.rid, req.kind) {
-                    tracing::warn!(
-                        "Failed to request keyframe from subscriber {}: {:?}",
-                        subscriber.value().participant_id,
-                        e
+                    warn!(
+                        event = "keyframe_request_failed",
+                        publisher_id = %self.participant_id,
+                        subscriber_id = %subscriber.value().participant_id,
+                        error = ?e
                     );
                 }
             }

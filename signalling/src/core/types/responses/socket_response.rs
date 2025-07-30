@@ -19,6 +19,7 @@ pub struct NewUserJoinedResponse {
 #[serde(rename_all = "camelCase")]
 pub struct JoinRoomResponse {
     pub sdp: String,
+    pub candidate: Option<String>,
     pub is_recording: bool,
 }
 

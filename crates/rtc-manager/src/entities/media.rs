@@ -7,8 +7,7 @@ use str0m::{
     Rtc,
     media::{KeyframeRequest, MediaData, MediaKind, Mid},
 };
-use tracing::info;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     entities::subscriber::Subscriber,
@@ -97,9 +96,9 @@ impl Media {
 
     pub fn cache_sdp(&mut self, sdp: String) {
         info!(
-            "📋 Caching SDP for participant: {} ({} chars)",
-            self.participant_id,
-            sdp.len()
+            event = "sdp_cached",
+            participant_id = %self.participant_id,
+            sdp_length = sdp.len()
         );
         self.cached_sdp = Some(sdp);
     }
@@ -108,8 +107,8 @@ impl Media {
         let has_cached = self.cached_sdp.is_some();
         if has_cached {
             info!(
-                "📋 Retrieved cached SDP for participant: {}",
-                self.participant_id
+                event = "cached_sdp_retrieved",
+                participant_id = %self.participant_id
             );
         }
         self.cached_sdp.clone()
@@ -117,8 +116,10 @@ impl Media {
 
     pub fn add_track(&mut self, mid: Mid, kind: MediaKind) {
         info!(
-            "🎵 Adding track - mid: {:?}, kind: {:?}, participant: {}",
-            mid, kind, self.participant_id
+            event = "track_added",
+            participant_id = %self.participant_id,
+            mid = ?mid,
+            kind = ?kind
         );
         let track_info = TrackInfo::new(mid, kind, self.participant_id.clone());
         self.tracks.insert(mid, track_info);
@@ -126,8 +127,9 @@ impl Media {
 
     pub fn remove_track(&mut self, mid: Mid) {
         info!(
-            "🗑️ Removing track - mid: {:?}, participant: {}",
-            mid, self.participant_id
+            event = "track_removed",
+            participant_id = %self.participant_id,
+            mid = ?mid
         );
         self.tracks.remove(&mid);
     }
@@ -135,24 +137,27 @@ impl Media {
     pub fn remove_all_tracks(&mut self) {
         let track_count = self.tracks.len();
         info!(
-            "🗑️ Removing all {} tracks for participant: {}",
-            track_count, self.participant_id
+            event = "all_tracks_removed",
+            participant_id = %self.participant_id,
+            track_count = track_count
         );
         self.tracks.clear();
     }
 
     pub fn add_subscriber(&mut self, subscriber_id: String, subscriber: Arc<Subscriber>) {
         info!(
-            "➕ Adding subscriber {} to participant: {}",
-            subscriber_id, self.participant_id
+            event = "subscriber_added",
+            participant_id = %self.participant_id,
+            subscriber_id = %subscriber_id
         );
         self.subscribers.insert(subscriber_id, subscriber);
     }
 
     pub fn remove_subscriber(&mut self, subscriber_id: &str) {
         info!(
-            "➖ Removing subscriber {} from participant: {}",
-            subscriber_id, self.participant_id
+            event = "subscriber_removed",
+            participant_id = %self.participant_id,
+            subscriber_id = %subscriber_id
         );
         self.subscribers.remove(subscriber_id);
     }
@@ -177,8 +182,10 @@ impl Media {
                     &*media_data.data,
                 ) {
                     warn!(
-                        "Failed to forward media to subscriber {}: {:?}",
-                        subscriber.participant_id, e
+                        event = "media_forward_failed",
+                        participant_id = %self.participant_id,
+                        subscriber_id = %subscriber.participant_id,
+                        error = ?e
                     );
                 }
             }
@@ -205,8 +212,10 @@ impl Media {
                 if let Some(mut writer) = subscriber.rtc.write().writer(req.mid) {
                     if let Err(e) = writer.request_keyframe(req.rid, req.kind) {
                         warn!(
-                            "Failed to request keyframe from subscriber {}: {:?}",
-                            subscriber.participant_id, e
+                            event = "keyframe_request_failed",
+                            participant_id = %self.participant_id,
+                            subscriber_id = %subscriber.participant_id,
+                            error = ?e
                         );
                     }
                 }
