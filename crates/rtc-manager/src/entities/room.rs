@@ -65,21 +65,29 @@ pub struct TrackIn {
 pub struct Room {
     publishers: Arc<DashMap<String, Arc<Publisher>>>,
     udp_socket: UdpSocket,
-    buf: Vec<u8>,
 }
 
 impl Room {
-    pub fn new(_config: RtcManagerConfig) -> Self {
-        let host_addr = select_host_address();
+    pub fn new(config: RtcManagerConfig) -> Self {
+        // Use public IP from config if available, otherwise fallback to auto-detected
+        let host_addr = if !config.public_ip.is_empty() {
+            config.public_ip.parse()
+                .unwrap_or_else(|_| {
+                    warn!(event = "invalid_public_ip", public_ip = %config.public_ip);
+                    select_host_address()
+                })
+        } else {
+            select_host_address()
+        };
+        
         let udp_socket =
             UdpSocket::bind(format!("{host_addr}:0")).expect("binding a random UDP port");
         let addr = udp_socket.local_addr().expect("a local socket address");
-        info!(event = "udp_bound", port = %addr);
+        info!(event = "udp_bound", port = %addr, public_ip = %config.public_ip);
 
         Self {
             publishers: Arc::new(DashMap::new()),
             udp_socket,
-            buf: vec![0; 2000],
         }
     }
 
@@ -105,8 +113,8 @@ impl Room {
         );
 
         // Add the shared UDP socket as a host candidate
-        let addr = self.udp_socket.local_addr().unwrap();
-        let candidate = Candidate::host(addr, "udp").expect("a host candidate");
+        let local_addr = self.udp_socket.local_addr().unwrap();
+        let candidate = Candidate::host(local_addr, "udp").expect("a host candidate");
         rtc.add_local_candidate(candidate.clone()).unwrap();
         let candidate_json = serde_json::to_string(&candidate).unwrap();
         info!(event = "host_candidate_added", candidate = %candidate_json);
@@ -556,10 +564,29 @@ impl Room {
                 .set_read_timeout(Some(duration))
                 .expect("setting socket read timeout");
 
-            // Handle socket input - simplified to avoid borrow checker issues
-            let _input = self.read_socket_input(&mut buf);
-            if _input.is_some() {
+            // Handle socket input and route to correct publisher
+            if let Some(input) = self.read_socket_input(&mut buf) {
                 info!(event = "udp_input_received");
+                
+                // Find the publisher that accepts this input
+                let mut handled = false;
+                for publisher_entry in self.publishers.iter() {
+                    let rtc = publisher_entry.value().rtc.read();
+                    if rtc.accepts(&input) {
+                        drop(rtc); // Release read lock before handling input
+                        publisher_entry.value().handle_input(input);
+                        handled = true;
+                        info!(
+                            event = "udp_input_routed_to_publisher",
+                            participant_id = %publisher_entry.key()
+                        );
+                        break;
+                    }
+                }
+                
+                if !handled {
+                    warn!(event = "udp_input_not_handled");
+                }
             }
 
             // Drive time forward in all publishers.
@@ -689,6 +716,15 @@ impl Room {
                                     kind: e.kind,
                                 });
                                 Propagated::TrackOpen(publisher.participant_id.clone(), track_in)
+                            }
+
+                            Event::IceConnectionStateChange(state) => {
+                                info!(
+                                    event = "ice_connection_state_change",
+                                    participant_id = %publisher.participant_id,
+                                    new_state = ?state
+                                );
+                                Propagated::Noop
                             }
                             _ => Propagated::Noop,
                         }

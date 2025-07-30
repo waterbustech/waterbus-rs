@@ -414,10 +414,22 @@ impl RtcManager {
         info!(event = "creating_new_room_instance", room_id = %room_id);
         let room_value = Arc::new(RwLock::new(Room::new(self.config.clone())));
 
-        // TODO: Re-enable UDP loop once basic functionality works
-        // For now, just create the room without UDP loop to test join functionality
+        // Start UDP loop thread for this room
+        let room_loop = room_value.clone();
+        let room_id_for_thread = room_id.to_string();
+        std::thread::spawn(move || {
+            let mut room = room_loop.write();
+            if let Err(e) = room.run_udp_loop() {
+                tracing::error!(
+                    event = "udp_loop_exited",
+                    room_id = %room_id_for_thread, 
+                    error = ?e
+                );
+            }
+        });
+
         info!(
-            event = "room_created_udp_loop_disabled",
+            event = "room_created_udp_loop_enabled",
             room_id = %room_id
         );
 
