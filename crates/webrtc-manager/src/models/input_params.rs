@@ -1,28 +1,26 @@
-use std::{pin::Pin, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc};
 
-use parking_lot::RwLock;
 use serde::Serialize;
 
-use crate::{entities::track::Track, models::streaming_protocol::StreamingProtocol};
+use crate::models::streaming_protocol::StreamingProtocol;
 
 use super::connection_type::ConnectionType;
 
-pub type IceCandidateCallback =
-    Arc<dyn Fn(IceCandidate) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 pub type RenegotiationCallback =
     Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 pub type JoinedCallback =
     Arc<dyn Fn(bool) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 #[derive(Debug, Clone)]
-pub struct WebRTCManagerConfigs {
+pub struct RtcManagerConfig {
     pub public_ip: String,
     pub port_min: u16,
     pub port_max: u16,
 }
 
+/// Global client is all clients in all rooms on this server.
 #[derive(Debug, Clone)]
-pub struct WClient {
+pub struct GlobalClient {
     pub participant_id: String,
     pub room_id: String,
 }
@@ -37,7 +35,6 @@ pub struct JoinRoomParams {
     pub total_tracks: u8,
     pub connection_type: ConnectionType,
     pub callback: JoinedCallback,
-    pub on_candidate: IceCandidateCallback,
     pub streaming_protocol: StreamingProtocol,
     pub is_ipv6_supported: bool,
 }
@@ -54,7 +51,6 @@ pub struct SubscribeParams {
     pub target_id: String,
     pub participant_id: String,
     pub on_negotiation_needed: RenegotiationCallback,
-    pub on_candidate: IceCandidateCallback,
     pub is_ipv6_supported: bool,
 }
 
@@ -91,11 +87,3 @@ pub struct IceCandidate {
     pub sdp_mid: Option<String>,
     pub sdp_m_line_index: Option<u16>,
 }
-
-pub enum AddTrackResponse {
-    AddTrackSuccess(TrackMutexWrapper),
-    AddSimulcastTrackSuccess(TrackMutexWrapper),
-    FailedToAddTrack,
-}
-
-pub type TrackMutexWrapper = Arc<RwLock<Track>>;

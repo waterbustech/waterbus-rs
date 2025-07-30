@@ -8,10 +8,10 @@ use crate::{
     errors::WebRTCError,
     models::{
         connection_type::ConnectionType,
-        params::{
-            IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
-            RenegotiationCallback, SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse,
-            SubscribeParams, SubscribeResponse, WClient, WebRTCManagerConfigs,
+        input_params::{
+            GlobalClient, IceCandidate, JoinRoomParams, JoinRoomResponse, JoinedCallback,
+            RenegotiationCallback, RtcManagerConfig, SubscribeHlsLiveStreamParams,
+            SubscribeHlsLiveStreamResponse, SubscribeParams, SubscribeResponse,
         },
     },
 };
@@ -27,24 +27,23 @@ pub struct JoinRoomReq {
     pub total_tracks: u8,
     pub connection_type: u8,
     pub callback: JoinedCallback,
-    pub ice_candidate_callback: IceCandidateCallback,
     pub streaming_protocol: u8,
     pub is_ipv6_supported: bool,
 }
 
 #[derive(Clone)]
-pub struct WebRTCManager {
+pub struct RtcManager {
     rooms: Arc<DashMap<String, Arc<RwLock<Room>>>>,
-    clients: Arc<DashMap<String, WClient>>,
-    configs: WebRTCManagerConfigs,
+    clients: Arc<DashMap<String, GlobalClient>>,
+    config: RtcManagerConfig,
 }
 
-impl WebRTCManager {
-    pub fn new(configs: WebRTCManagerConfigs) -> Self {
+impl RtcManager {
+    pub fn new(config: RtcManagerConfig) -> Self {
         Self {
             rooms: Arc::new(DashMap::new()),
             clients: Arc::new(DashMap::new()),
-            configs,
+            config,
         }
     }
 
@@ -59,7 +58,7 @@ impl WebRTCManager {
 
         self._add_client(
             client_id,
-            WClient {
+            GlobalClient {
                 participant_id: participant_id.clone(),
                 room_id: room_id.clone(),
             },
@@ -82,7 +81,6 @@ impl WebRTCManager {
             total_tracks: req.total_tracks,
             connection_type: ConnectionType::from(req.connection_type),
             callback: req.callback,
-            on_candidate: req.ice_candidate_callback,
             streaming_protocol: req.streaming_protocol.into(),
             is_ipv6_supported: req.is_ipv6_supported,
         };
@@ -103,12 +101,11 @@ impl WebRTCManager {
         participant_id: &str,
         room_id: &str,
         renegotiation_callback: RenegotiationCallback,
-        ice_candidate_callback: IceCandidateCallback,
         is_ipv6_supported: bool,
     ) -> Result<SubscribeResponse, WebRTCError> {
         self._add_client(
             client_id,
-            WClient {
+            GlobalClient {
                 participant_id: participant_id.to_owned(),
                 room_id: room_id.to_owned(),
             },
@@ -120,7 +117,6 @@ impl WebRTCManager {
         let params = SubscribeParams {
             participant_id: participant_id.to_string(),
             target_id: (&target_id).to_string(),
-            on_candidate: ice_candidate_callback,
             on_negotiation_needed: renegotiation_callback,
             is_ipv6_supported,
         };
@@ -263,7 +259,7 @@ impl WebRTCManager {
         Ok(())
     }
 
-    pub fn leave_room(&self, client_id: &str) -> Result<WClient, WebRTCError> {
+    pub fn leave_room(&self, client_id: &str) -> Result<GlobalClient, WebRTCError> {
         let client = self.get_client_by_id(client_id)?.clone();
         let room_id = &client.room_id;
         let participant_id = client.participant_id.clone();
@@ -390,7 +386,7 @@ impl WebRTCManager {
     }
 
     #[inline]
-    pub fn _add_client(&self, client_id: &str, info: WClient) {
+    pub fn _add_client(&self, client_id: &str, info: GlobalClient) {
         if !self.clients.contains_key(client_id) {
             self.clients.insert(client_id.to_string(), info);
         }
@@ -403,7 +399,7 @@ impl WebRTCManager {
 
     #[inline]
     fn _add_room(&self, room_id: &str) -> Result<Arc<RwLock<Room>>, WebRTCError> {
-        let room_value = Arc::new(RwLock::new(Room::new(self.configs.clone())));
+        let room_value = Arc::new(RwLock::new(Room::new(self.config.clone())));
 
         self.rooms
             .insert(room_id.to_string(), Arc::clone(&room_value));
@@ -412,7 +408,7 @@ impl WebRTCManager {
     }
 
     #[inline]
-    pub fn get_client_by_id(&self, client_id: &str) -> Result<WClient, WebRTCError> {
+    pub fn get_client_by_id(&self, client_id: &str) -> Result<GlobalClient, WebRTCError> {
         if let Some(client) = self.clients.get(client_id) {
             Ok(client.clone())
         } else {

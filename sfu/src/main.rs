@@ -4,7 +4,7 @@ use tracing_subscriber::{
     EnvFilter, Layer, filter::FilterFn, fmt, layer::SubscriberExt, registry,
     util::SubscriberInitExt,
 };
-use webrtc_manager::models::params::WebRTCManagerConfigs;
+use webrtc_manager::models::input_params::RtcManagerConfig;
 
 use mimalloc::MiMalloc;
 
@@ -43,7 +43,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app_env = AppEnv::new();
 
-    let webrtc_configs = WebRTCManagerConfigs {
+    let webrtc_configs = RtcManagerConfig {
         public_ip: app_env.public_ip,
         port_min: app_env.udp_port_range.port_min,
         port_max: app_env.udp_port_range.port_max,

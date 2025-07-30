@@ -15,29 +15,29 @@ use waterbus_proto::{
 use webrtc_manager::{
     models::{
         connection_type::ConnectionType,
-        params::{
+        input_params::{
             IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback,
-            WebRTCManagerConfigs,
+            RtcManagerConfig,
         },
     },
-    webrtc_manager::{JoinRoomReq, WebRTCManager},
+    rtc_manager::{JoinRoomReq, RtcManager},
 };
 
 use super::dispacher_grpc_client::DispatcherGrpcClient;
 
 pub struct SfuGrpcService {
-    webrtc_manager: Arc<RwLock<WebRTCManager>>,
+    webrtc_manager: Arc<RwLock<RtcManager>>,
     dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
     node_id: String,
 }
 
 impl SfuGrpcService {
     pub fn new(
-        configs: WebRTCManagerConfigs,
+        configs: RtcManagerConfig,
         dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
         node_id: String,
     ) -> Self {
-        let webrtc_manager = Arc::new(RwLock::new(WebRTCManager::new(configs)));
+        let webrtc_manager = Arc::new(RwLock::new(RtcManager::new(configs)));
 
         Self {
             webrtc_manager,
@@ -107,31 +107,6 @@ impl SfuService for SfuGrpcService {
         });
 
         let webrtc_manager = self.webrtc_manager.clone();
-        let response = tokio::task::spawn_blocking(move || {
-            let writer = webrtc_manager.write();
-
-            tokio::runtime::Handle::current().block_on(async {
-                writer
-                    .join_room(JoinRoomReq {
-                        client_id: req.client_id,
-                        participant_id: req.participant_id,
-                        room_id: req.room_id,
-                        sdp: req.sdp,
-                        is_video_enabled: req.is_video_enabled,
-                        is_audio_enabled: req.is_audio_enabled,
-                        is_e2ee_enabled: req.is_e2ee_enabled,
-                        total_tracks: req.total_tracks as u8,
-                        connection_type: req.connection_type as u8,
-                        callback: joined_callback,
-                        ice_candidate_callback,
-                        streaming_protocol: req.streaming_protocol as u8,
-                        is_ipv6_supported: req.is_ipv6_supported,
-                    })
-                    .await
-            })
-        })
-        .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(response) => match response {
@@ -207,26 +182,6 @@ impl SfuService for SfuGrpcService {
         });
 
         let webrtc_manager = self.webrtc_manager.clone();
-
-        let response = tokio::task::spawn_blocking(move || {
-            let writer = webrtc_manager.write();
-
-            tokio::runtime::Handle::current().block_on(async {
-                writer
-                    .subscribe(
-                        &req.client_id,
-                        &req.target_id,
-                        &req.participant_id,
-                        &req.room_id,
-                        renegotiation_callback,
-                        ice_candidate_callback,
-                        req.is_ipv6_supported,
-                    )
-                    .await
-            })
-        })
-        .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(response) => {
