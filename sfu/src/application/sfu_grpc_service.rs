@@ -6,19 +6,15 @@ use tonic::{Request, Response, Status};
 use waterbus_proto::{
     AddPublisherCandidateRequest, AddSubscriberCandidateRequest, JoinRoomRequest, JoinRoomResponse,
     LeaveRoomRequest, LeaveRoomResponse, MigratePublisherRequest, MigratePublisherResponse,
-    NewUserJoinedRequest, PublisherCandidateRequest, PublisherRenegotiationRequest,
+    NewUserJoinedRequest, PublisherRenegotiationRequest,
     PublisherRenegotiationResponse, SetCameraType, SetEnabledRequest, SetScreenSharingRequest,
     SetSubscriberSdpRequest, StatusResponse, SubscribeHlsLiveStreamRequest,
-    SubscribeHlsLiveStreamResponse, SubscribeRequest, SubscribeResponse,
-    SubscriberCandidateRequest, SubscriberRenegotiateRequest, sfu_service_server::SfuService,
+    SubscribeHlsLiveStreamResponse, SubscribeRequest, SubscribeResponse, SubscriberRenegotiateRequest, sfu_service_server::SfuService,
 };
-use webrtc_manager::{
+use rtc_manager::{
     models::{
         connection_type::ConnectionType,
-        input_params::{
-            IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback,
-            RtcManagerConfig,
-        },
+        input_params::{IceCandidate, JoinedCallback, RenegotiationCallback, RtcManagerConfig},
     },
     rtc_manager::{JoinRoomReq, RtcManager},
 };
@@ -33,11 +29,11 @@ pub struct SfuGrpcService {
 
 impl SfuGrpcService {
     pub fn new(
-        configs: RtcManagerConfig,
+        config: RtcManagerConfig,
         dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
         node_id: String,
     ) -> Self {
-        let webrtc_manager = Arc::new(RwLock::new(RtcManager::new(configs)));
+        let webrtc_manager = Arc::new(RwLock::new(RtcManager::new(config)));
 
         Self {
             webrtc_manager,
@@ -55,28 +51,8 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<JoinRoomResponse>, Status> {
         let req = req.into_inner();
 
-        let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
-        let client_id = req.client_id.clone();
-        let ice_candidate_callback: IceCandidateCallback =
-            Arc::new(move |candidate: IceCandidate| {
-                let dispatcher = Arc::clone(&dispatcher);
-                let client_id = client_id.clone();
-
-                Box::pin(async move {
-                    let dispatcher = dispatcher.lock().await;
-
-                    let _ = dispatcher
-                        .on_publisher_candidate(PublisherCandidateRequest {
-                            client_id,
-                            candidate: Some(waterbus_proto::common::IceCandidate {
-                                candidate: candidate.candidate,
-                                sdp_mid: candidate.sdp_mid,
-                                sdp_m_line_index: candidate.sdp_m_line_index.map(|val| val as u32),
-                            }),
-                        })
-                        .await;
-                })
-            });
+        // let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
+        // let client_id = req.client_id.clone();
 
         let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
         let participant_id = req.participant_id.clone();
@@ -107,6 +83,26 @@ impl SfuService for SfuGrpcService {
         });
 
         let webrtc_manager = self.webrtc_manager.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            let writer = webrtc_manager.write();
+
+            writer.join_room(JoinRoomReq {
+                client_id: req.client_id,
+                participant_id: req.participant_id,
+                room_id: req.room_id,
+                sdp: req.sdp,
+                is_video_enabled: req.is_video_enabled,
+                is_audio_enabled: req.is_audio_enabled,
+                is_e2ee_enabled: req.is_e2ee_enabled,
+                total_tracks: req.total_tracks as u8,
+                connection_type: req.connection_type as u8,
+                callback: joined_callback,
+                streaming_protocol: req.streaming_protocol as u8,
+                is_ipv6_supported: req.is_ipv6_supported,
+            })
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(response) => match response {
@@ -156,32 +152,26 @@ impl SfuService for SfuGrpcService {
             })
         });
 
-        let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
-        let client_id = req.client_id.clone();
-        let target_id = req.target_id.clone();
-        let ice_candidate_callback: IceCandidateCallback = Arc::new(move |candidate| {
-            let dispatcher = Arc::clone(&dispatcher);
-            let client_id = client_id.clone();
-            let target_id = target_id.clone();
-
-            Box::pin(async move {
-                let dispatcher = dispatcher.lock().await;
-
-                let _ = dispatcher
-                    .on_subscriber_candidate(SubscriberCandidateRequest {
-                        client_id,
-                        target_id,
-                        candidate: Some(waterbus_proto::common::IceCandidate {
-                            candidate: candidate.candidate,
-                            sdp_mid: candidate.sdp_mid,
-                            sdp_m_line_index: candidate.sdp_m_line_index.map(|val| val as u32),
-                        }),
-                    })
-                    .await;
-            })
-        });
+        // let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
+        // let client_id = req.client_id.clone();
+        // let target_id = req.target_id.clone();
 
         let webrtc_manager = self.webrtc_manager.clone();
+
+        let response = tokio::task::spawn_blocking(move || {
+            let writer = webrtc_manager.write();
+
+            writer.subscribe(
+                &req.client_id,
+                &req.target_id,
+                &req.participant_id,
+                &req.room_id,
+                renegotiation_callback,
+                req.is_ipv6_supported,
+            )
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
 
         match response {
             Ok(response) => {
@@ -260,8 +250,7 @@ impl SfuService for SfuGrpcService {
             move || {
                 let writer = webrtc_manager.read();
 
-                tokio::runtime::Handle::current()
-                    .block_on(writer.handle_publisher_renegotiation(&client_id, &sdp))
+                writer.handle_publisher_renegotiation(&client_id, &sdp)
             }
         })
         .await
@@ -289,11 +278,7 @@ impl SfuService for SfuGrpcService {
         let response = tokio::task::spawn_blocking(move || {
             let writer = webrtc_manager.read();
 
-            tokio::runtime::Handle::current().block_on(writer.handle_migrate_connection(
-                &client_id,
-                &sdp,
-                connection_type,
-            ))
+            writer.handle_migrate_connection(&client_id, &sdp, connection_type)
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))?;

@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tracing::info;
 use waterbus_proto::sfu_service_server::SfuServiceServer;
-use webrtc_manager::models::input_params::RtcManagerConfig;
+use rtc_manager::models::input_params::RtcManagerConfig;
 
 use crate::application::{
     dispacher_grpc_client::DispatcherGrpcClient, sfu_grpc_service::SfuGrpcService,
@@ -17,13 +17,13 @@ impl GrpcServer {
         port: u16,
         dispatcher_host: String,
         dispatcher_port: u16,
-        configs: RtcManagerConfig,
+        config: RtcManagerConfig,
         node_id: String,
     ) {
         info!("GrpcServer is running on port: {}", port);
 
         tokio::spawn(async move {
-            match Self::start_server(port, dispatcher_host, dispatcher_port, configs, node_id).await
+            match Self::start_server(port, dispatcher_host, dispatcher_port, config, node_id).await
             {
                 Ok(_) => info!("GrpcServer stopped successfully"),
                 Err(e) => info!("GrpcServer stopped with an error: {:?}", e),
@@ -35,7 +35,7 @@ impl GrpcServer {
         port: u16,
         dispatcher_host: String,
         dispatcher_port: u16,
-        configs: RtcManagerConfig,
+        config: RtcManagerConfig,
         node_id: String,
     ) -> anyhow::Result<()> {
         let addr = format!("0.0.0.0:{port}").parse().unwrap();
@@ -45,7 +45,7 @@ impl GrpcServer {
             dispatcher_port,
         )));
 
-        let sfu_grpc_service = SfuGrpcService::new(configs, dispatcher_grpc_client, node_id);
+        let sfu_grpc_service = SfuGrpcService::new(config, dispatcher_grpc_client, node_id);
 
         let shutdown_signal = async {
             tokio::signal::ctrl_c()

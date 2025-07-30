@@ -1,41 +1,62 @@
-use std::{net::UdpSocket, sync::Arc};
+use std::{sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use parking_lot::RwLock;
-use str0m::{Candidate, Rtc};
+use parking_lot::{Mutex, RwLock};
 use tracing::warn;
+use webrtc::{
+    api::{
+        APIBuilder, interceptor_registry::register_default_interceptors, media_engine::MediaEngine,
+        setting_engine::SettingEngine,
+    },
+    ice::{
+        network_type::NetworkType,
+        udp_network::{EphemeralUDP, UDPNetwork},
+    },
+    ice_transport::{ice_candidate::RTCIceCandidateInit, ice_candidate_type::RTCIceCandidateType},
+    interceptor::registry::Registry,
+    peer_connection::{
+        RTCPeerConnection,
+        configuration::RTCConfiguration,
+        peer_connection_state::RTCPeerConnectionState,
+        policy::{
+            bundle_policy::RTCBundlePolicy, ice_transport_policy::RTCIceTransportPolicy,
+            rtcp_mux_policy::RTCRtcpMuxPolicy,
+        },
+        sdp::session_description::RTCSessionDescription,
+    },
+    rtp_transceiver::{
+        RTCPFeedback, TYPE_RTCP_FB_CCM, TYPE_RTCP_FB_GOOG_REMB, TYPE_RTCP_FB_TRANSPORT_CC,
+        rtp_codec::{RTCRtpHeaderExtensionCapability, RTPCodecType},
+    },
+};
 
 use crate::{
-    entities::{media::Media, publisher::Publisher},
+    entities::{media::Media, publisher::Publisher, subscriber::Subscriber},
     errors::WebRTCError,
     models::{
         connection_type::ConnectionType,
-        input_params::{
-            IceCandidate, JoinRoomParams, JoinRoomResponse, RtcManagerConfig,
+        params::{
+            AddTrackResponse, IceCandidate, JoinRoomParams, JoinRoomResponse,
             SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse, SubscribeParams,
-            SubscribeResponse,
+            SubscribeResponse, TrackMutexWrapper, WebRTCManagerConfigs,
         },
         streaming_protocol::StreamingProtocol,
     },
-    utils::select_host_address::select_host_address,
 };
 
 #[derive(Clone)]
 pub struct Room {
     publishers: Arc<DashMap<String, Arc<Publisher>>>,
-    udp_socket: UdpSocket,
-    config: RtcManagerConfig,
+    subscribers: Arc<DashMap<String, Arc<Subscriber>>>,
+    configs: WebRTCManagerConfigs,
 }
 
 impl Room {
-    pub fn new(config: RtcManagerConfig) -> Self {
-        let host_addr = select_host_address();
-        let udp_socket = UdpSocket::bind(host_addr).unwrap();
-
+    pub fn new(configs: WebRTCManagerConfigs) -> Self {
         Self {
             publishers: Arc::new(DashMap::new()),
-            udp_socket,
-            config,
+            subscribers: Arc::new(DashMap::new()),
+            configs,
         }
     }
 
@@ -44,45 +65,189 @@ impl Room {
         params: JoinRoomParams,
         room_id: &str,
     ) -> Result<Option<JoinRoomResponse>, WebRTCError> {
-        let participant_id = params.participant_id.clone();
+        let participant_id = params.participant_id;
 
-        let rtc = self._create_rtc(params.is_ipv6_supported).await?;
+        let pc = self._create_pc(params.is_ipv6_supported).await?;
 
-        // Create publisher with the new str0m-based architecture
-        let publisher = Publisher::new(rtc, params).await;
+        let mut media = Media::new(
+            participant_id.clone(),
+            params.is_video_enabled,
+            params.is_audio_enabled,
+            params.is_e2ee_enabled,
+            params.streaming_protocol,
+        );
+
+        if params.connection_type == ConnectionType::P2P {
+            media.cache_sdp(params.sdp.clone());
+        }
+
+        // let _ = media.initialize_hls_writer().await;
+
+        let publisher = Publisher::new(
+            Arc::new(RwLock::new(media)),
+            pc.clone(),
+            params.connection_type.clone(),
+        )
+        .await;
 
         self._add_publisher(&participant_id, &publisher);
 
-        // Handle P2P vs SFU logic
-        if params.connection_type == ConnectionType::P2P {
-            // For P2P, we cache the SDP and don't return an answer immediately
-            let mut media = publisher.media.write();
-            media.cache_sdp(params.sdp.clone());
+        let is_migrate = params.connection_type == ConnectionType::P2P;
 
-            // Execute callback immediately for P2P
-            tokio::spawn(async move {
-                (params.callback)(false).await;
-            });
+        // === Peer Connection Callbacks ===
+        // If total tracks is 0 -> execute joined callback when pc connected
+        if params.total_tracks == 0 {
+            let has_emitted = Arc::new(Mutex::new(false));
+            {
+                let peer_clone = pc.clone();
+                let callback = params.callback.clone();
+                let has_emitted = has_emitted.clone();
 
-            Ok(None)
-        } else {
-            // For SFU, we need to handle SDP negotiation
-            let sdp_offer = serde_json::from_str::<str0m::change::SdpOffer>(&params.sdp)
+                pc.on_peer_connection_state_change(Box::new(move |_| {
+                    let peer = peer_clone.clone();
+                    let callback = callback.clone();
+                    let has_emitted = has_emitted.clone();
+
+                    Box::pin(async move {
+                        if peer.connection_state() == RTCPeerConnectionState::Connected {
+                            drop(peer);
+                            let mut emitted = has_emitted.lock();
+                            if !*emitted {
+                                *emitted = true;
+                                tokio::spawn(async move {
+                                    (callback)(is_migrate).await;
+                                });
+                            }
+                        }
+                    })
+                }));
+            }
+        }
+
+        // === Media Track ===
+        let track_counter = Arc::new(Mutex::new(0u8));
+        let callback_called = Arc::new(Mutex::new(false));
+
+        {
+            let media = self._get_media(&participant_id)?;
+            let room_id = room_id.to_string();
+            let participant_id = participant_id.clone();
+            let subscribers = Arc::clone(&self.subscribers);
+            let publisher = publisher.clone();
+
+            let track_counter = Arc::clone(&track_counter);
+            let callback_called = Arc::clone(&callback_called);
+            let callback = params.callback.clone();
+
+            let is_migrate = params.connection_type == ConnectionType::P2P;
+
+            pc.on_track(Box::new(move |track, _, _| {
+                let media = Arc::clone(&media);
+                let subscribers = Arc::clone(&subscribers);
+                let room_id = room_id.clone();
+                let participant_id = participant_id.clone();
+                let track_counter = Arc::clone(&track_counter);
+                let callback_called = Arc::clone(&callback_called);
+                let callback = callback.clone();
+
+                publisher.send_rtcp_pli(track.ssrc());
+
+                let media = media.write();
+                let add_track_response = media.add_track(track, room_id);
+
+                Box::pin(async move {
+                    tokio::spawn(async move {
+                        let (maybe_track, should_count) = match add_track_response {
+                            AddTrackResponse::AddTrackSuccess(track) => (Some(track), true),
+                            AddTrackResponse::AddSimulcastTrackSuccess(track) => {
+                                (Some(track), false)
+                            }
+                            AddTrackResponse::FailedToAddTrack => {
+                                warn!("Failed to add track");
+                                (None, false)
+                            }
+                        };
+
+                        if let Some(track) = maybe_track {
+                            if let Err(e) = Self::_add_track_to_subscribers(
+                                Arc::clone(&subscribers),
+                                track,
+                                &participant_id,
+                            )
+                            .await
+                            {
+                                warn!("Failed to add track to subscribers: {:?}", e);
+                            }
+
+                            if should_count {
+                                let mut count = track_counter.lock();
+                                *count += 1;
+
+                                if *count == params.total_tracks {
+                                    let mut called = callback_called.lock();
+                                    if !*called {
+                                        *called = true;
+
+                                        tokio::spawn((callback)(is_migrate));
+                                    }
+                                }
+                            }
+                        }
+                    });
+                })
+            }));
+        }
+
+        // === ICE Candidate Callback ===
+        {
+            let on_candidate = params.on_candidate.clone();
+            pc.on_ice_candidate(Box::new(move |candidate| {
+                let on_candidate = on_candidate.clone();
+                Box::pin(async move {
+                    if let Some(candidate) = candidate
+                        && let Ok(init) = candidate.to_json()
+                    {
+                        let ice = IceCandidate {
+                            candidate: init.candidate,
+                            sdp_mid: init.sdp_mid,
+                            sdp_m_line_index: init.sdp_mline_index,
+                        };
+                        tokio::spawn((on_candidate)(ice));
+                    }
+                })
+            }));
+        }
+
+        // === SDP Exchange ===
+        if params.connection_type == ConnectionType::SFU {
+            let sdp = RTCSessionDescription::offer(params.sdp.clone())
                 .map_err(|_| WebRTCError::FailedToCreateOffer)?;
 
-            let answer = rtc
-                .sdp_api()
-                .accept_offer(sdp_offer)
+            pc.set_remote_description(sdp)
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+            let answer = pc
+                .create_answer(None)
+                .await
                 .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
 
-            let answer_json =
-                serde_json::to_string(&answer).map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+            pc.set_local_description(answer.clone())
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
 
-            Ok(Some(JoinRoomResponse {
-                sdp: answer_json,
+            return Ok(Some(JoinRoomResponse {
+                sdp: answer.sdp.clone(),
                 is_recording: false,
-            }))
+            }));
+        } else {
+            let callback = params.callback.clone();
+            tokio::spawn(async move {
+                (callback)(false).await;
+            });
         }
+
+        Ok(None)
     }
 
     pub async fn subscribe(
@@ -92,83 +257,104 @@ impl Room {
         let target_id = &params.target_id;
         let participant_id = &params.participant_id;
 
-        // Get the target publisher
-        let publisher = self._get_publisher(target_id)?;
+        let media_arc = self._get_media(target_id)?;
 
-        // Check if we have cached SDP for P2P
-        let cached_sdp = {
-            let media = publisher.media.read();
-            media.get_sdp()
+        let subscribe_response = self._extract_subscribe_response(&media_arc).await;
+
+        let sdp_cached = {
+            let mut writer = media_arc.write();
+            writer.get_sdp()
         };
 
-        if let Some(sdp) = cached_sdp {
-            // Return cached SDP for P2P connections
-            let media_state = publisher.get_media_state();
-
-            Ok(SubscribeResponse {
+        match sdp_cached {
+            Some(sdp) => Ok(SubscribeResponse {
                 offer: sdp,
-                camera_type: media_state.camera_type,
-                video_enabled: media_state.video_enabled,
-                audio_enabled: media_state.audio_enabled,
-                is_screen_sharing: media_state.is_screen_sharing,
-                is_hand_raising: media_state.is_hand_raising,
-                is_e2ee_enabled: media_state.is_e2ee_enabled,
-                video_codec: media_state.codec,
-                screen_track_id: media_state.screen_track_id,
-            })
-        } else {
-            // For SFU, create a new subscriber
-            let connection_type = publisher.get_connection_type();
+                ..subscribe_response
+            }),
+            None => {
+                let connection_type = match self._get_publisher(target_id) {
+                    Ok(publisher) => publisher.get_connection_type().clone(),
+                    Err(_) => ConnectionType::P2P,
+                };
 
-            if connection_type == ConnectionType::P2P {
-                return Err(WebRTCError::PeerNotFound);
+                if connection_type == ConnectionType::P2P {
+                    return Err(WebRTCError::PeerNotFound);
+                }
+
+                let peer_id = self._get_subscriber_peer_id(target_id, participant_id);
+
+                let pc = self._create_pc(params.is_ipv6_supported).await?;
+
+                self._add_subscriber(&peer_id, &pc, participant_id.clone())
+                    .await;
+
+                // Clone for callbacks
+                let peer_clone = pc.clone();
+                let media_clone = Arc::clone(&media_arc);
+                let renegotiation_callback = params.on_negotiation_needed.clone();
+                pc.on_negotiation_needed(Box::new(move || {
+                    let peer = peer_clone.clone();
+                    let media = media_clone.clone();
+                    let callback = renegotiation_callback.clone();
+
+                    let need_renegotiate = {
+                        let media = media.read();
+                        media.tracks.len() > 2
+                    };
+
+                    Box::pin(async move {
+                        if !need_renegotiate {
+                            return;
+                        }
+
+                        if let Ok(desc) = peer.create_offer(None).await {
+                            let _ = peer.set_local_description(desc.clone()).await;
+                            tokio::spawn((callback)(desc.sdp));
+                        }
+                    })
+                }));
+
+                let on_candidate = params.on_candidate.clone();
+                pc.on_ice_candidate(Box::new(move |cand| {
+                    let callback = on_candidate.clone();
+                    Box::pin(async move {
+                        if let Some(candidate) = cand {
+                            if let Ok(init) = candidate.to_json() {
+                                let ice = IceCandidate {
+                                    candidate: init.candidate,
+                                    sdp_mid: init.sdp_mid,
+                                    sdp_m_line_index: init.sdp_mline_index,
+                                };
+                                tokio::spawn((callback)(ice));
+                            } else {
+                                warn!("Failed to convert ICE candidate");
+                            }
+                        }
+                    })
+                }));
+
+                let subscriber = self._get_subscriber(target_id, participant_id)?;
+                let _ = self._forward_all_tracks(subscriber, &media_arc).await;
+
+                // Create and set offer
+                let offer_desc = pc
+                    .create_offer(None)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToCreateOffer)?;
+                pc.set_local_description(offer_desc.clone())
+                    .await
+                    .map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+                let local_desc = pc
+                    .local_description()
+                    .await
+                    .ok_or(WebRTCError::FailedToGetSdp)?;
+
+                Ok(SubscribeResponse {
+                    offer: local_desc.sdp.clone(),
+                    ..subscribe_response
+                })
             }
-
-            // Create subscriber through the publisher
-            let subscriber = publisher.subscribe_to_publisher(params).await?;
-
-            // Get media state for response
-            let media_state = publisher.get_media_state();
-
-            // Create SDP offer for the subscriber
-            let mut change = subscriber.rtc.sdp_api();
-
-            // Add media for each track in the publisher
-            let media = publisher.media.read();
-            for track_entry in media.tracks.iter() {
-                let (mid, track_info) = track_entry.pair();
-                let stream_id = track_info.origin.clone();
-                let new_mid = change.add_media(
-                    track_info.kind,
-                    str0m::media::Direction::SendOnly,
-                    Some(stream_id),
-                    None,
-                    None,
-                );
-
-                // Update subscriber's track state
-                subscriber.tracks_out.insert(
-                    *mid,
-                    crate::entities::media::TrackOutState::Negotiating(new_mid),
-                );
-            }
-
-            let (offer, _pending) = change.apply().ok_or(WebRTCError::FailedToCreateOffer)?;
-
-            let offer_json =
-                serde_json::to_string(&offer).map_err(|_| WebRTCError::FailedToCreateOffer)?;
-
-            Ok(SubscribeResponse {
-                offer: offer_json,
-                camera_type: media_state.camera_type,
-                video_enabled: media_state.video_enabled,
-                audio_enabled: media_state.audio_enabled,
-                is_screen_sharing: media_state.is_screen_sharing,
-                is_hand_raising: media_state.is_hand_raising,
-                is_e2ee_enabled: media_state.is_e2ee_enabled,
-                video_codec: media_state.codec,
-                screen_track_id: media_state.screen_track_id,
-            })
         }
     }
 
@@ -178,14 +364,13 @@ impl Room {
     ) -> Result<SubscribeHlsLiveStreamResponse, WebRTCError> {
         let target_id = &params.target_id;
 
-        let publisher = self._get_publisher(target_id)?;
-        let media = publisher.media.read();
+        let media_arc = self._get_media(target_id)?;
 
-        if media.streaming_protocol != StreamingProtocol::HLS {
+        if media_arc.read().streaming_protocol != StreamingProtocol::HLS {
             return Err(WebRTCError::InvalidStreamingProtocol);
         }
 
-        let hls_urls = media.get_hls_urls();
+        let hls_urls = media_arc.read().get_hls_urls();
 
         Ok(SubscribeHlsLiveStreamResponse { hls_urls })
     }
@@ -196,9 +381,25 @@ impl Room {
         participant_id: &str,
         sdp: &str,
     ) -> Result<(), WebRTCError> {
-        // In str0m, we handle SDP negotiation differently
-        // This would be implemented based on your specific needs
-        Ok(())
+        let peer = self
+            ._get_subscriber_peer(target_id, participant_id)?
+            .clone();
+
+        let sdp_string = sdp.to_string();
+
+        tokio::task::block_in_place(move || {
+            let handle =
+                tokio::runtime::Handle::try_current().map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+            handle.block_on(async move {
+                let answer_desc = RTCSessionDescription::answer(sdp_string)
+                    .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+
+                peer.set_remote_description(answer_desc)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToSetSdp)
+            })
+        })
     }
 
     pub async fn handle_publisher_renegotiation(
@@ -206,21 +407,27 @@ impl Room {
         participant_id: &str,
         sdp: &str,
     ) -> Result<String, WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        let rtc = &publisher.rtc;
+        let participant = self._get_publisher(participant_id)?;
 
-        let offer = serde_json::from_str::<str0m::change::SdpOffer>(sdp)
+        let peer = &participant.peer_connection;
+
+        let offer_desc = RTCSessionDescription::offer(sdp.to_string())
             .map_err(|_| WebRTCError::FailedToCreateOffer)?;
 
-        let answer = rtc
-            .sdp_api()
-            .accept_offer(offer)
+        peer.set_remote_description(offer_desc)
+            .await
+            .map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+        let answer_desc = peer
+            .create_answer(None)
+            .await
             .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
 
-        let answer_json =
-            serde_json::to_string(&answer).map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+        peer.set_local_description(answer_desc.clone())
+            .await
+            .map_err(|_| WebRTCError::FailedToSetSdp)?;
 
-        Ok(answer_json)
+        Ok(answer_desc.clone().sdp)
     }
 
     pub async fn handle_migrate_connection(
@@ -229,29 +436,39 @@ impl Room {
         sdp: &str,
         connection_type: ConnectionType,
     ) -> Result<Option<String>, WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
+        let participant = self._get_publisher(participant_id)?;
 
-        publisher.set_connection_type(connection_type.clone());
+        participant.set_connection_type(connection_type.clone());
 
         if connection_type == ConnectionType::SFU {
-            let rtc = &publisher.rtc;
+            let peer = &participant.peer_connection;
 
-            let offer = serde_json::from_str::<str0m::change::SdpOffer>(sdp)
+            let offer_desc = RTCSessionDescription::offer(sdp.to_string())
                 .map_err(|_| WebRTCError::FailedToCreateOffer)?;
 
-            let answer = rtc
-                .sdp_api()
-                .accept_offer(offer)
+            peer.set_remote_description(offer_desc)
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
+
+            let answer_desc = peer
+                .create_answer(None)
+                .await
                 .map_err(|_| WebRTCError::FailedToCreateAnswer)?;
 
-            let answer_json =
-                serde_json::to_string(&answer).map_err(|_| WebRTCError::FailedToCreateAnswer)?;
+            peer.set_local_description(answer_desc.clone())
+                .await
+                .map_err(|_| WebRTCError::FailedToSetSdp)?;
 
-            Ok(Some(answer_json))
+            Ok(Some(answer_desc.clone().sdp))
         } else {
-            // For P2P, cache the SDP
-            let mut media = publisher.media.write();
-            media.cache_sdp(sdp.to_owned());
+            let media = self._get_media(participant_id)?;
+
+            let mut writer = media.write();
+
+            writer.remove_all_tracks();
+
+            writer.cache_sdp(sdp.to_owned());
+
             Ok(None)
         }
     }
@@ -261,12 +478,30 @@ impl Room {
         participant_id: &str,
         candidate: IceCandidate,
     ) -> Result<(), WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        let rtc = &publisher.rtc;
+        let participant = self._get_publisher(participant_id)?;
+        let peer = &participant.peer_connection;
 
-        // In str0m, ICE candidates are handled automatically
-        // This method might not be needed or would be implemented differently
-        Ok(())
+        let candidate_init = RTCIceCandidateInit {
+            candidate: candidate.candidate,
+            sdp_mid: candidate.sdp_mid,
+            sdp_mline_index: candidate.sdp_m_line_index,
+            username_fragment: None,
+        };
+
+        // Clone peer và candidate để move vào async block
+        let peer = peer.clone();
+        let candidate_init = candidate_init.clone();
+
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::try_current()
+                .map_err(|_| WebRTCError::FailedToAddCandidate)?;
+
+            handle.block_on(async move {
+                peer.add_ice_candidate(candidate_init)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToAddCandidate)
+            })
+        })
     }
 
     pub fn add_subscriber_candidate(
@@ -275,13 +510,34 @@ impl Room {
         participant_id: &str,
         candidate: IceCandidate,
     ) -> Result<(), WebRTCError> {
-        // In str0m, ICE candidates are handled automatically
-        // This method might not be needed or would be implemented differently
-        Ok(())
+        let peer = self._get_subscriber_peer(target_id, participant_id)?;
+
+        let candidate_init = RTCIceCandidateInit {
+            candidate: candidate.candidate,
+            sdp_mid: candidate.sdp_mid,
+            sdp_mline_index: candidate.sdp_m_line_index,
+            username_fragment: None,
+        };
+
+        let peer = peer.clone();
+        let candidate_init = candidate_init.clone();
+
+        tokio::task::block_in_place(move || {
+            let handle = tokio::runtime::Handle::try_current()
+                .map_err(|_| WebRTCError::FailedToAddCandidate)?;
+
+            handle.block_on(async move {
+                peer.add_ice_candidate(candidate_init)
+                    .await
+                    .map_err(|_| WebRTCError::FailedToAddCandidate)
+            })
+        })
     }
 
     #[inline]
     pub fn leave_room(&mut self, participant_id: &str) {
+        self._remove_all_subscribers_with_target_id(participant_id);
+
         if let Some((_id, publisher)) = self.publishers.remove(participant_id) {
             publisher.close();
         }
@@ -293,8 +549,12 @@ impl Room {
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        publisher.set_e2ee_enabled(is_enabled);
+        let media = self._get_media(participant_id)?;
+
+        let media = media.write();
+
+        media.set_e2ee_enabled(is_enabled);
+
         Ok(())
     }
 
@@ -304,8 +564,12 @@ impl Room {
         participant_id: &str,
         camera_type: u8,
     ) -> Result<(), WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        publisher.set_camera_type(camera_type);
+        let media = self._get_media(participant_id)?;
+
+        let media = media.write();
+
+        media.set_camera_type(camera_type);
+
         Ok(())
     }
 
@@ -315,8 +579,12 @@ impl Room {
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        publisher.set_video_enabled(is_enabled);
+        let media = self._get_media(participant_id)?;
+
+        let media = media.write();
+
+        media.set_video_enabled(is_enabled);
+
         Ok(())
     }
 
@@ -326,8 +594,12 @@ impl Room {
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        publisher.set_audio_enabled(is_enabled);
+        let media = self._get_media(participant_id)?;
+
+        let media = media.write();
+
+        media.set_audio_enabled(is_enabled);
+
         Ok(())
     }
 
@@ -338,8 +610,12 @@ impl Room {
         is_enabled: bool,
         screen_track_id: Option<String>,
     ) -> Result<(), WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        publisher.set_screen_sharing(is_enabled, screen_track_id);
+        let media = self._get_media(participant_id)?;
+
+        let media = media.write();
+
+        media.set_screen_sharing(is_enabled, screen_track_id);
+
         Ok(())
     }
 
@@ -349,8 +625,12 @@ impl Room {
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), WebRTCError> {
-        let publisher = self._get_publisher(participant_id)?;
-        publisher.set_hand_raising(is_enabled);
+        let media = self._get_media(participant_id)?;
+
+        let media = media.write();
+
+        media.set_hand_rasing(is_enabled);
+
         Ok(())
     }
 
@@ -366,19 +646,250 @@ impl Room {
     }
 
     #[inline]
-    fn _add_publisher(&self, participant_id: &str, publisher: &Arc<Publisher>) {
+    fn _add_publisher(&self, participant_id: &str, participant: &Arc<Publisher>) {
         self.publishers
-            .insert(participant_id.to_owned(), publisher.clone());
+            .insert(participant_id.to_owned(), participant.clone());
     }
 
-    pub async fn _create_rtc(&self, is_ipv6_supported: bool) -> Result<Arc<Rtc>, WebRTCError> {
-        let mut rtc = Rtc::builder().set_ice_lite(true).build();
+    #[inline]
+    async fn _add_subscriber(&self, peer_id: &str, pc: &Arc<RTCPeerConnection>, user_id: String) {
+        let subscriber = Subscriber::new(pc.clone(), user_id).await;
+        let subscriber = Arc::new(subscriber);
 
-        let addr = self.udp_socket.local_addr().unwrap();
+        self.subscribers.insert(peer_id.to_owned(), subscriber);
+    }
 
-        let candidate = Candidate::host(addr, "udp").expect("a host candidate");
-        rtc.add_local_candidate(candidate).unwrap();
+    #[inline]
+    fn _get_subscriber_peer(
+        &self,
+        target_id: &str,
+        participant_id: &str,
+    ) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
+        let key = self._get_subscriber_peer_id(target_id, participant_id);
 
-        Ok(Arc::new(rtc))
+        let subscribers = &self.subscribers;
+
+        if let Some(subscriber) = subscribers.get(&key) {
+            // Clone the peer_connection from subscriber
+            Ok(Arc::clone(&subscriber.peer_connection))
+        } else {
+            Err(WebRTCError::PeerNotFound)
+        }
+    }
+
+    #[inline]
+    fn _get_subscriber(
+        &self,
+        target_id: &str,
+        participant_id: &str,
+    ) -> Result<Arc<Subscriber>, WebRTCError> {
+        let key = self._get_subscriber_peer_id(target_id, participant_id);
+
+        let subscribers = &self.subscribers;
+
+        if let Some(subscriber) = subscribers.get(&key) {
+            // Clone the subscriber directly
+            Ok(Arc::clone(&subscriber))
+        } else {
+            Err(WebRTCError::PeerNotFound)
+        }
+    }
+
+    #[inline]
+    fn _get_subscriber_peer_id(&self, target_id: &str, participant_id: &str) -> String {
+        let key = format!("p_{target_id}_{participant_id}");
+
+        key
+    }
+
+    #[inline]
+    fn _get_media(&self, participant_id: &str) -> Result<Arc<RwLock<Media>>, WebRTCError> {
+        let participant = self._get_publisher(participant_id)?;
+        Ok(Arc::clone(&participant.media))
+    }
+
+    #[inline]
+    fn _remove_all_subscribers_with_target_id(&self, participant_id: &str) {
+        let prefix = format!("p_{participant_id}_");
+
+        let subscribers = &self.subscribers;
+
+        let keys_to_remove: Vec<String> = subscribers
+            .iter()
+            .filter(|entry| entry.key().starts_with(&prefix))
+            .map(|entry| entry.key().clone())
+            .collect();
+
+        // Iterate through the keys to remove them
+        for key in keys_to_remove {
+            if let Some((_id, subscriber)) = subscribers.remove(&key) {
+                let subscriber_clone: Arc<Subscriber> = Arc::clone(&subscriber);
+                subscriber_clone.close();
+            }
+        }
+    }
+
+    #[inline]
+    async fn _add_track_to_subscribers(
+        subscribers_lock: Arc<DashMap<String, Arc<Subscriber>>>,
+        remote_track: TrackMutexWrapper,
+        target_id: &str,
+    ) -> Result<(), WebRTCError> {
+        let prefix_track_id = format!("p_{target_id}_");
+
+        let peer_ids: Vec<String> = subscribers_lock
+            .iter()
+            .filter(|entry| entry.key().starts_with(&prefix_track_id))
+            .map(|entry| entry.key().clone())
+            .collect();
+
+        for peer_id in peer_ids {
+            if let Some(subscriber) = subscribers_lock.get(&peer_id) {
+                subscriber.add_track(remote_track.clone()).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn _create_pc(
+        &self,
+        is_ipv6_supported: bool,
+    ) -> Result<Arc<RTCPeerConnection>, WebRTCError> {
+        let config = RTCConfiguration {
+            ice_servers: vec![],
+            bundle_policy: RTCBundlePolicy::MaxBundle,
+            rtcp_mux_policy: RTCRtcpMuxPolicy::Require,
+            ice_transport_policy: RTCIceTransportPolicy::All,
+            ice_candidate_pool_size: 20,
+            ..Default::default()
+        };
+
+        let mut m = MediaEngine::default();
+        let _ = m.register_default_codecs();
+
+        let feedbacks = vec![
+            RTCPFeedback {
+                typ: TYPE_RTCP_FB_GOOG_REMB.to_owned(),
+                parameter: "".to_string(),
+            },
+            RTCPFeedback {
+                typ: TYPE_RTCP_FB_TRANSPORT_CC.to_owned(),
+                parameter: "".to_string(),
+            },
+            RTCPFeedback {
+                typ: TYPE_RTCP_FB_CCM.to_owned(),
+                parameter: "fir".to_string(),
+            },
+            RTCPFeedback {
+                typ: TYPE_RTCP_FB_CCM.to_owned(),
+                parameter: "pli".to_string(),
+            },
+        ];
+
+        for fb in feedbacks {
+            m.register_feedback(fb, RTPCodecType::Video);
+        }
+
+        // Enable Extension Headers needed for Simulcast
+        for extension in [
+            "urn:ietf:params:rtp-hdrext:sdes:mid",
+            "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id",
+            "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id",
+            "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+        ] {
+            m.register_header_extension(
+                RTCRtpHeaderExtensionCapability {
+                    uri: extension.to_owned(),
+                },
+                RTPCodecType::Video,
+                None,
+            )
+            .ok();
+        }
+
+        let mut setting_engine = SettingEngine::default();
+        setting_engine.set_lite(true);
+        setting_engine.set_ice_timeouts(
+            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(25)),
+            Some(Duration::from_secs(1)),
+        );
+
+        let mut network_types = vec![];
+        if is_ipv6_supported {
+            network_types.push(NetworkType::Udp6);
+        } else {
+            network_types.push(NetworkType::Udp4);
+        }
+
+        setting_engine.set_network_types(network_types);
+        setting_engine.set_udp_network(UDPNetwork::Ephemeral(
+            EphemeralUDP::new(self.configs.port_min, self.configs.port_max).unwrap(),
+        ));
+
+        if !self.configs.public_ip.is_empty() {
+            setting_engine.set_nat_1to1_ips(
+                vec![self.configs.public_ip.to_owned()],
+                RTCIceCandidateType::Host,
+            );
+        }
+
+        let mut registry = Registry::new();
+        registry = register_default_interceptors(registry, &mut m)
+            .map_err(|_| WebRTCError::FailedToCreatePeer)?;
+
+        let api = APIBuilder::new()
+            .with_media_engine(m)
+            .with_setting_engine(setting_engine)
+            .with_interceptor_registry(registry)
+            .build();
+
+        let peer = Arc::new(
+            api.new_peer_connection(config)
+                .await
+                .map_err(|_| WebRTCError::FailedToCreatePeer)?,
+        );
+
+        Ok(peer)
+    }
+
+    #[inline]
+    async fn _extract_subscribe_response(
+        &self,
+        media_arc: &Arc<RwLock<Media>>,
+    ) -> SubscribeResponse {
+        let media = media_arc.read();
+        let media_state = media.state.read();
+
+        SubscribeResponse {
+            camera_type: media_state.camera_type,
+            video_enabled: media_state.video_enabled,
+            audio_enabled: media_state.audio_enabled,
+            is_hand_raising: media_state.is_hand_raising,
+            is_e2ee_enabled: media_state.is_e2ee_enabled,
+            is_screen_sharing: media_state.is_screen_sharing,
+            screen_track_id: media_state.screen_track_id.clone(),
+            video_codec: media_state.codec.clone(),
+            offer: String::new(),
+        }
+    }
+
+    #[inline]
+    async fn _forward_all_tracks(
+        &self,
+        subscriber: Arc<Subscriber>,
+        media_arc: &Arc<RwLock<Media>>,
+    ) -> Result<(), WebRTCError> {
+        let tracks = {
+            let media = media_arc.read();
+            media.tracks.clone()
+        };
+
+        for entry in tracks.iter() {
+            subscriber.add_track(Arc::clone(entry.value())).await?;
+        }
+
+        Ok(())
     }
 }

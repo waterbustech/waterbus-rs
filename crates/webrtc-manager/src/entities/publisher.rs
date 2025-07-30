@@ -1,136 +1,119 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU8, Ordering},
-};
-use std::time::Duration;
-
-use dashmap::DashMap;
-use parking_lot::RwLock;
-use str0m::{
-    media::{KeyframeRequest, MediaData, MediaKind, Mid},
-    Rtc,
-};
-use tokio_util::sync::CancellationToken;
-use tracing::warn;
-
-use crate::{
-    entities::media::{Media, Subscriber},
-    models::{
-        connection_type::ConnectionType,
-        input_params::{JoinRoomParams, SubscribeParams},
-        streaming_protocol::StreamingProtocol,
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
     },
+    time::Duration,
 };
+
+use parking_lot::RwLock;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use webrtc::{
+    data_channel::RTCDataChannel, peer_connection::RTCPeerConnection,
+    rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication,
+};
+
+use crate::models::{connection_type::ConnectionType, data_channel_msg::TrackSubscribedMessage};
+
+use super::media::Media;
 
 pub struct Publisher {
-    pub rtc: Arc<Rtc>,
     pub media: Arc<RwLock<Media>>,
+    pub peer_connection: Arc<RTCPeerConnection>,
     pub connection_type: AtomicU8,
     pub cancel_token: CancellationToken,
+    pub data_channel: Option<Arc<RTCDataChannel>>,
+    pub track_event_receiver: Option<mpsc::UnboundedReceiver<TrackSubscribedMessage>>,
 }
 
 impl Publisher {
     pub async fn new(
-        rtc: Arc<Rtc>,
-        params: JoinRoomParams,
+        media: Arc<RwLock<Media>>,
+        peer_connection: Arc<RTCPeerConnection>,
+        connection_type: ConnectionType,
     ) -> Arc<Self> {
-        let media = Media::new(
-            params.participant_id.clone(),
-            rtc.clone(),
-            params.connection_type.clone(),
-            params.streaming_protocol,
-            params.is_ipv6_supported,
-        );
-
         let publisher = Arc::new(Self {
-            rtc,
-            media: Arc::new(RwLock::new(media)),
-            connection_type: AtomicU8::new(params.connection_type.into()),
+            media,
+            peer_connection,
+            connection_type: AtomicU8::new(connection_type.into()),
             cancel_token: CancellationToken::new(),
+            data_channel: None,
+            track_event_receiver: None,
         });
 
-        // Start the media forwarding loop
         let publisher_clone = Arc::clone(&publisher);
-        tokio::spawn(async move {
-            publisher_clone.run_media_loop().await;
-        });
+
+        let publisher_mut = unsafe {
+            let ptr = Arc::as_ptr(&publisher_clone) as *mut Publisher;
+            &mut *ptr
+        };
+
+        let _ = publisher_mut.create_data_channel().await;
+        publisher_mut
+            .setup_media_communication(Arc::downgrade(&publisher_clone))
+            .await;
+        publisher_mut.start_data_channel_handler().await;
+
+        // Set up keyframe request callback
+        {
+            let publisher_weak = Arc::downgrade(&publisher);
+            let mut media = publisher.media.write();
+            media.keyframe_request_callback = Some(Arc::new(move |ssrc: u32| {
+                if let Some(publisher) = publisher_weak.upgrade() {
+                    publisher.send_rtcp_pli_once(ssrc);
+                }
+            }));
+        }
 
         publisher
     }
 
-    async fn run_media_loop(&self) {
-        let mut buf = vec![0u8; 1500];
-        
-        loop {
-            if self.cancel_token.is_cancelled() {
-                break;
-            }
+    #[inline]
+    pub fn send_rtcp_pli(&self, media_ssrc: u32) {
+        let pc2 = Arc::downgrade(&self.peer_connection);
+        let cancel = self.cancel_token.clone();
 
-            // Poll for media data from the RTC
-            match self.rtc.poll_output() {
-                Ok(output) => {
-                    match output {
-                        str0m::Output::MediaData(media_data) => {
-                            // Forward media to all subscribers
-                            self.forward_media_to_subscribers(media_data).await;
-                        }
-                        str0m::Output::KeyframeRequest(req) => {
-                            // Handle keyframe requests
-                            self.handle_keyframe_request(req).await;
-                        }
-                        _ => {
-                            // Handle other outputs as needed
+        tokio::spawn(async move {
+            let mut result = Result::<usize, anyhow::Error>::Ok(0);
+            while result.is_ok() {
+                let timeout = tokio::time::sleep(Duration::from_secs(3));
+                tokio::pin!(timeout);
+
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        drop(pc2);
+                        break;
+                    }
+                    _ = timeout.as_mut() =>{
+                        if let Some(pc) = pc2.upgrade(){
+                            result = pc.write_rtcp(&[Box::new(PictureLossIndication{
+                                sender_ssrc: 0,
+                                media_ssrc,
+                            })]).await.map_err(Into::into);
+                        }else{
+                            break;
                         }
                     }
-                }
-                Err(_) => {
-                    // RTC is no longer alive
-                    break;
-                }
+                };
             }
-
-            // Small delay to prevent busy waiting
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
+        });
     }
 
-    async fn forward_media_to_subscribers(&self, media_data: MediaData) {
-        let media = self.media.read();
-        media.forward_media_to_subscribers(media_data);
-    }
+    #[inline]
+    pub fn send_rtcp_pli_once(&self, media_ssrc: u32) {
+        let pc2 = Arc::downgrade(&self.peer_connection);
 
-    async fn handle_keyframe_request(&self, req: KeyframeRequest) {
-        let media = self.media.read();
-        media.handle_keyframe_request(req);
-    }
-
-    pub async fn add_subscriber(&self, subscriber_id: String, subscriber: Arc<Subscriber>) {
-        let mut media = self.media.write();
-        media.add_subscriber(subscriber_id, subscriber);
-    }
-
-    pub async fn remove_subscriber(&self, subscriber_id: &str) {
-        let mut media = self.media.write();
-        media.remove_subscriber(subscriber_id);
-    }
-
-    pub async fn subscribe_to_publisher(
-        &self,
-        params: SubscribeParams,
-    ) -> Result<Arc<Subscriber>, crate::errors::WebRTCError> {
-        // Create a new RTC instance for the subscriber
-        let subscriber_rtc = Arc::new(str0m::Rtc::builder().build());
-        
-        // Create subscriber
-        let subscriber = Arc::new(Subscriber::new(
-            params.participant_id.clone(),
-            subscriber_rtc,
-        ));
-
-        // Add subscriber to this publisher
-        self.add_subscriber(params.participant_id, subscriber.clone()).await;
-
-        Ok(subscriber)
+        tokio::spawn(async move {
+            if let Some(pc) = pc2.upgrade() {
+                let _ = pc
+                    .write_rtcp(&[Box::new(PictureLossIndication {
+                        sender_ssrc: 0,
+                        media_ssrc,
+                    })])
+                    .await;
+            }
+        });
     }
 
     #[inline]
@@ -146,46 +129,16 @@ impl Publisher {
 
     #[inline]
     pub fn close(&self) {
+        let pc = self.peer_connection.clone();
+        let media = self.media.clone();
         self.cancel_token.cancel();
-        
-        // Stop the media
-        let mut media = self.media.write();
-        media.stop();
-    }
 
-    pub fn get_media_state(&self) -> crate::entities::media::MediaState {
-        let media = self.media.read();
-        let state = media.state.read();
-        state.clone()
-    }
-
-    pub fn set_video_enabled(&self, enabled: bool) {
-        let mut media = self.media.write();
-        media.set_video_enabled(enabled);
-    }
-
-    pub fn set_audio_enabled(&self, enabled: bool) {
-        let mut media = self.media.write();
-        media.set_audio_enabled(enabled);
-    }
-
-    pub fn set_e2ee_enabled(&self, enabled: bool) {
-        let mut media = self.media.write();
-        media.set_e2ee_enabled(enabled);
-    }
-
-    pub fn set_camera_type(&self, camera_type: u8) {
-        let mut media = self.media.write();
-        media.set_camera_type(camera_type);
-    }
-
-    pub fn set_screen_sharing(&self, enabled: bool, screen_track_id: Option<String>) {
-        let mut media = self.media.write();
-        media.set_screen_sharing(enabled, screen_track_id);
-    }
-
-    pub fn set_hand_raising(&self, enabled: bool) {
-        let mut media = self.media.write();
-        media.set_hand_raising(enabled);
+        tokio::spawn(async move {
+            let _ = pc.close().await;
+            drop(pc);
+            // Stop media
+            let media = media.write();
+            media.stop();
+        });
     }
 }
