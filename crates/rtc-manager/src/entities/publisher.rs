@@ -60,8 +60,8 @@ impl Publisher {
         // Create str0m RTC instance
         let rtc = Rtc::builder().build();
 
-        let candidate = Candidate::host(addr, "udp").expect("a host candidate");
-        rtc.add_local_candidate(candidate).unwrap();
+        // let candidate = Candidate::host(addr, "udp").expect("a host candidate");
+        // rtc.add_local_candidate(candidate).unwrap();
 
         let (track_event_sender, track_event_receiver) = mpsc::unbounded_channel();
 
