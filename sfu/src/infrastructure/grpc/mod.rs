@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tracing::info;
 use waterbus_proto::sfu_service_server::SfuServiceServer;
-use webrtc_manager::models::params::WebRTCManagerConfigs;
+use rtc_manager::models::params::RtcManagerConfigs;
 
 use crate::application::{
     dispacher_grpc_client::DispatcherGrpcClient, sfu_grpc_service::SfuGrpcService,
@@ -17,7 +17,7 @@ impl GrpcServer {
         port: u16,
         dispatcher_host: String,
         dispatcher_port: u16,
-        configs: WebRTCManagerConfigs,
+        configs: RtcManagerConfigs,
         node_id: String,
     ) {
         info!("GrpcServer is running on port: {}", port);
@@ -35,7 +35,7 @@ impl GrpcServer {
         port: u16,
         dispatcher_host: String,
         dispatcher_port: u16,
-        configs: WebRTCManagerConfigs,
+        configs: RtcManagerConfigs,
         node_id: String,
     ) -> anyhow::Result<()> {
         let addr = format!("0.0.0.0:{port}").parse().unwrap();

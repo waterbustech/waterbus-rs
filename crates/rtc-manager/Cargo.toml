@@ -1,0 +1,37 @@
+[package]
+name = "rtc-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# str0m for WebRTC
+str0m = { path = "../str0m", features = ["openssl"] }
+
+# Core dependencies
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Data structures
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true }
+
+# Async utilities
+futures = { workspace = true }
+futures-util = { workspace = true }
+async-channel = { workspace = true }
+
+# Networking
+rustls = { workspace = true }
+
+# Utilities
+nanoid = { workspace = true }
+rand = { workspace = true }
+
+# Local dependencies
+waterbus-proto = { workspace = true }

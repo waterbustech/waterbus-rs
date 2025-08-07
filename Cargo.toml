@@ -3,6 +3,7 @@ members = [
     "signalling",
     "sfu",
     "crates/egress-manager",
+    "crates/rtc-manager",
     "crates/webrtc-manager",
     "crates/waterbus-proto",
     "crates/dispatcher",
@@ -108,5 +109,6 @@ kanal = "0.1.1"
 # Local crates
 waterbus-proto = { path = "./crates/waterbus-proto" }
 webrtc-manager = { path = "./crates/webrtc-manager" }
+rtc-manager = { path = "./crates/rtc-manager" }
 egress-manager = { path = "./crates/egress-manager" }
 dispatcher = { path = "./crates/dispatcher" }

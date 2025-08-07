@@ -8,7 +8,7 @@ name = "sfu"
 path = "src/main.rs"
 
 [dependencies]
-webrtc-manager = { workspace = true }
+rtc-manager = { workspace = true }
 waterbus-proto = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
