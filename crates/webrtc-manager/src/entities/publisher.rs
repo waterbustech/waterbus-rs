@@ -42,29 +42,29 @@ impl Publisher {
             track_event_receiver: None,
         });
 
-        let publisher_clone = Arc::clone(&publisher);
+        // let publisher_clone = Arc::clone(&publisher);
 
-        let publisher_mut = unsafe {
-            let ptr = Arc::as_ptr(&publisher_clone) as *mut Publisher;
-            &mut *ptr
-        };
+        // let publisher = unsafe {
+        //     let ptr = Arc::as_ptr(&publisher_clone) as *mut Publisher;
+        //     &mut *ptr
+        // };
 
-        let _ = publisher_mut.create_data_channel().await;
-        publisher_mut
-            .setup_media_communication(Arc::downgrade(&publisher_clone))
-            .await;
-        publisher_mut.start_data_channel_handler().await;
+        // let _ = publisher_mut.create_data_channel().await;
+        // publisher_mut
+        //     .setup_media_communication(Arc::downgrade(&publisher_clone))
+        //     .await;
+        // publisher_mut.start_data_channel_handler().await;
 
         // Set up keyframe request callback
-        {
-            let publisher_weak = Arc::downgrade(&publisher);
-            let mut media = publisher.media.write();
-            media.keyframe_request_callback = Some(Arc::new(move |ssrc: u32| {
-                if let Some(publisher) = publisher_weak.upgrade() {
-                    publisher.send_rtcp_pli_once(ssrc);
-                }
-            }));
-        }
+        // {
+        //     let publisher_weak = Arc::downgrade(&publisher);
+        //     let mut media = publisher.media.write();
+        //     media.keyframe_request_callback = Some(Arc::new(move |ssrc: u32| {
+        //         if let Some(publisher) = publisher_weak.upgrade() {
+        //             publisher.send_rtcp_pli_once(ssrc);
+        //         }
+        //     }));
+        // }
 
         publisher
     }

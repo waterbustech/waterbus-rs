@@ -89,6 +89,7 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     ///
     #[inline]
     pub fn set_requested_quality(&self, quality: &TrackQuality) {
+        return;
         let current = TrackQuality::from_u8(self.requested_quality.load(Ordering::Relaxed));
         if *quality != current {
             debug!("[quality] change requested quality to: {:?}", quality);
@@ -116,6 +117,7 @@ impl<M: MulticastSender + 'static> ForwardTrack<M> {
     ///
     #[inline]
     pub fn set_effective_quality(&self, quality: &TrackQuality) {
+        return;
         let current = TrackQuality::from_u8(self.effective_quality.load(Ordering::Relaxed));
         if *quality != current {
             debug!("[quality] change effective quality to: {:?}", quality);

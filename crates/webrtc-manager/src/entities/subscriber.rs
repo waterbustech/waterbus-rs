@@ -192,7 +192,7 @@ impl Subscriber {
         this.spawn_rtcp_monitor(cancel_token, tx.clone());
         this.spawn_track_update_loop(tx);
 
-        let _ = this.create_data_channel().await;
+        // let _ = this.create_data_channel().await;
 
         this
     }
