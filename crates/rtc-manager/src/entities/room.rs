@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use str0m::{Candidate, net::Protocol};
+use str0m::{net::Protocol, Candidate};
+use tracing::info;
 
 use crate::{
     entities::{publisher::Publisher, subscriber::Subscriber},
@@ -9,11 +10,10 @@ use crate::{
     models::{
         connection_type::ConnectionType,
         params::{
-            IceCandidate, JoinRoomParams, JoinRoomResponse,
+            IceCandidate, JoinRoomParams, JoinRoomResponse, RtcManagerConfigs,
             SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse, SubscribeParams,
-            SubscribeResponse, RtcManagerConfigs,
+            SubscribeResponse,
         },
-
     },
 };
 
@@ -42,6 +42,8 @@ impl Room {
     ) -> Result<Option<JoinRoomResponse>, RtcError> {
         let participant_id = params.participant_id.clone();
 
+        info!("participant joining {}", participant_id.clone());
+
         // Create publisher
         let publisher = Publisher::new(
             participant_id.clone(),
@@ -53,17 +55,28 @@ impl Room {
             params.streaming_protocol,
             params.on_candidate,
             params.callback,
-        ).await?;
+        )
+        .await?;
+
+        info!("publisher created");
 
         // Add publisher to room
-        self.publishers.insert(participant_id.clone(), publisher.clone());
+        self.publishers
+            .insert(participant_id.clone(), publisher.clone());
+
+        info!("publisher added to room");
+
+        info!("connection type: {:?}", params.connection_type);
 
         // Handle SDP based on connection type
         match params.connection_type {
             ConnectionType::SFU => {
+                info!("handle_offer: {}", params.sdp.len());
                 // For SFU mode, handle the offer and create an answer
-                let answer_sdp = publisher.handle_offer(params.sdp).await?;
-                
+                let answer_sdp = publisher.handle_offer(params.sdp)?;
+
+                info!("answer_sdp: {}", answer_sdp.len());
+
                 Ok(Some(JoinRoomResponse {
                     sdp: answer_sdp,
                     is_recording: false,
@@ -85,7 +98,8 @@ impl Room {
         let participant_id = params.participant_id.clone();
 
         // Get the target publisher
-        let publisher = self.publishers
+        let publisher = self
+            .publishers
             .get(&target_id)
             .ok_or(RtcError::PublisherNotFound)?
             .clone();
@@ -96,7 +110,8 @@ impl Room {
             target_id.clone(),
             params.on_candidate,
             params.on_negotiation_needed,
-        ).await?;
+        )
+        .await?;
 
         // Add subscriber to publisher's subscriber list
         publisher.add_subscriber(participant_id.clone(), subscriber.clone());
@@ -111,13 +126,13 @@ impl Room {
         Ok(SubscribeResponse {
             sdp: offer_sdp.clone(),
             offer: offer_sdp,
-            camera_type: 0, // Default camera type
-            video_enabled: true, // TODO: Get from publisher state
-            audio_enabled: true, // TODO: Get from publisher state
-            is_screen_sharing: false, // TODO: Get from publisher state
-            is_hand_raising: false, // TODO: Get from publisher state
-            is_e2ee_enabled: false, // TODO: Get from publisher state
-            video_codec: "VP8".to_string(), // TODO: Get from publisher
+            camera_type: 0,                  // Default camera type
+            video_enabled: true,             // TODO: Get from publisher state
+            audio_enabled: true,             // TODO: Get from publisher state
+            is_screen_sharing: false,        // TODO: Get from publisher state
+            is_hand_raising: false,          // TODO: Get from publisher state
+            is_e2ee_enabled: false,          // TODO: Get from publisher state
+            video_codec: "VP8".to_string(),  // TODO: Get from publisher
             screen_track_id: "".to_string(), // TODO: Get from publisher if screen sharing
         })
     }
@@ -137,13 +152,18 @@ impl Room {
         participant_id: &str,
         candidate: IceCandidate,
     ) -> Result<(), RtcError> {
-        let publisher = self.publishers
+        let publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
+        info!("add_publisher_candidate: {}", participant_id);
+
         // Convert IceCandidate to str0m Candidate
         let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate)?;
-        
+
+        info!("str0m_candidate: {:?}", str0m_candidate);
+
         // Add candidate to publisher's RTC instance
         {
             let mut rtc = publisher.rtc.write();
@@ -160,13 +180,14 @@ impl Room {
         candidate: IceCandidate,
     ) -> Result<(), RtcError> {
         let subscriber_key = format!("{}_{}", target_id, participant_id);
-        let subscriber = self.subscribers
+        let subscriber = self
+            .subscribers
             .get(&subscriber_key)
             .ok_or(RtcError::SubscriberNotFound)?;
 
         // Convert IceCandidate to str0m Candidate
         let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate)?;
-        
+
         // Add candidate to subscriber's RTC instance
         {
             let mut rtc = subscriber.rtc.write();
@@ -183,13 +204,14 @@ impl Room {
         sdp: String,
     ) -> Result<(), RtcError> {
         let subscriber_key = format!("{}_{}", target_id, participant_id);
-        let _subscriber = self.subscribers
+        let _subscriber = self
+            .subscribers
             .get(&subscriber_key)
             .ok_or(RtcError::SubscriberNotFound)?;
 
         // TODO: Handle SDP answer from subscriber
         tracing::debug!("Setting SDP for subscriber {}: {}", subscriber_key, sdp);
-        
+
         Ok(())
     }
 
@@ -198,13 +220,14 @@ impl Room {
         participant_id: &str,
         sdp: String,
     ) -> Result<String, RtcError> {
-        let _publisher = self.publishers
+        let _publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
         // TODO: Handle publisher renegotiation
         tracing::debug!("Publisher {} renegotiation: {}", participant_id, sdp);
-        
+
         // For now, return the same SDP
         Ok(sdp)
     }
@@ -215,13 +238,18 @@ impl Room {
         sdp: String,
         _connection_type: ConnectionType,
     ) -> Result<String, RtcError> {
-        let _publisher = self.publishers
+        let _publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
         // TODO: Handle connection migration
-        tracing::debug!("Migrating connection for participant {}: {}", participant_id, sdp);
-        
+        tracing::debug!(
+            "Migrating connection for participant {}: {}",
+            participant_id,
+            sdp
+        );
+
         // For now, return the same SDP
         Ok(sdp)
     }
@@ -236,12 +264,9 @@ impl Room {
         }
     }
 
-    pub fn set_e2ee_enabled(
-        &self,
-        participant_id: &str,
-        is_enabled: bool,
-    ) -> Result<(), RtcError> {
-        let publisher = self.publishers
+    pub fn set_e2ee_enabled(&self, participant_id: &str, is_enabled: bool) -> Result<(), RtcError> {
+        let publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
@@ -249,12 +274,9 @@ impl Room {
         Ok(())
     }
 
-    pub fn set_camera_type(
-        &self,
-        participant_id: &str,
-        _camera_type: u8,
-    ) -> Result<(), RtcError> {
-        let _publisher = self.publishers
+    pub fn set_camera_type(&self, participant_id: &str, _camera_type: u8) -> Result<(), RtcError> {
+        let _publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
@@ -268,7 +290,8 @@ impl Room {
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), RtcError> {
-        let publisher = self.publishers
+        let publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
@@ -281,7 +304,8 @@ impl Room {
         participant_id: &str,
         is_enabled: bool,
     ) -> Result<(), RtcError> {
-        let publisher = self.publishers
+        let publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
@@ -295,7 +319,8 @@ impl Room {
         _is_sharing: bool,
         _screen_track_id: Option<String>,
     ) -> Result<(), RtcError> {
-        let _publisher = self.publishers
+        let _publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
@@ -309,7 +334,8 @@ impl Room {
         participant_id: &str,
         _is_raising: bool,
     ) -> Result<(), RtcError> {
-        let _publisher = self.publishers
+        let _publisher = self
+            .publishers
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
@@ -319,7 +345,8 @@ impl Room {
     }
 
     fn remove_all_subscribers_with_target_id(&self, target_id: &str) {
-        let keys_to_remove: Vec<String> = self.subscribers
+        let keys_to_remove: Vec<String> = self
+            .subscribers
             .iter()
             .filter(|entry| entry.key().starts_with(&format!("{}_", target_id)))
             .map(|entry| entry.key().clone())
@@ -333,18 +360,22 @@ impl Room {
 
         // Also remove subscribers from the publisher
         if let Some(publisher) = self.publishers.get(target_id) {
-            let subscriber_ids: Vec<String> = publisher.subscribers
+            let subscriber_ids: Vec<String> = publisher
+                .subscribers
                 .iter()
                 .map(|entry| entry.key().clone())
                 .collect();
-            
+
             for subscriber_id in subscriber_ids {
                 publisher.remove_subscriber(&subscriber_id);
             }
         }
     }
 
-    fn convert_ice_candidate_to_str0m(&self, candidate: IceCandidate) -> Result<Candidate, RtcError> {
+    fn convert_ice_candidate_to_str0m(
+        &self,
+        candidate: IceCandidate,
+    ) -> Result<Candidate, RtcError> {
         // Parse the candidate string to extract address and protocol
         // This is a simplified implementation - in practice, you'd need more robust parsing
         let parts: Vec<&str> = candidate.candidate.split_whitespace().collect();
@@ -353,8 +384,7 @@ impl Room {
         }
 
         let address = format!("{}:{}", parts[4], parts[5]);
-        let addr = address.parse()
-            .map_err(|_| RtcError::InvalidIceCandidate)?;
+        let addr = address.parse().map_err(|_| RtcError::InvalidIceCandidate)?;
 
         let protocol = match parts[2].to_lowercase().as_str() {
             "udp" => Protocol::Udp,
@@ -362,8 +392,7 @@ impl Room {
             _ => Protocol::Udp, // Default to UDP
         };
 
-        Candidate::host(addr, protocol)
-            .map_err(|_| RtcError::InvalidIceCandidate)
+        Candidate::host(addr, protocol).map_err(|_| RtcError::InvalidIceCandidate)
     }
 
     pub fn get_publisher_count(&self) -> usize {
@@ -375,6 +404,9 @@ impl Room {
     }
 
     pub fn get_publishers(&self) -> Vec<String> {
-        self.publishers.iter().map(|entry| entry.key().clone()).collect()
+        self.publishers
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect()
     }
 }

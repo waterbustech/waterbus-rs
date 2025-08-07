@@ -1,25 +1,28 @@
 use std::{
     sync::{
-        Arc,
         atomic::{AtomicU8, Ordering},
+        Arc,
     },
     time::{Duration, Instant},
 };
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use str0m::{
+    change::SdpOffer, media::{Direction, MediaKind}, Candidate, Event, IceConnectionState, Input, Output, Rtc
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use str0m::{Rtc, Event, Input, Output, IceConnectionState, media::{Direction, MediaKind}};
+use tracing::info;
 
 use crate::{
+    errors::RtcError,
     models::{
         connection_type::ConnectionType,
         data_channel_msg::TrackSubscribedMessage,
-        streaming_protocol::StreamingProtocol,
         params::{IceCandidateCallback, JoinedCallback},
+        streaming_protocol::StreamingProtocol,
     },
-    errors::RtcError,
 };
 
 use super::{subscriber::Subscriber, track::Track};
@@ -57,6 +60,9 @@ impl Publisher {
         // Create str0m RTC instance
         let rtc = Rtc::builder().build();
 
+        let candidate = Candidate::host(addr, "udp").expect("a host candidate");
+        rtc.add_local_candidate(candidate).unwrap();
+
         let (track_event_sender, track_event_receiver) = mpsc::unbounded_channel();
 
         let publisher = Arc::new(Self {
@@ -86,62 +92,56 @@ impl Publisher {
         Ok(publisher)
     }
 
-    pub async fn handle_offer(&self, offer_sdp: String) -> Result<String, RtcError> {
+    pub fn handle_offer(&self, offer_sdp: String) -> Result<String, RtcError> {
+        info!("handle_offer: {}", offer_sdp.len());
         let mut rtc = self.rtc.write();
 
         // Parse and set remote offer
-        let offer: str0m::change::SdpOffer = serde_json::from_str(&offer_sdp)
-            .map_err(|e| RtcError::JsonError(e))?;
+        let offer: str0m::change::SdpOffer =
+            SdpOffer::from_sdp_string(&offer_sdp).map_err(|_| RtcError::FailedToSetSdp)?;
 
-        let answer = rtc.sdp_api().accept_offer(offer)
+        info!("parsed offer");
+
+        let answer = rtc
+            .sdp_api()
+            .accept_offer(offer)
             .map_err(|e| RtcError::Str0mError(e))?;
 
+        info!("accepted offer");
+
         // Convert answer to SDP string
-        let answer_sdp = serde_json::to_string(&answer)
-            .map_err(|e| RtcError::JsonError(e))?;
+        let answer_sdp = answer.to_sdp_string();
 
         Ok(answer_sdp)
     }
 
     pub async fn create_offer(&self) -> Result<String, RtcError> {
         let mut rtc = self.rtc.write();
-        
+
         // Add media tracks based on enabled flags
         let mut changes = rtc.sdp_api();
-        
+
         if self.is_video_enabled.load(Ordering::Relaxed) == 1 {
-            let _video_mid = changes.add_media(
-                MediaKind::Video,
-                Direction::SendRecv,
-                None,
-                None,
-                None,
-            );
-        }
-        
-        if self.is_audio_enabled.load(Ordering::Relaxed) == 1 {
-            let _audio_mid = changes.add_media(
-                MediaKind::Audio,
-                Direction::SendRecv,
-                None,
-                None,
-                None,
-            );
+            let _video_mid =
+                changes.add_media(MediaKind::Video, Direction::SendRecv, None, None, None);
         }
 
-        let (offer, _pending) = changes.apply()
-            .ok_or(RtcError::FailedToCreateOffer)?;
+        if self.is_audio_enabled.load(Ordering::Relaxed) == 1 {
+            let _audio_mid =
+                changes.add_media(MediaKind::Audio, Direction::SendRecv, None, None, None);
+        }
+
+        let (offer, _pending) = changes.apply().ok_or(RtcError::FailedToCreateOffer)?;
 
         // Convert offer to SDP string
-        let offer_sdp = serde_json::to_string(&offer)
-            .map_err(|e| RtcError::JsonError(e))?;
+        let offer_sdp = serde_json::to_string(&offer).map_err(|e| RtcError::JsonError(e))?;
 
         Ok(offer_sdp)
     }
 
     pub fn add_subscriber(&self, subscriber_id: String, subscriber: Arc<Subscriber>) {
         self.subscribers.insert(subscriber_id, subscriber);
-        
+
         // Notify subscriber about available tracks
         for track_entry in self.tracks.iter() {
             let _track = track_entry.value();
@@ -154,21 +154,27 @@ impl Publisher {
     }
 
     pub fn get_subscribers(&self) -> Vec<Arc<Subscriber>> {
-        self.subscribers.iter().map(|entry| Arc::clone(entry.value())).collect()
+        self.subscribers
+            .iter()
+            .map(|entry| Arc::clone(entry.value()))
+            .collect()
     }
 
     pub fn set_video_enabled(&self, enabled: bool) {
-        self.is_video_enabled.store(if enabled { 1 } else { 0 }, Ordering::Relaxed);
+        self.is_video_enabled
+            .store(if enabled { 1 } else { 0 }, Ordering::Relaxed);
         // TODO: Update RTC session to enable/disable video
     }
 
     pub fn set_audio_enabled(&self, enabled: bool) {
-        self.is_audio_enabled.store(if enabled { 1 } else { 0 }, Ordering::Relaxed);
+        self.is_audio_enabled
+            .store(if enabled { 1 } else { 0 }, Ordering::Relaxed);
         // TODO: Update RTC session to enable/disable audio
     }
 
     pub fn set_e2ee_enabled(&self, enabled: bool) {
-        self.is_e2ee_enabled.store(if enabled { 1 } else { 0 }, Ordering::Relaxed);
+        self.is_e2ee_enabled
+            .store(if enabled { 1 } else { 0 }, Ordering::Relaxed);
     }
 
     pub fn close(&self) {
@@ -179,7 +185,7 @@ impl Publisher {
 
     async fn run_rtc_loop(&self) {
         let mut last_timeout = Instant::now();
-        
+
         loop {
             if self.cancel_token.is_cancelled() {
                 break;
