@@ -53,6 +53,7 @@ impl Room {
             params.streaming_protocol,
             params.on_candidate,
             params.callback,
+            self.configs.clone(),
         ).await?;
 
         // Add publisher to room
@@ -62,8 +63,8 @@ impl Room {
         match params.connection_type {
             ConnectionType::SFU => {
                 // For SFU mode, handle the offer and create an answer
-                let answer_sdp = publisher.handle_offer(params.sdp).await?;
-                
+                let answer_sdp = publisher.handle_offer(params.sdp)?;
+
                 Ok(Some(JoinRoomResponse {
                     sdp: answer_sdp,
                     is_recording: false,
@@ -96,6 +97,7 @@ impl Room {
             target_id.clone(),
             params.on_candidate,
             params.on_negotiation_needed,
+            self.configs.clone(),
         ).await?;
 
         // Add subscriber to publisher's subscriber list
@@ -106,7 +108,7 @@ impl Room {
         self.subscribers.insert(subscriber_key, subscriber.clone());
 
         // Create offer for the subscriber
-        let offer_sdp = subscriber.create_offer().await?;
+        let offer_sdp = subscriber.create_offer()?;
 
         Ok(SubscribeResponse {
             sdp: offer_sdp.clone(),
@@ -376,5 +378,34 @@ impl Room {
 
     pub fn get_publishers(&self) -> Vec<String> {
         self.publishers.iter().map(|entry| entry.key().clone()).collect()
+    }
+
+    /// Set quality preference for a subscriber
+    pub fn set_subscriber_quality(
+        &self,
+        target_id: &str,
+        participant_id: &str,
+        quality: crate::models::quality::TrackQuality,
+    ) -> Result<(), RtcError> {
+        let subscriber_key = format!("{}_{}", target_id, participant_id);
+        let subscriber = self.subscribers
+            .get(&subscriber_key)
+            .ok_or(RtcError::SubscriberNotFound)?;
+
+        subscriber.set_preferred_quality(quality);
+
+        tracing::info!("Set quality preference for subscriber {} -> {}: {:?}",
+                     participant_id, target_id, quality);
+
+        Ok(())
+    }
+
+    /// Get simulcast layers for a publisher
+    pub fn get_publisher_simulcast_layers(&self, publisher_id: &str) -> Result<Vec<crate::entities::publisher::SimulcastLayer>, RtcError> {
+        let publisher = self.publishers
+            .get(publisher_id)
+            .ok_or(RtcError::PublisherNotFound)?;
+
+        Ok(publisher.get_simulcast_layers())
     }
 }

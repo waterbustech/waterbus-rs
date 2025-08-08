@@ -40,20 +40,18 @@ impl Str0mHelper {
 
     /// Convert a WebRTC SDP string to str0m format
     pub fn parse_sdp_offer(sdp: &str) -> Result<str0m::change::SdpOffer, RtcError> {
-        serde_json::from_str(sdp)
-            .map_err(|e| RtcError::JsonError(e))
+        str0m::change::SdpOffer::from_sdp_string(sdp)
+            .map_err(|_| RtcError::FailedToSetSdp)
     }
 
     /// Convert str0m SDP answer to string format
-    pub fn serialize_sdp_answer(answer: &str0m::change::SdpAnswer) -> Result<String, RtcError> {
-        serde_json::to_string(answer)
-            .map_err(|e| RtcError::JsonError(e))
+    pub fn serialize_sdp_answer(answer: &str0m::change::SdpAnswer) -> String {
+        answer.to_sdp_string()
     }
 
     /// Convert str0m SDP offer to string format
-    pub fn serialize_sdp_offer(offer: &str0m::change::SdpOffer) -> Result<String, RtcError> {
-        serde_json::to_string(offer)
-            .map_err(|e| RtcError::JsonError(e))
+    pub fn serialize_sdp_offer(offer: &str0m::change::SdpOffer) -> String {
+        offer.to_sdp_string()
     }
 
     /// Create a basic media configuration for str0m

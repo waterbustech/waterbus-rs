@@ -377,4 +377,38 @@ impl RtcManager {
     pub fn get_client_count(&self) -> usize {
         self.clients.len()
     }
+
+    /// Set quality preference for a subscriber
+    pub fn set_subscriber_quality(
+        &self,
+        client_id: &str,
+        target_id: &str,
+        quality: crate::models::quality::TrackQuality,
+    ) -> Result<(), RtcError> {
+        let client = self.get_client_by_id(client_id)?;
+        let room_id = client.room_id.clone();
+        let participant_id = client.participant_id.clone();
+
+        let room = self.get_room_by_id(&room_id)?;
+        let room = room.read();
+
+        room.set_subscriber_quality(&target_id, &participant_id, quality)?;
+
+        Ok(())
+    }
+
+    /// Get simulcast layers for a publisher
+    pub fn get_publisher_simulcast_layers(
+        &self,
+        client_id: &str,
+        publisher_id: &str,
+    ) -> Result<Vec<crate::entities::publisher::SimulcastLayer>, RtcError> {
+        let client = self.get_client_by_id(client_id)?;
+        let room_id = client.room_id.clone();
+
+        let room = self.get_room_by_id(&room_id)?;
+        let room = room.read();
+
+        room.get_publisher_simulcast_layers(publisher_id)
+    }
 }
