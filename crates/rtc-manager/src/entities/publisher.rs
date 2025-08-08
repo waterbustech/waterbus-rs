@@ -333,6 +333,10 @@ impl Publisher {
                     }
                 }
                 Ok(Output::Transmit(transmit)) => {
+                    // Register mapping from remote addr -> this RTC, like str0m chat.rs
+                    let dest = transmit.destination;
+                    self.udp.read().register_rtc(dest, self.rtc.clone());
+
                     // Send data to network via shared UDP socket
                     if let Err(e) = self.udp.read().send_transmit(transmit) {
                         tracing::error!("Failed to send transmit: {}", e);
