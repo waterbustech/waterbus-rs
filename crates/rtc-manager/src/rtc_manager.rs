@@ -14,6 +14,7 @@ use crate::{
             SubscribeParams, SubscribeResponse, WClient, RtcManagerConfigs,
         },
     },
+    services::udp_socket_manager::UdpSocketManager,
 };
 
 pub struct JoinRoomReq {
@@ -37,14 +38,21 @@ pub struct RtcManager {
     rooms: Arc<DashMap<String, Arc<RwLock<Room>>>>,
     clients: Arc<DashMap<String, WClient>>,
     configs: RtcManagerConfigs,
+    udp: Arc<RwLock<UdpSocketManager>>, // shared UDP socket like str0m chat.rs
 }
 
 impl RtcManager {
     pub fn new(configs: RtcManagerConfigs) -> Self {
+        // Initialize the shared UDP socket manager and start its receive loop.
+        let mut udp_mgr = UdpSocketManager::new(&configs)
+            .expect("Failed to create UDP socket manager");
+        udp_mgr.start().expect("Failed to start UDP socket manager");
+
         Self {
             rooms: Arc::new(DashMap::new()),
             clients: Arc::new(DashMap::new()),
             configs,
+            udp: Arc::new(RwLock::new(udp_mgr)),
         }
     }
 
@@ -358,6 +366,7 @@ impl RtcManager {
         let room = Arc::new(RwLock::new(Room::new(
             room_id.to_string(),
             self.configs.clone(),
+            self.udp.clone(),
         )));
         self.rooms.insert(room_id.to_string(), room.clone());
         Ok(room)

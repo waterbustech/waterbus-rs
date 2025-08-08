@@ -65,10 +65,9 @@ impl UdpSocketManager {
         let socket = Arc::clone(&self.socket);
         let rtc_instances = Arc::clone(&self.rtc_instances);
 
-        // The run loop is on a separate thread
+        // The run loop is on a separate thread. It only receives and routes packets.
         thread::spawn(move || {
             let mut buf = [0u8; 2000];
-            let mut last_timeout_check = Instant::now();
 
             loop {
                 // Check for shutdown signal
@@ -87,12 +86,12 @@ impl UdpSocketManager {
                 match socket.recv_from(&mut buf) {
                     Ok((n, source)) => {
                         debug!("Received {} bytes from {}", n, source);
-                        
+
                         // Find the RTC instance for this source
                         if let Some(rtc_entry) = rtc_instances.get(&source) {
                             let rtc = rtc_entry.value();
                             let mut rtc_guard = rtc.write();
-                            
+
                             // Handle the incoming data
                             let input = Input::Receive(
                                 Instant::now(),
@@ -102,7 +101,7 @@ impl UdpSocketManager {
                                     contents: buf[..n].to_vec().into(),
                                 }
                             );
-                            
+
                             if let Err(e) = rtc_guard.handle_input(input) {
                                 error!("Failed to handle input for {}: {}", source, e);
                             }
@@ -113,46 +112,6 @@ impl UdpSocketManager {
                     }
                     Err(e) => {
                         error!("Socket receive error: {}", e);
-                    }
-                }
-
-                // Handle timeouts for all RTC instances
-                let now = Instant::now();
-                if now.duration_since(last_timeout_check) > Duration::from_millis(10) {
-                    last_timeout_check = now;
-                    
-                    for entry in rtc_instances.iter() {
-                        let rtc = entry.value();
-                        let mut rtc_guard = rtc.write();
-                        
-                        // Handle timeout
-                        if let Err(e) = rtc_guard.handle_input(Input::Timeout(now)) {
-                            error!("Failed to handle timeout for {}: {}", entry.key(), e);
-                        }
-                        
-                        // Process any pending outputs
-                        loop {
-                            match rtc_guard.poll_output() {
-                                Ok(str0m::Output::Transmit(transmit)) => {
-                                    // Send data through the socket
-                                    if let Err(e) = socket.send_to(&transmit.contents, transmit.destination) {
-                                        error!("Failed to send to {}: {}", transmit.destination, e);
-                                    }
-                                }
-                                Ok(str0m::Output::Timeout(_)) => {
-                                    // Timeout handled above
-                                    break;
-                                }
-                                Ok(str0m::Output::Event(_)) => {
-                                    // Events are handled by the individual RTC instances
-                                    break;
-                                }
-                                Err(_) => {
-                                    // No more output
-                                    break;
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -172,6 +131,11 @@ impl UdpSocketManager {
     /// Unregister an RTC instance
     pub fn unregister_rtc(&self, remote_addr: &SocketAddr) {
         self.rtc_instances.remove(remote_addr);
+    }
+
+    /// Send a packet produced by str0m over the shared socket
+    pub fn send_transmit(&self, transmit: str0m::net::Transmit) -> std::io::Result<usize> {
+        self.socket.send_to(&transmit.contents, transmit.destination)
     }
 
     /// Get the local socket address

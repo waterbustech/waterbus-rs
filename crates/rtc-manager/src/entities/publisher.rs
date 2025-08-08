@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use str0m::{Rtc, Event, Input, Output, IceConnectionState, media::{Direction, MediaKind}};
 
 use crate::{
+    services::udp_socket_manager::UdpSocketManager,
     models::{
         connection_type::ConnectionType,
         data_channel_msg::TrackSubscribedMessage,
@@ -56,6 +57,8 @@ pub struct Publisher {
     pub quality_manager: Arc<QualityManager>,
     /// Simulcast layers: High, Medium, Low quality streams
     pub simulcast_layers: Arc<DashMap<TrackQuality, SimulcastLayer>>,
+    /// Shared UDP socket manager
+    pub udp: Arc<RwLock<UdpSocketManager>>,
 }
 
 impl Publisher {
@@ -70,23 +73,13 @@ impl Publisher {
         ice_candidate_callback: IceCandidateCallback,
         joined_callback: JoinedCallback,
         configs: RtcManagerConfigs,
+        udp: Arc<RwLock<UdpSocketManager>>,
     ) -> Result<Arc<Self>, RtcError> {
         // Create str0m RTC instance
         let mut rtc = Rtc::builder().build();
 
-        // Add local candidate for the shared UDP socket
-        // TODO: This should be provided by the UDP socket manager
-        let host_addr = if configs.public_ip.is_empty() {
-            "127.0.0.1".to_string()
-        } else {
-            configs.public_ip.clone()
-        };
-
-        // For now, use a placeholder port - this will be replaced by the actual UDP socket manager
-        let addr = format!("{}:0", host_addr).parse()
-            .map_err(|_| RtcError::InvalidIceCandidate)?;
-        let candidate = str0m::Candidate::host(addr, str0m::net::Protocol::Udp)
-            .map_err(|_| RtcError::InvalidIceCandidate)?;
+        // Add local candidate from the shared UDP socket (chat.rs style)
+        let candidate = udp.read().create_host_candidate()?;
         rtc.add_local_candidate(candidate);
 
         let (track_event_sender, track_event_receiver) = mpsc::unbounded_channel();
@@ -145,6 +138,7 @@ impl Publisher {
             joined_callback: Some(joined_callback),
             quality_manager: Arc::new(QualityManager::new()),
             simulcast_layers,
+            udp,
         });
 
         // Start the RTC event loop
@@ -339,8 +333,10 @@ impl Publisher {
                     }
                 }
                 Ok(Output::Transmit(transmit)) => {
-                    // TODO: Send data to network
-                    tracing::debug!("Need to transmit data: {:?}", transmit.destination);
+                    // Send data to network via shared UDP socket
+                    if let Err(e) = self.udp.read().send_transmit(transmit) {
+                        tracing::error!("Failed to send transmit: {}", e);
+                    }
                 }
                 Ok(Output::Event(event)) => {
                     self.handle_rtc_event(event).await;

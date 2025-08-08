@@ -1,7 +1,9 @@
 use std::sync::Arc;
+use parking_lot::RwLock;
 
 use dashmap::DashMap;
 use str0m::{Candidate, net::Protocol};
+use std::net::SocketAddr;
 
 use crate::{
     entities::{publisher::Publisher, subscriber::Subscriber},
@@ -15,6 +17,7 @@ use crate::{
         },
 
     },
+    services::udp_socket_manager::UdpSocketManager,
 };
 
 #[derive(Clone)]
@@ -23,15 +26,17 @@ pub struct Room {
     publishers: Arc<DashMap<String, Arc<Publisher>>>,
     subscribers: Arc<DashMap<String, Arc<Subscriber>>>,
     configs: RtcManagerConfigs,
+    udp: Arc<RwLock<UdpSocketManager>>, // access to shared UDP
 }
 
 impl Room {
-    pub fn new(room_id: String, configs: RtcManagerConfigs) -> Self {
+    pub fn new(room_id: String, configs: RtcManagerConfigs, udp: Arc<RwLock<UdpSocketManager>>) -> Self {
         Self {
             room_id,
             publishers: Arc::new(DashMap::new()),
             subscribers: Arc::new(DashMap::new()),
             configs,
+            udp,
         }
     }
 
@@ -54,6 +59,7 @@ impl Room {
             params.on_candidate,
             params.callback,
             self.configs.clone(),
+            self.udp.clone(),
         ).await?;
 
         // Add publisher to room
@@ -98,6 +104,7 @@ impl Room {
             params.on_candidate,
             params.on_negotiation_needed,
             self.configs.clone(),
+            self.udp.clone(),
         ).await?;
 
         // Add subscriber to publisher's subscriber list
@@ -144,12 +151,21 @@ impl Room {
             .ok_or(RtcError::PublisherNotFound)?;
 
         // Convert IceCandidate to str0m Candidate
-        let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate)?;
-        
+        let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate.clone())?;
+
         // Add candidate to publisher's RTC instance
         {
             let mut rtc = publisher.rtc.write();
             rtc.add_local_candidate(str0m_candidate);
+        }
+
+        // Register RTC with UDP manager based on remote address (from candidate)
+        let parts: Vec<&str> = candidate.candidate.split_whitespace().collect();
+        if parts.len() >= 6 {
+            let remote_str = format!("{}:{}", parts[4], parts[5]);
+            if let Ok(remote_addr) = remote_str.parse::<SocketAddr>() {
+                self.udp.read().register_rtc(remote_addr, publisher.rtc.clone());
+            }
         }
 
         Ok(())
@@ -167,12 +183,21 @@ impl Room {
             .ok_or(RtcError::SubscriberNotFound)?;
 
         // Convert IceCandidate to str0m Candidate
-        let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate)?;
-        
+        let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate.clone())?;
+
         // Add candidate to subscriber's RTC instance
         {
             let mut rtc = subscriber.rtc.write();
             rtc.add_local_candidate(str0m_candidate);
+        }
+
+        // Register RTC with UDP manager based on remote address (from candidate)
+        let parts: Vec<&str> = candidate.candidate.split_whitespace().collect();
+        if parts.len() >= 6 {
+            let remote_str = format!("{}:{}", parts[4], parts[5]);
+            if let Ok(remote_addr) = remote_str.parse::<SocketAddr>() {
+                self.udp.read().register_rtc(remote_addr, subscriber.rtc.clone());
+            }
         }
 
         Ok(())

@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use str0m::{Rtc, Event, Input, Output, IceConnectionState, media::{Direction, MediaKind}};
 
 use crate::{
+    services::udp_socket_manager::UdpSocketManager,
     models::{
         quality::TrackQuality,
         params::{IceCandidateCallback, RenegotiationCallback, RtcManagerConfigs},
@@ -43,6 +44,7 @@ pub struct Subscriber {
     pub client_requested_quality: Arc<RwLock<Option<TrackQuality>>>,
     pub ice_candidate_callback: Option<IceCandidateCallback>,
     pub renegotiation_callback: Option<RenegotiationCallback>,
+    pub udp: Arc<RwLock<UdpSocketManager>>,
 }
 
 impl Subscriber {
@@ -52,23 +54,13 @@ impl Subscriber {
         ice_candidate_callback: IceCandidateCallback,
         renegotiation_callback: RenegotiationCallback,
         configs: RtcManagerConfigs,
+        udp: Arc<RwLock<UdpSocketManager>>,
     ) -> Result<Arc<Self>, RtcError> {
         // Create str0m RTC instance
         let mut rtc = Rtc::builder().build();
 
-        // Add local candidate for the shared UDP socket
-        // TODO: This should be provided by the UDP socket manager
-        let host_addr = if configs.public_ip.is_empty() {
-            "127.0.0.1".to_string()
-        } else {
-            configs.public_ip.clone()
-        };
-
-        // For now, use a placeholder port - this will be replaced by the actual UDP socket manager
-        let addr = format!("{}:0", host_addr).parse()
-            .map_err(|_| RtcError::InvalidIceCandidate)?;
-        let candidate = str0m::Candidate::host(addr, str0m::net::Protocol::Udp)
-            .map_err(|_| RtcError::InvalidIceCandidate)?;
+        // Add local candidate from the shared UDP socket (chat.rs style)
+        let candidate = udp.read().create_host_candidate()?;
         rtc.add_local_candidate(candidate);
 
         let subscriber = Arc::new(Self {
@@ -82,6 +74,7 @@ impl Subscriber {
             client_requested_quality: Arc::new(RwLock::new(None)),
             ice_candidate_callback: Some(ice_candidate_callback),
             renegotiation_callback: Some(renegotiation_callback),
+            udp,
         });
 
         // Start the RTC event loop
@@ -202,8 +195,10 @@ impl Subscriber {
                     }
                 }
                 Ok(Output::Transmit(transmit)) => {
-                    // TODO: Send data to network
-                    tracing::debug!("Need to transmit data: {:?}", transmit.destination);
+                    // Send data to network via shared UDP socket
+                    if let Err(e) = self.udp.read().send_transmit(transmit) {
+                        tracing::error!("Failed to send transmit: {}", e);
+                    }
                 }
                 Ok(Output::Event(event)) => {
                     self.handle_rtc_event(event).await;
