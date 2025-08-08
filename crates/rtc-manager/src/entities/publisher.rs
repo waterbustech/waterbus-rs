@@ -385,7 +385,7 @@ impl Publisher {
             }
             Event::RtcpPacket(rtcp) => {
                 // Handle RTCP feedback for quality adaptation
-                self.handle_rtcp_feedback(rtcp).await;
+                self.handle_rtcp_feedback(&rtcp).await;
             }
             _ => {
                 tracing::debug!("Unhandled RTC event: {:?}", event);
@@ -479,7 +479,7 @@ impl Publisher {
     }
 
     /// Handle RTCP feedback for quality adaptation
-    async fn handle_rtcp_feedback(&self, _rtcp: str0m::rtcp::RtcpPacket) {
+    async fn handle_rtcp_feedback(&self, rtcp: &str0m::rtcp::Rtcp) {
         // TODO: Parse Transport-CC feedback and update network conditions
         // This is where we would extract bandwidth estimation, RTT, packet loss, etc.
         // from RTCP feedback reports and update the quality manager
