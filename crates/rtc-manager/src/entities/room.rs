@@ -150,14 +150,10 @@ impl Room {
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
-        // Convert IceCandidate to str0m Candidate
-        let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate.clone())?;
-
-        // Add candidate to publisher's RTC instance
-        {
-            let mut rtc = publisher.rtc.write();
-            rtc.add_local_candidate(str0m_candidate);
-        }
+        // In str0m chat.rs style we don't trickle local candidates here.
+        // Remote candidates are conveyed via SDP. We only use the candidate to
+        // pre-register the expected remote address so the UDP loop can route packets.
+        // (Avoid calling rtc.add_local_candidate here; that's for OUR local candidates.)
 
         // Register RTC with UDP manager based on remote address (from candidate)
         let parts: Vec<&str> = candidate.candidate.split_whitespace().collect();
@@ -182,14 +178,10 @@ impl Room {
             .get(&subscriber_key)
             .ok_or(RtcError::SubscriberNotFound)?;
 
-        // Convert IceCandidate to str0m Candidate
-        let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate.clone())?;
-
-        // Add candidate to subscriber's RTC instance
-        {
-            let mut rtc = subscriber.rtc.write();
-            rtc.add_local_candidate(str0m_candidate);
-        }
+        // In str0m chat.rs style we don't trickle local candidates here.
+        // Remote candidates are conveyed via SDP. We only use the candidate to
+        // pre-register the expected remote address so the UDP loop can route packets.
+        // (Avoid calling rtc.add_local_candidate here; that's for OUR local candidates.)
 
         // Register RTC with UDP manager based on remote address (from candidate)
         let parts: Vec<&str> = candidate.candidate.split_whitespace().collect();

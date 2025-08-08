@@ -22,6 +22,8 @@ use crate::{
 pub struct UdpSocketManager {
     socket: Arc<UdpSocket>,
     local_addr: SocketAddr,
+    /// Address we announce in ICE candidates (may differ in IP from bind address)
+    announce_addr: SocketAddr,
     rtc_instances: Arc<DashMap<SocketAddr, Arc<RwLock<str0m::Rtc>>>>,
     shutdown_tx: Option<mpsc::UnboundedSender<()>>,
 }
@@ -29,22 +31,23 @@ pub struct UdpSocketManager {
 impl UdpSocketManager {
     /// Create a new UDP socket manager
     pub fn new(configs: &RtcManagerConfigs) -> Result<Self, RtcError> {
-        // Figure out some public IP address, since Firefox will not accept 127.0.0.1 for WebRTC traffic.
-        let host_addr = if configs.public_ip.is_empty() {
-            select_host_address()
-        } else {
-            configs.public_ip.clone()
-        };
-
-        // Spin up a UDP socket for the RTC. All WebRTC traffic is going to be multiplexed over this single
-        // server socket. Clients are identified via their respective remote (UDP) socket address.
-        let socket = UdpSocket::bind(format!("{host_addr}:0"))
+        // Bind on 0.0.0.0 to receive on all interfaces.
+        let socket = UdpSocket::bind("0.0.0.0:0")
             .map_err(|e| RtcError::IoError(e))?;
-        
+        socket.set_nonblocking(true).ok();
+
         let local_addr = socket.local_addr()
             .map_err(|e| RtcError::IoError(e))?;
-        
-        info!("Bound UDP port: {}", local_addr);
+
+        // Determine which IP to announce in ICE candidates.
+        let announce_ip = if !configs.public_ip.is_empty() {
+            configs.public_ip.parse().unwrap_or(local_addr.ip())
+        } else {
+            select_host_address()
+        };
+        let announce_addr = SocketAddr::new(announce_ip, local_addr.port());
+
+        info!("Bound UDP on {} (announce {})", local_addr, announce_addr);
 
         let socket = Arc::new(socket);
         let rtc_instances = Arc::new(DashMap::new());
@@ -52,6 +55,7 @@ impl UdpSocketManager {
         Ok(Self {
             socket,
             local_addr,
+            announce_addr,
             rtc_instances,
             shutdown_tx: None,
         })
@@ -143,9 +147,9 @@ impl UdpSocketManager {
         self.local_addr
     }
 
-    /// Create a host candidate for the local socket
+    /// Create a host candidate for the announced address (chat.rs style)
     pub fn create_host_candidate(&self) -> Result<Candidate, RtcError> {
-        Candidate::host(self.local_addr, Protocol::Udp)
+        Candidate::host(self.announce_addr, Protocol::Udp)
             .map_err(|_| RtcError::InvalidIceCandidate)
     }
 
@@ -163,20 +167,21 @@ impl Drop for UdpSocketManager {
     }
 }
 
-/// Select a host address for binding
-/// This is a simplified version of the utility from str0m examples
-fn select_host_address() -> String {
-    // Try to get a non-loopback address
-    if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&("0.0.0.0", 0)) {
-        for addr in addrs {
-            if !addr.ip().is_loopback() {
-                return addr.ip().to_string();
+/// Select a host address for announcing in ICE candidates.
+/// Try to detect an outward-facing local IP by creating a UDP socket and connecting to a public address.
+fn select_host_address() -> std::net::IpAddr {
+    // Best-effort detection
+    if let Ok(s) = UdpSocket::bind("0.0.0.0:0") {
+        let _ = s.connect("8.8.8.8:53"); // no packets are sent, but OS selects an interface
+        if let Ok(addr) = s.local_addr() {
+            let ip = addr.ip();
+            if !ip.is_loopback() && !ip.is_unspecified() {
+                return ip;
             }
         }
     }
-    
-    // Fallback to localhost
-    "127.0.0.1".to_string()
+    // Fallback: 127.0.0.1
+    std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))
 }
 
 #[cfg(test)]
