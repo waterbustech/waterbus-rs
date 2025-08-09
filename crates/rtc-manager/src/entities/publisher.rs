@@ -160,10 +160,8 @@ impl Publisher {
 
         let (offer, _pending) = changes.apply().ok_or(RtcError::FailedToCreateOffer)?;
 
-        // Convert offer to SDP string
-        let offer_sdp = serde_json::to_string(&offer).map_err(|e| RtcError::JsonError(e))?;
-
-        Ok(offer_sdp)
+        // Return SDP string in standard format
+        Ok(offer.to_sdp_string())
     }
 
     pub fn add_subscriber(&self, subscriber_id: String, subscriber: Arc<Subscriber>) {
