@@ -17,8 +17,8 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     errors::RtcError,
     models::{
+        callbacks::{IceCandidateHandler, JoinedHandler},
         connection_type::ConnectionType,
-        params::{IceCandidateCallback, JoinedCallback},
         streaming_protocol::StreamingProtocol,
     },
 };
@@ -40,8 +40,8 @@ pub struct Publisher {
     pub streaming_protocol: StreamingProtocol,
     // pub track_event_sender: Option<mpsc::UnboundedSender<TrackSubscribedMessage>>,
     // pub track_event_receiver: Option<mpsc::UnboundedReceiver<TrackSubscribedMessage>>,
-    pub ice_candidate_callback: Option<IceCandidateCallback>,
-    pub joined_callback: Option<JoinedCallback>,
+    // pub ice_handler: Option<I>,
+    // pub joined_handler: Option<J>,
     // Map incoming mid -> kind, populated on MediaAdded
     pub incoming_mid_kind: Arc<DashMap<Mid, MediaKind>>,
     // Throttle keyframe requests per mid
@@ -49,7 +49,7 @@ pub struct Publisher {
 }
 
 impl Publisher {
-    pub async fn new(
+    pub fn new<I, J>(
         participant_id: String,
         room_id: String,
         connection_type: ConnectionType,
@@ -57,9 +57,13 @@ impl Publisher {
         is_audio_enabled: bool,
         is_e2ee_enabled: bool,
         streaming_protocol: StreamingProtocol,
-        ice_candidate_callback: IceCandidateCallback,
-        joined_callback: JoinedCallback,
-    ) -> Result<Arc<Self>, RtcError> {
+        ice_handler: I,
+        joined_handler: J,
+    ) -> Result<Arc<Self>, RtcError>
+    where
+        I: IceCandidateHandler,
+        J: JoinedHandler + Clone,
+    {
         // Create str0m RTC instance
         let rtc = Rtc::builder().build();
 
@@ -82,8 +86,8 @@ impl Publisher {
             streaming_protocol,
             // track_event_sender: Some(track_event_sender),
             // track_event_receiver: Some(track_event_receiver),
-            ice_candidate_callback: Some(ice_candidate_callback),
-            joined_callback: Some(joined_callback),
+            // ice_handler: Some(ice_handler),
+            // joined_handler: Some(joined_handler),
             incoming_mid_kind: Arc::new(DashMap::new()),
             last_kf_req: Arc::new(DashMap::new()),
         });
@@ -99,22 +103,23 @@ impl Publisher {
             .ok();
 
         // Announce host candidate to the client via callback
-        if let (Some(cb), Some(host)) = (
-            publisher.ice_candidate_callback.as_ref(),
-            RtcUdpRuntime::global().host_candidate(),
-        ) {
+        if let (Some(cb), Some(host)) =
+            (Some(ice_handler), RtcUdpRuntime::global().host_candidate())
+        {
             let ice = crate::utils::ice_utils::IceUtils::convert_from_str0m_candidate(
                 &host,
                 Some("0".to_string()),
                 Some(0),
             );
-            (cb)(ice).await;
+            cb.handle_candidate(ice);
         }
 
         // Start the RTC event loop (events from runtime)
         let publisher_clone = Arc::clone(&publisher);
         tokio::spawn(async move {
-            publisher_clone.run_event_loop(event_rx).await;
+            publisher_clone
+                .run_event_loop(event_rx, joined_handler)
+                .await;
         });
 
         Ok(publisher)
@@ -206,22 +211,26 @@ impl Publisher {
         self.tracks.clear();
     }
 
-    async fn run_event_loop(self: Arc<Self>, mut rx: UnboundedReceiver<Event>) {
+    async fn run_event_loop<J>(self: Arc<Self>, mut rx: UnboundedReceiver<Event>, joined_handler: J)
+    where
+        J: JoinedHandler + Clone,
+    {
         while let Some(event) = rx.recv().await {
-            self.handle_rtc_event(event).await;
+            self.handle_rtc_event(event, joined_handler.clone()).await;
             if self.cancel_token.is_cancelled() {
                 break;
             }
         }
     }
 
-    async fn handle_rtc_event(&self, event: Event) {
+    async fn handle_rtc_event<J>(&self, event: Event, joined_handler: J)
+    where
+        J: JoinedHandler,
+    {
         match event {
             Event::Connected => {
                 tracing::info!("Publisher {} connected", self.participant_id);
-                if let Some(callback) = &self.joined_callback {
-                    (callback)(true).await;
-                }
+                joined_handler.handle_joined(true);
             }
             Event::IceConnectionStateChange(state) => {
                 tracing::debug!("ICE connection state changed: {:?}", state);

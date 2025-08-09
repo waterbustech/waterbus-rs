@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
 use str0m::{Rtc, Candidate, net::Protocol};
-use crate::{errors::RtcError, models::params::RtcManagerConfigs};
+use crate::{errors::RtcError, models::rtc_dto::RtcManagerConfig};
 
 pub struct Str0mHelper;
 
 impl Str0mHelper {
     /// Create a new str0m RTC instance with the given configuration
-    pub fn create_rtc_instance(configs: &RtcManagerConfigs) -> Result<Rtc, RtcError> {
+    pub fn create_rtc_instance(configs: &RtcManagerConfig) -> Result<Rtc, RtcError> {
         // Configure ICE settings
         if !configs.public_ip.is_empty() {
             // TODO: Set up NAT 1:1 mapping if needed
@@ -19,7 +19,7 @@ impl Str0mHelper {
     }
 
     /// Add local candidates to the RTC instance based on configuration
-    pub fn add_local_candidates(rtc: &mut Rtc, configs: &RtcManagerConfigs) -> Result<(), RtcError> {
+    pub fn add_local_candidates(rtc: &mut Rtc, configs: &RtcManagerConfig) -> Result<(), RtcError> {
         // Add UDP candidates for the port range
         for port in configs.port_min..=configs.port_max {
             let addr = if configs.public_ip.is_empty() {
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_create_rtc_instance() {
-        let configs = RtcManagerConfigs {
+        let configs = RtcManagerConfig {
             public_ip: "127.0.0.1".to_string(),
             port_min: 10000,
             port_max: 10010,

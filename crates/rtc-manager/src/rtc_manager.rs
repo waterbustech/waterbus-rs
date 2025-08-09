@@ -3,59 +3,49 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
+use crate::models::callbacks::{IceCandidateHandler, JoinedHandler, RenegotiationHandler};
+use crate::models::rtc_dto::{JoinRoomParameters, SubscribeParameters};
 use crate::utils::udp_runtime::RtcUdpRuntime;
 use crate::{
     entities::room::Room,
     errors::RtcError,
     models::{
         connection_type::ConnectionType,
-        params::{
-            IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
-            RenegotiationCallback, RtcManagerConfigs, SubscribeHlsLiveStreamParams,
-            SubscribeHlsLiveStreamResponse, SubscribeParams, SubscribeResponse, WClient,
+        rtc_dto::{
+            IceCandidate, JoinRoomResponse, RtcManagerConfig, SubscribeHlsLiveStreamParams,
+            SubscribeHlsLiveStreamResponse, SubscribeResponse, WClient,
         },
     },
 };
-
-pub struct JoinRoomReq {
-    pub client_id: String,
-    pub participant_id: String,
-    pub room_id: String,
-    pub sdp: String,
-    pub is_video_enabled: bool,
-    pub is_audio_enabled: bool,
-    pub is_e2ee_enabled: bool,
-    pub total_tracks: u8,
-    pub connection_type: u8,
-    pub callback: JoinedCallback,
-    pub ice_candidate_callback: IceCandidateCallback,
-    pub streaming_protocol: u8,
-    pub is_ipv6_supported: bool,
-}
 
 #[derive(Clone)]
 pub struct RtcManager {
     rooms: Arc<DashMap<String, Arc<RwLock<Room>>>>,
     clients: Arc<DashMap<String, WClient>>,
-    configs: RtcManagerConfigs,
 }
 
 impl RtcManager {
-    pub fn new(configs: RtcManagerConfigs) -> Self {
+    pub fn new(config: RtcManagerConfig) -> Self {
         // Initialize global UDP runtime once
-        let _ = RtcUdpRuntime::init(configs.clone());
+        let _ = RtcUdpRuntime::init(config.clone());
 
         Self {
             rooms: Arc::new(DashMap::new()),
             clients: Arc::new(DashMap::new()),
-            configs,
         }
     }
 
-    pub async fn join_room(&self, req: JoinRoomReq) -> Result<Option<JoinRoomResponse>, RtcError> {
+    pub fn join_room<I, J>(
+        &self,
+        req: JoinRoomParameters<I, J>,
+    ) -> Result<Option<JoinRoomResponse>, RtcError>
+    where
+        I: IceCandidateHandler,
+        J: JoinedHandler + Clone,
+    {
         let client_id = &req.client_id;
-        let room_id = &req.room_id;
-        let participant_id = &req.participant_id;
+        let room_id = &req.room_id.clone();
+        let participant_id = &req.participant_id.clone();
 
         self.add_client(
             client_id,
@@ -73,38 +63,26 @@ impl RtcManager {
             }
         };
 
-        let params = JoinRoomParams {
-            participant_id: participant_id.to_string(),
-            sdp: req.sdp,
-            is_audio_enabled: req.is_audio_enabled,
-            is_video_enabled: req.is_video_enabled,
-            is_e2ee_enabled: req.is_e2ee_enabled,
-            total_tracks: req.total_tracks,
-            connection_type: ConnectionType::from(req.connection_type),
-            callback: req.callback,
-            on_candidate: req.ice_candidate_callback,
-            streaming_protocol: req.streaming_protocol.into(),
-            is_ipv6_supported: req.is_ipv6_supported,
-        };
-
         let res = {
             let mut room = room.write();
-            room.join_room(params, room_id).await?
+            room.join_room(req)?
         };
 
         Ok(res)
     }
 
-    pub async fn subscribe(
+    pub fn subscribe<I, R>(
         &self,
-        client_id: &str,
-        target_id: &str,
-        participant_id: &str,
-        room_id: &str,
-        renegotiation_callback: RenegotiationCallback,
-        ice_candidate_callback: IceCandidateCallback,
-        is_ipv6_supported: bool,
-    ) -> Result<SubscribeResponse, RtcError> {
+        req: SubscribeParameters<I, R>,
+    ) -> Result<SubscribeResponse, RtcError>
+    where
+        I: IceCandidateHandler,
+        R: RenegotiationHandler,
+    {
+        let client_id = &req.client_id;
+        let room_id = &req.room_id;
+        let participant_id = &req.participant_id;
+
         self.add_client(
             client_id,
             WClient {
@@ -116,15 +94,7 @@ impl RtcManager {
         let room = self.get_room_by_id(room_id)?;
         let mut room = room.write();
 
-        let params = SubscribeParams {
-            participant_id: participant_id.to_string(),
-            target_id: target_id.to_string(),
-            on_candidate: ice_candidate_callback,
-            on_negotiation_needed: renegotiation_callback,
-            is_ipv6_supported,
-        };
-
-        let res = room.subscribe(params).await?;
+        let res = room.subscribe(req)?;
 
         Ok(res)
     }
@@ -356,10 +326,7 @@ impl RtcManager {
     }
 
     fn add_room(&self, room_id: &str) -> Result<Arc<RwLock<Room>>, RtcError> {
-        let room = Arc::new(RwLock::new(Room::new(
-            room_id.to_string(),
-            self.configs.clone(),
-        )));
+        let room = Arc::new(RwLock::new(Room::new(room_id.to_string())));
         self.rooms.insert(room_id.to_string(), room.clone());
         Ok(room)
     }

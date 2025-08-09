@@ -1,6 +1,15 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use rtc_manager::{
+    models::{
+        callbacks::{IceCandidateHandler, JoinedHandler, RenegotiationHandler},
+        connection_type::ConnectionType,
+        rtc_dto::{IceCandidate, JoinRoomParameters, RtcManagerConfig, SubscribeParameters},
+        streaming_protocol::StreamingProtocol,
+    },
+    rtc_manager::RtcManager,
+};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use waterbus_proto::{
@@ -11,16 +20,6 @@ use waterbus_proto::{
     SetSubscriberSdpRequest, StatusResponse, SubscribeHlsLiveStreamRequest,
     SubscribeHlsLiveStreamResponse, SubscribeRequest, SubscribeResponse,
     SubscriberCandidateRequest, SubscriberRenegotiateRequest, sfu_service_server::SfuService,
-};
-use rtc_manager::{
-    models::{
-        connection_type::ConnectionType,
-        params::{
-            IceCandidate, IceCandidateCallback, JoinedCallback, RenegotiationCallback,
-            RtcManagerConfigs,
-        },
-    },
-    rtc_manager::{JoinRoomReq, RtcManager},
 };
 
 use super::dispacher_grpc_client::DispatcherGrpcClient;
@@ -33,11 +32,11 @@ pub struct SfuGrpcService {
 
 impl SfuGrpcService {
     pub fn new(
-        configs: RtcManagerConfigs,
+        config: RtcManagerConfig,
         dispatcher_grpc_client: Arc<Mutex<DispatcherGrpcClient>>,
         node_id: String,
     ) -> Self {
-        let rtc_manager = Arc::new(RwLock::new(RtcManager::new(configs)));
+        let rtc_manager = Arc::new(RwLock::new(RtcManager::new(config)));
 
         Self {
             rtc_manager,
@@ -55,83 +54,35 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<JoinRoomResponse>, Status> {
         let req = req.into_inner();
 
-        let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
-        let client_id = req.client_id.clone();
-        let ice_candidate_callback: IceCandidateCallback =
-            Arc::new(move |candidate: IceCandidate| {
-                let dispatcher = Arc::clone(&dispatcher);
-                let client_id = client_id.clone();
+        let ice_handler = GrpcPublisherIceHandler {
+            dispatcher: Arc::clone(&self.dispatcher_grpc_client),
+            client_id: req.client_id.clone(),
+        };
 
-                Box::pin(async move {
-                    let dispatcher = dispatcher.lock().await;
-
-                    let _ = dispatcher
-                        .on_publisher_candidate(PublisherCandidateRequest {
-                            client_id,
-                            candidate: Some(waterbus_proto::common::IceCandidate {
-                                candidate: candidate.candidate,
-                                sdp_mid: candidate.sdp_mid,
-                                sdp_m_line_index: candidate.sdp_m_line_index.map(|val| val as u32),
-                            }),
-                        })
-                        .await;
-                })
-            });
-
-        let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
-        let participant_id = req.participant_id.clone();
-        let room_id = req.room_id.clone();
-        let client_id = req.client_id.clone();
-        let node_id = self.node_id.clone();
-
-        let joined_callback: JoinedCallback = Arc::new(move |is_migrate| {
-            let dispatcher = Arc::clone(&dispatcher);
-            let participant_id = participant_id.clone();
-            let room_id = room_id.clone();
-            let client_id = client_id.clone();
-            let node_id = node_id.clone();
-
-            Box::pin(async move {
-                let dispatcher = dispatcher.lock().await;
-
-                let _ = dispatcher
-                    .new_user_joined(NewUserJoinedRequest {
-                        participant_id,
-                        room_id,
-                        client_id,
-                        node_id,
-                        is_migrate,
-                    })
-                    .await;
-            })
-        });
+        let joined_handler = GrpcJoinedHandler {
+            dispatcher: Arc::clone(&self.dispatcher_grpc_client),
+            participant_id: req.participant_id.clone(),
+            room_id: req.room_id.clone(),
+            client_id: req.client_id.clone(),
+            node_id: self.node_id.clone(),
+        };
 
         let rtc_manager = self.rtc_manager.clone();
-        let response = tokio::task::spawn_blocking(move || {
-            let writer = rtc_manager.write();
-
-            tokio::runtime::Handle::current().block_on(async {
-                writer
-                    .join_room(JoinRoomReq {
-                        client_id: req.client_id,
-                        participant_id: req.participant_id,
-                        room_id: req.room_id,
-                        sdp: req.sdp,
-                        is_video_enabled: req.is_video_enabled,
-                        is_audio_enabled: req.is_audio_enabled,
-                        is_e2ee_enabled: req.is_e2ee_enabled,
-                        total_tracks: req.total_tracks as u8,
-                        connection_type: req.connection_type as u8,
-                        callback: joined_callback,
-                        ice_candidate_callback,
-                        streaming_protocol: req.streaming_protocol as u8,
-                        is_ipv6_supported: req.is_ipv6_supported,
-                    })
-                    .await
-            })
-        })
-        .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
+        let response = rtc_manager.write().join_room(JoinRoomParameters {
+            client_id: req.client_id,
+            participant_id: req.participant_id,
+            room_id: req.room_id,
+            sdp: req.sdp,
+            is_video_enabled: req.is_video_enabled,
+            is_audio_enabled: req.is_audio_enabled,
+            is_e2ee_enabled: req.is_e2ee_enabled,
+            total_tracks: req.total_tracks as u8,
+            connection_type: ConnectionType::from(req.connection_type as u8),
+            joined_handler: joined_handler.clone(),
+            ice_handler: ice_handler.clone(),
+            streaming_protocol: StreamingProtocol::from(req.streaming_protocol as u8),
+            is_ipv6_supported: req.is_ipv6_supported,
+        });
 
         match response {
             Ok(response) => match response {
@@ -160,73 +111,29 @@ impl SfuService for SfuGrpcService {
     ) -> Result<Response<SubscribeResponse>, Status> {
         let req = req.into_inner();
 
-        let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
-        let client_id = req.client_id.clone();
-        let target_id = req.target_id.clone();
-        let renegotiation_callback: RenegotiationCallback = Arc::new(move |sdp| {
-            let dispatcher = Arc::clone(&dispatcher);
-            let client_id = client_id.clone();
-            let target_id = target_id.clone();
+        let ice_handler = GrpcSubscriberIceHandler {
+            dispatcher: Arc::clone(&self.dispatcher_grpc_client),
+            client_id: req.client_id.clone(),
+            target_id: req.target_id.clone(),
+        };
 
-            Box::pin(async move {
-                let dispatcher = dispatcher.lock().await;
-
-                let _ = dispatcher
-                    .subscriber_renegotiate(SubscriberRenegotiateRequest {
-                        sdp,
-                        client_id,
-                        target_id,
-                    })
-                    .await;
-            })
-        });
-
-        let dispatcher = Arc::clone(&self.dispatcher_grpc_client);
-        let client_id = req.client_id.clone();
-        let target_id = req.target_id.clone();
-        let ice_candidate_callback: IceCandidateCallback = Arc::new(move |candidate| {
-            let dispatcher = Arc::clone(&dispatcher);
-            let client_id = client_id.clone();
-            let target_id = target_id.clone();
-
-            Box::pin(async move {
-                let dispatcher = dispatcher.lock().await;
-
-                let _ = dispatcher
-                    .on_subscriber_candidate(SubscriberCandidateRequest {
-                        client_id,
-                        target_id,
-                        candidate: Some(waterbus_proto::common::IceCandidate {
-                            candidate: candidate.candidate,
-                            sdp_mid: candidate.sdp_mid,
-                            sdp_m_line_index: candidate.sdp_m_line_index.map(|val| val as u32),
-                        }),
-                    })
-                    .await;
-            })
-        });
+        let renegotiation_handler = GrpcRenegotiationHandler {
+            dispatcher: Arc::clone(&self.dispatcher_grpc_client),
+            client_id: req.client_id.clone(),
+            target_id: req.target_id.clone(),
+        };
 
         let rtc_manager = self.rtc_manager.clone();
 
-        let response = tokio::task::spawn_blocking(move || {
-            let writer = rtc_manager.write();
-
-            tokio::runtime::Handle::current().block_on(async {
-                writer
-                    .subscribe(
-                        &req.client_id,
-                        &req.target_id,
-                        &req.participant_id,
-                        &req.room_id,
-                        renegotiation_callback,
-                        ice_candidate_callback,
-                        req.is_ipv6_supported,
-                    )
-                    .await
-            })
-        })
-        .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
+        let response = rtc_manager.read().subscribe(SubscribeParameters {
+            client_id: req.client_id,
+            target_id: req.target_id,
+            participant_id: req.participant_id,
+            room_id: req.room_id,
+            renegotiation_handler: renegotiation_handler.clone(),
+            ice_handler: ice_handler.clone(),
+            is_ipv6_supported: req.is_ipv6_supported,
+        });
 
         match response {
             Ok(response) => {
@@ -259,9 +166,12 @@ impl SfuService for SfuGrpcService {
         let participant_id = req.participant_id.clone();
         let room_id = req.room_id.clone();
 
-        let response = rtc_manager
-            .read()
-            .subscribe_hls_live_stream(&client_id, &target_id, &participant_id, &room_id);
+        let response = rtc_manager.read().subscribe_hls_live_stream(
+            &client_id,
+            &target_id,
+            &participant_id,
+            &room_id,
+        );
 
         match response {
             Ok(response) => Ok(Response::new(SubscribeHlsLiveStreamResponse {
@@ -337,11 +247,7 @@ impl SfuService for SfuGrpcService {
         let response = tokio::task::spawn_blocking(move || {
             let writer = rtc_manager.read();
 
-            writer.migrate_connection(
-                &client_id,
-                sdp,
-                connection_type,
-            )
+            writer.migrate_connection(&client_id, sdp, connection_type)
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
@@ -521,5 +427,122 @@ impl SfuService for SfuGrpcService {
                 "Failed to set camera type: {err}"
             ))),
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct GrpcPublisherIceHandler {
+    pub dispatcher: Arc<Mutex<DispatcherGrpcClient>>,
+    pub client_id: String,
+}
+
+impl IceCandidateHandler for GrpcPublisherIceHandler {
+    fn handle_candidate(&self, candidate: IceCandidate) {
+        let dispatcher = Arc::clone(&self.dispatcher);
+        let client_id = self.client_id.clone();
+
+        tokio::spawn(async move {
+            let dispatcher = dispatcher.lock().await;
+
+            let _ = dispatcher
+                .on_publisher_candidate(PublisherCandidateRequest {
+                    client_id,
+                    candidate: Some(waterbus_proto::common::IceCandidate {
+                        candidate: candidate.candidate,
+                        sdp_mid: candidate.sdp_mid,
+                        sdp_m_line_index: candidate.sdp_m_line_index.map(|val| val as u32),
+                    }),
+                })
+                .await;
+        });
+    }
+}
+
+#[derive(Clone)]
+pub struct GrpcSubscriberIceHandler {
+    pub dispatcher: Arc<Mutex<DispatcherGrpcClient>>,
+    pub client_id: String,
+    pub target_id: String,
+}
+
+impl IceCandidateHandler for GrpcSubscriberIceHandler {
+    fn handle_candidate(&self, candidate: IceCandidate) {
+        let dispatcher = Arc::clone(&self.dispatcher);
+        let client_id = self.client_id.clone();
+        let target_id = self.target_id.clone();
+        tokio::spawn(async move {
+            let dispatcher = dispatcher.lock().await;
+
+            let _ = dispatcher
+                .on_subscriber_candidate(SubscriberCandidateRequest {
+                    client_id,
+                    target_id,
+                    candidate: Some(waterbus_proto::common::IceCandidate {
+                        candidate: candidate.candidate,
+                        sdp_mid: candidate.sdp_mid,
+                        sdp_m_line_index: candidate.sdp_m_line_index.map(|val| val as u32),
+                    }),
+                })
+                .await;
+        });
+    }
+}
+
+#[derive(Clone)]
+pub struct GrpcJoinedHandler {
+    pub dispatcher: Arc<Mutex<DispatcherGrpcClient>>,
+    pub participant_id: String,
+    pub room_id: String,
+    pub client_id: String,
+    pub node_id: String,
+}
+
+impl JoinedHandler for GrpcJoinedHandler {
+    fn handle_joined(&self, is_migrate: bool) {
+        let dispatcher = Arc::clone(&self.dispatcher);
+        let participant_id = self.participant_id.clone();
+        let room_id = self.room_id.clone();
+        let client_id = self.client_id.clone();
+        let node_id = self.node_id.clone();
+
+        tokio::spawn(async move {
+            let dispatcher = dispatcher.lock().await;
+
+            let _ = dispatcher
+                .new_user_joined(NewUserJoinedRequest {
+                    participant_id,
+                    room_id,
+                    client_id,
+                    node_id,
+                    is_migrate,
+                })
+                .await;
+        });
+    }
+}
+
+#[derive(Clone)]
+pub struct GrpcRenegotiationHandler {
+    pub dispatcher: Arc<Mutex<DispatcherGrpcClient>>,
+    pub client_id: String,
+    pub target_id: String,
+}
+
+impl RenegotiationHandler for GrpcRenegotiationHandler {
+    fn handle_renegotiation(&self, sdp: String) {
+        let dispatcher = Arc::clone(&self.dispatcher);
+        let client_id = self.client_id.clone();
+        let target_id = self.target_id.clone();
+
+        tokio::spawn(async move {
+            let dispatcher = dispatcher.lock().await;
+            let _ = dispatcher
+                .subscriber_renegotiate(SubscriberRenegotiateRequest {
+                    sdp,
+                    client_id,
+                    target_id,
+                })
+                .await;
+        });
     }
 }

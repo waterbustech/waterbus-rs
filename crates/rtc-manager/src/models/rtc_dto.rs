@@ -1,19 +1,15 @@
-use std::{pin::Pin, sync::Arc, future::Future};
 use parking_lot::RwLock;
 use serde::Serialize;
+use std::sync::Arc;
 
-use crate::models::streaming_protocol::StreamingProtocol;
 use super::connection_type::ConnectionType;
-
-pub type IceCandidateCallback =
-    Arc<dyn Fn(IceCandidate) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-pub type RenegotiationCallback =
-    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-pub type JoinedCallback =
-    Arc<dyn Fn(bool) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+use crate::models::{
+    callbacks::{IceCandidateHandler, JoinedHandler, RenegotiationHandler},
+    streaming_protocol::StreamingProtocol,
+};
 
 #[derive(Debug, Clone)]
-pub struct RtcManagerConfigs {
+pub struct RtcManagerConfig {
     pub public_ip: String,
     pub port_min: u16,
     pub port_max: u16,
@@ -25,17 +21,22 @@ pub struct WClient {
     pub room_id: String,
 }
 
-#[derive(Clone)]
-pub struct JoinRoomParams {
-    pub sdp: String,
+pub struct JoinRoomParameters<I, J>
+where
+    I: IceCandidateHandler,
+    J: JoinedHandler,
+{
+    pub client_id: String,
     pub participant_id: String,
+    pub room_id: String,
+    pub sdp: String,
     pub is_video_enabled: bool,
     pub is_audio_enabled: bool,
     pub is_e2ee_enabled: bool,
     pub total_tracks: u8,
     pub connection_type: ConnectionType,
-    pub callback: JoinedCallback,
-    pub on_candidate: IceCandidateCallback,
+    pub joined_handler: J,
+    pub ice_handler: I,
     pub streaming_protocol: StreamingProtocol,
     pub is_ipv6_supported: bool,
 }
@@ -48,11 +49,17 @@ pub struct JoinRoomResponse {
 }
 
 #[derive(Clone)]
-pub struct SubscribeParams {
+pub struct SubscribeParameters<I, R>
+where
+    I: IceCandidateHandler,
+    R: RenegotiationHandler,
+{
+    pub client_id: String,
+    pub room_id: String,
     pub target_id: String,
     pub participant_id: String,
-    pub on_negotiation_needed: RenegotiationCallback,
-    pub on_candidate: IceCandidateCallback,
+    pub renegotiation_handler: R,
+    pub ice_handler: I,
     pub is_ipv6_supported: bool,
 }
 

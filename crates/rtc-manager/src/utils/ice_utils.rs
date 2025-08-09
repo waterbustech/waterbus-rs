@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use str0m::{Candidate, net::Protocol};
-use crate::{errors::RtcError, models::params::IceCandidate};
+use crate::{errors::RtcError, models::rtc_dto::IceCandidate};
 
 pub struct IceUtils;
 

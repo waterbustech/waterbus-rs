@@ -14,7 +14,7 @@ use str0m::net::Receive;
 use str0m::{net::Protocol, Candidate, Event, Input, Output, Rtc};
 
 use crate::errors::RtcError;
-use crate::models::params::RtcManagerConfigs;
+use crate::models::rtc_dto::RtcManagerConfig;
 
 #[derive(Clone)]
 pub struct RtcRegistration {
@@ -49,7 +49,7 @@ pub fn select_host_address() -> IpAddr {
 }
 
 impl RtcUdpRuntime {
-    pub fn init(_config: RtcManagerConfigs) -> Result<(), RtcError> {
+    pub fn init(_config: RtcManagerConfig) -> Result<(), RtcError> {
         if RUNTIME.get().is_some() {
             return Ok(());
         }

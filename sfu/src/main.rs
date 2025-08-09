@@ -1,10 +1,10 @@
+use rtc_manager::models::rtc_dto::RtcManagerConfig;
 use sfu::infrastructure::{config::app_env::AppEnv, etcd::EtcdNode, grpc::GrpcServer};
 use tracing::{Metadata, warn};
 use tracing_subscriber::{
     EnvFilter, Layer, filter::FilterFn, fmt, layer::SubscriberExt, registry,
     util::SubscriberInitExt,
 };
-use rtc_manager::models::params::RtcManagerConfigs;
 
 use mimalloc::MiMalloc;
 
@@ -43,7 +43,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let app_env = AppEnv::new();
 
-    let rtc_configs = RtcManagerConfigs {
+    let rtc_config = RtcManagerConfig {
         public_ip: app_env.public_ip,
         port_min: app_env.udp_port_range.port_min,
         port_max: app_env.udp_port_range.port_max,
@@ -64,7 +64,7 @@ async fn main() -> Result<(), anyhow::Error> {
         app_env.grpc_configs.sfu_port,
         app_env.grpc_configs.dispatcher_host,
         app_env.grpc_configs.dispatcher_port,
-        rtc_configs,
+        rtc_config,
         app_env.node_id,
     );
 

@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     errors::RtcError,
     models::{
-        params::{IceCandidateCallback, RenegotiationCallback},
+        callbacks::{IceCandidateHandler, RenegotiationHandler},
         quality::TrackQuality,
     },
 };
@@ -46,18 +46,22 @@ pub struct Subscriber {
     pub client_requested_quality: Arc<RwLock<Option<TrackQuality>>>,
     pub send_video_mid: Arc<RwLock<Option<Mid>>>,
     pub send_audio_mid: Arc<RwLock<Option<Mid>>>,
-    pub ice_candidate_callback: Option<IceCandidateCallback>,
-    pub renegotiation_callback: Option<RenegotiationCallback>,
+    // pub ice_handler: Option<I>,
+    // pub renegotiation_handler: Option<R>,
     pending: Arc<RwLock<Option<SdpPendingOffer>>>,
 }
 
 impl Subscriber {
-    pub async fn new(
+    pub fn new<I, R>(
         participant_id: String,
         target_id: String,
-        ice_candidate_callback: IceCandidateCallback,
-        renegotiation_callback: RenegotiationCallback,
-    ) -> Result<Arc<Self>, RtcError> {
+        ice_handler: I,
+        _renegotiation_handler: R,
+    ) -> Result<Arc<Self>, RtcError>
+    where
+        I: IceCandidateHandler,
+        R: RenegotiationHandler,
+    {
         // Create str0m RTC instance
         let rtc = Rtc::builder().build();
 
@@ -75,8 +79,6 @@ impl Subscriber {
             client_requested_quality: Arc::new(RwLock::new(None)),
             send_video_mid: Arc::new(RwLock::new(None)),
             send_audio_mid: Arc::new(RwLock::new(None)),
-            ice_candidate_callback: Some(ice_candidate_callback),
-            renegotiation_callback: Some(renegotiation_callback),
             pending: Arc::new(RwLock::new(None)),
         });
 
@@ -92,7 +94,7 @@ impl Subscriber {
 
         // Announce host candidate to the client via callback
         if let (Some(cb), Some(host)) = (
-            subscriber.ice_candidate_callback.as_ref(),
+            Some(ice_handler),
             RtcUdpRuntime::global().host_candidate(),
         ) {
             let ice = crate::utils::ice_utils::IceUtils::convert_from_str0m_candidate(
@@ -100,7 +102,7 @@ impl Subscriber {
                 Some("0".to_string()),
                 Some(0),
             );
-            (cb)(ice).await;
+            cb.handle_candidate(ice);
         }
 
         // Start the RTC event loop

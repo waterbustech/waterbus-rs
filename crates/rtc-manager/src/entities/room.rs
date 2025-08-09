@@ -8,11 +8,11 @@ use crate::{
     entities::{publisher::Publisher, subscriber::Subscriber},
     errors::RtcError,
     models::{
+        callbacks::{IceCandidateHandler, JoinedHandler, RenegotiationHandler},
         connection_type::ConnectionType,
-        params::{
-            IceCandidate, JoinRoomParams, JoinRoomResponse, RtcManagerConfigs,
-            SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse, SubscribeParams,
-            SubscribeResponse,
+        rtc_dto::{
+            IceCandidate, JoinRoomParameters, JoinRoomResponse, SubscribeHlsLiveStreamParams,
+            SubscribeHlsLiveStreamResponse, SubscribeParameters, SubscribeResponse,
         },
     },
 };
@@ -22,24 +22,25 @@ pub struct Room {
     pub room_id: String,
     publishers: Arc<DashMap<String, Arc<Publisher>>>,
     subscribers: Arc<DashMap<String, Arc<Subscriber>>>,
-    config: RtcManagerConfigs,
 }
 
 impl Room {
-    pub fn new(room_id: String, config: RtcManagerConfigs) -> Self {
+    pub fn new(room_id: String) -> Self {
         Self {
             room_id,
             publishers: Arc::new(DashMap::new()),
             subscribers: Arc::new(DashMap::new()),
-            config,
         }
     }
 
-    pub async fn join_room(
+    pub fn join_room<I, J>(
         &mut self,
-        params: JoinRoomParams,
-        _room_id: &str,
-    ) -> Result<Option<JoinRoomResponse>, RtcError> {
+        params: JoinRoomParameters<I, J>,
+    ) -> Result<Option<JoinRoomResponse>, RtcError>
+    where
+        I: IceCandidateHandler,
+        J: JoinedHandler + Clone,
+    {
         let participant_id = params.participant_id.clone();
 
         info!("participant joining {}", participant_id.clone());
@@ -53,10 +54,9 @@ impl Room {
             params.is_audio_enabled,
             params.is_e2ee_enabled,
             params.streaming_protocol,
-            params.on_candidate,
-            params.callback,
-        )
-        .await?;
+            params.ice_handler,
+            params.joined_handler,
+        )?;
 
         info!("publisher created");
 
@@ -90,10 +90,14 @@ impl Room {
         }
     }
 
-    pub async fn subscribe(
+    pub fn subscribe<I, R>(
         &mut self,
-        params: SubscribeParams,
-    ) -> Result<SubscribeResponse, RtcError> {
+        params: SubscribeParameters<I, R>,
+    ) -> Result<SubscribeResponse, RtcError>
+    where
+        I: IceCandidateHandler,
+        R: RenegotiationHandler,
+    {
         let target_id = params.target_id.clone();
         let participant_id = params.participant_id.clone();
 
@@ -108,10 +112,9 @@ impl Room {
         let subscriber = Subscriber::new(
             participant_id.clone(),
             target_id.clone(),
-            params.on_candidate,
-            params.on_negotiation_needed,
-        )
-        .await?;
+            params.ice_handler,
+            params.renegotiation_handler,
+        )?;
 
         // Add subscriber to publisher's subscriber list
         publisher.add_subscriber(participant_id.clone(), subscriber.clone());
@@ -132,7 +135,7 @@ impl Room {
             is_screen_sharing: false,        // TODO: Get from publisher state
             is_hand_raising: false,          // TODO: Get from publisher state
             is_e2ee_enabled: false,          // TODO: Get from publisher state
-            video_codec: "H264".to_string(),  // TODO: Get from publisher
+            video_codec: "H264".to_string(), // TODO: Get from publisher
             screen_track_id: "".to_string(), // TODO: Get from publisher if screen sharing
         })
     }
