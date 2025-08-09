@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde_json::Value;
 
 use crate::errors::RtcError;
@@ -9,12 +10,15 @@ impl SdpUtils {
     /// - Raw SDP (v=0 ... with m= lines)
     /// - JSON-wrapped {"type":"offer|answer","sdp":"..."}
     /// - A JSON string literal containing the SDP with escapes
+    /// - Base64-encoded JSON or raw SDP
     /// - With literal escape sequences ("\r\n", "\n") instead of real newlines
     pub fn normalize_offer_sdp(input: &str) -> Result<String, RtcError> {
         let mut s = input.trim().to_string();
+        tracing::debug!(len = s.len(), "normalize_offer_sdp: start");
 
         // If it's a JSON string literal, decode it to a normal Rust string
         if let Ok(decoded_literal) = serde_json::from_str::<String>(&s) {
+            tracing::debug!("normalize_offer_sdp: decoded JSON string literal");
             s = decoded_literal;
         }
 
@@ -27,7 +31,8 @@ impl SdpUtils {
         s = Self::unescape_common_escapes(&s);
 
         // Fast path: looks like SDP and has m-lines
-        if (s.contains("v=") && (s.contains("\nm=") || s.contains("\r\nm="))) || s.starts_with("v=") {
+        if Self::has_m_lines(&s) && s.contains("v=") {
+            tracing::debug!("normalize_offer_sdp: raw SDP detected");
             return Ok(s);
         }
 
@@ -35,17 +40,28 @@ impl SdpUtils {
         if s.starts_with('{') {
             if let Ok(v) = serde_json::from_str::<Value>(&s) {
                 if let Some(sdp) = v.get("sdp").and_then(|v| v.as_str()) {
+                    tracing::debug!("normalize_offer_sdp: RTCSessionDescriptionInit detected");
                     let ss = Self::unescape_common_escapes(sdp);
-                    return Ok(ss);
+                    if Self::has_m_lines(&ss) { return Ok(ss); }
                 }
             }
         }
 
-        // As a last attempt: try full SdpOffer JSON (str0m serialized format)
+        // Try full SdpOffer JSON (str0m serialized format)
         if let Ok(offer) = serde_json::from_str::<str0m::change::SdpOffer>(&s) {
+            tracing::debug!("normalize_offer_sdp: str0m SdpOffer JSON detected");
             return Ok(offer.to_sdp_string());
         }
 
+        // Try base64 decode as a last resort
+        if let Ok(decoded) = B64.decode(&s) {
+            if let Ok(decoded_str) = String::from_utf8(decoded) {
+                tracing::debug!("normalize_offer_sdp: base64 decoded, recursing");
+                return Self::normalize_offer_sdp(&decoded_str);
+            }
+        }
+
+        tracing::warn!("normalize_offer_sdp: invalid SDP after normalization");
         Err(RtcError::InvalidSdp)
     }
 
@@ -57,6 +73,11 @@ impl SdpUtils {
         // Some encoders escape forward slashes
         let s = s.replace("\\/", "/");
         s
+    }
+
+    pub fn has_m_lines(s: &str) -> bool {
+        // Be robust to both CRLF and LF only, and extra spaces
+        s.lines().any(|line| line.trim_start().starts_with("m="))
     }
 
     /// Parse SDP string and extract basic information
