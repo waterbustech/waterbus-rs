@@ -1,25 +1,28 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU8, Ordering},
-    },
-    time::{Duration, Instant},
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc,
 };
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use str0m::{
+    change::{SdpAnswer, SdpPendingOffer},
+    media::{Direction, MediaKind, Mid},
+    Event, IceConnectionState, Rtc,
+};
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio_util::sync::CancellationToken;
-use str0m::{Rtc, Event, Input, Output, IceConnectionState, media::{Direction, MediaKind}};
 
 use crate::{
-    models::{
-        quality::TrackQuality,
-        params::{IceCandidateCallback, RenegotiationCallback},
-    },
     errors::RtcError,
+    models::{
+        params::{IceCandidateCallback, RenegotiationCallback},
+        quality::TrackQuality,
+    },
 };
 
 use super::track::Track;
+use crate::utils::udp_runtime::RtcUdpRuntime;
 
 #[derive(Debug, Default, Clone)]
 pub struct NetworkStats {
@@ -41,8 +44,11 @@ pub struct Subscriber {
     pub network_stats: Arc<RwLock<NetworkStats>>,
     pub tracks: Arc<DashMap<String, Arc<Track>>>,
     pub client_requested_quality: Arc<RwLock<Option<TrackQuality>>>,
+    pub send_video_mid: Arc<RwLock<Option<Mid>>>,
+    pub send_audio_mid: Arc<RwLock<Option<Mid>>>,
     pub ice_candidate_callback: Option<IceCandidateCallback>,
     pub renegotiation_callback: Option<RenegotiationCallback>,
+    pending: Arc<RwLock<Option<SdpPendingOffer>>>,
 }
 
 impl Subscriber {
@@ -55,6 +61,9 @@ impl Subscriber {
         // Create str0m RTC instance
         let rtc = Rtc::builder().build();
 
+        // Create event channel for runtime -> subscriber
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+
         let subscriber = Arc::new(Self {
             participant_id,
             target_id,
@@ -64,14 +73,40 @@ impl Subscriber {
             network_stats: Arc::new(RwLock::new(NetworkStats::default())),
             tracks: Arc::new(DashMap::new()),
             client_requested_quality: Arc::new(RwLock::new(None)),
+            send_video_mid: Arc::new(RwLock::new(None)),
+            send_audio_mid: Arc::new(RwLock::new(None)),
             ice_candidate_callback: Some(ice_candidate_callback),
             renegotiation_callback: Some(renegotiation_callback),
+            pending: Arc::new(RwLock::new(None)),
         });
+
+        // Register with global UDP runtime
+        let runtime = RtcUdpRuntime::global();
+        runtime
+            .register_rtc(
+                format!("sub:{}:{}", subscriber.participant_id, subscriber.target_id),
+                Arc::clone(&subscriber.rtc),
+                event_tx,
+            )
+            .ok();
+
+        // Announce host candidate to the client via callback
+        if let (Some(cb), Some(host)) = (
+            subscriber.ice_candidate_callback.as_ref(),
+            RtcUdpRuntime::global().host_candidate(),
+        ) {
+            let ice = crate::utils::ice_utils::IceUtils::convert_from_str0m_candidate(
+                &host,
+                Some("0".to_string()),
+                Some(0),
+            );
+            (cb)(ice).await;
+        }
 
         // Start the RTC event loop
         let subscriber_clone = Arc::clone(&subscriber);
         tokio::spawn(async move {
-            subscriber_clone.run_rtc_loop().await;
+            subscriber_clone.run_event_loop(event_rx).await;
         });
 
         Ok(subscriber)
@@ -79,61 +114,76 @@ impl Subscriber {
 
     pub async fn handle_offer(&self, offer_sdp: String) -> Result<String, RtcError> {
         let mut rtc = self.rtc.write();
-        
+
         // Parse and set remote offer
-        let offer: str0m::change::SdpOffer = serde_json::from_str(&offer_sdp)
-            .map_err(|e| RtcError::JsonError(e))?;
-        
-        let answer = rtc.sdp_api().accept_offer(offer)
+        let offer: str0m::change::SdpOffer =
+            serde_json::from_str(&offer_sdp).map_err(|e| RtcError::JsonError(e))?;
+
+        let answer = rtc
+            .sdp_api()
+            .accept_offer(offer)
             .map_err(|e| RtcError::Str0mError(e))?;
 
         // Convert answer to SDP string
-        let answer_sdp = serde_json::to_string(&answer)
-            .map_err(|e| RtcError::JsonError(e))?;
+        let answer_sdp = serde_json::to_string(&answer).map_err(|e| RtcError::JsonError(e))?;
 
         Ok(answer_sdp)
     }
 
-    pub async fn create_offer(&self) -> Result<String, RtcError> {
+    pub fn create_offer(&self) -> Result<String, RtcError> {
         let mut rtc = self.rtc.write();
-        
-        // Add media tracks for receiving
-        let mut changes = rtc.sdp_api();
-        
-        // Add video track for receiving
-        let _video_mid = changes.add_media(
-            MediaKind::Video,
-            Direction::RecvOnly,
-            None,
-            None,
-            None,
-        );
-        
-        // Add audio track for receiving
-        let _audio_mid = changes.add_media(
-            MediaKind::Audio,
-            Direction::RecvOnly,
-            None,
-            None,
-            None,
-        );
 
-        let (offer, _pending) = changes.apply()
-            .ok_or(RtcError::FailedToCreateOffer)?;
+        // Add media tracks for sending to the browser
+        let mut changes = rtc.sdp_api();
+
+        let video_mid = changes.add_media(MediaKind::Video, Direction::SendOnly, None, None, None);
+        *self.send_video_mid.write() = Some(video_mid);
+
+        let audio_mid = changes.add_media(MediaKind::Audio, Direction::SendOnly, None, None, None);
+        *self.send_audio_mid.write() = Some(audio_mid);
+
+        let (offer, pending) = changes.apply().ok_or(RtcError::FailedToCreateOffer)?;
+
+        *self.pending.write() = Some(pending);
 
         // Convert offer to SDP string
-        let offer_sdp = serde_json::to_string(&offer)
-            .map_err(|e| RtcError::JsonError(e))?;
+        // let offer_sdp = serde_json::to_string(&offer).map_err(|e| RtcError::JsonError(e))?;
 
-        Ok(offer_sdp)
+        Ok(offer.to_sdp_string())
+    }
+
+    pub fn handle_answer(&self, answer_sdp: String) -> Result<(), RtcError> {
+        let answer =
+            SdpAnswer::from_sdp_string(&answer_sdp).map_err(|_| RtcError::FailedToSetSdp)?;
+
+        if let Some(pending) = self.pending.write().take() {
+            let mut rtc = self.rtc.write();
+            rtc.sdp_api()
+                .accept_answer(pending, answer)
+                .map_err(|e| RtcError::Str0mError(e))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn get_send_mid(&self, kind: MediaKind) -> Option<Mid> {
+        match kind {
+            MediaKind::Video => *self.send_video_mid.read(),
+            MediaKind::Audio => *self.send_audio_mid.read(),
+        }
     }
 
     pub fn set_preferred_quality(&self, quality: TrackQuality) {
-        self.preferred_quality.store(quality.as_u8(), Ordering::Relaxed);
+        self.preferred_quality
+            .store(quality.as_u8(), Ordering::Relaxed);
         *self.client_requested_quality.write() = Some(quality);
-        
+
         // TODO: Request quality change from publisher
-        tracing::debug!("Subscriber {} requested quality: {:?}", self.participant_id, quality);
+        tracing::debug!(
+            "Subscriber {} requested quality: {:?}",
+            self.participant_id,
+            quality
+        );
     }
 
     pub fn get_preferred_quality(&self) -> TrackQuality {
@@ -157,7 +207,10 @@ impl Subscriber {
     }
 
     pub fn get_tracks(&self) -> Vec<Arc<Track>> {
-        self.tracks.iter().map(|entry| Arc::clone(entry.value())).collect()
+        self.tracks
+            .iter()
+            .map(|entry| Arc::clone(entry.value()))
+            .collect()
     }
 
     pub fn close(&self) {
@@ -165,55 +218,32 @@ impl Subscriber {
         self.tracks.clear();
     }
 
-    async fn run_rtc_loop(&self) {
-        let mut last_timeout = Instant::now();
-        
-        loop {
+    async fn run_event_loop(self: Arc<Self>, mut rx: UnboundedReceiver<Event>) {
+        while let Some(event) = rx.recv().await {
+            self.handle_rtc_event(event).await;
             if self.cancel_token.is_cancelled() {
                 break;
             }
-
-            let output = {
-                let mut rtc = self.rtc.write();
-                rtc.poll_output()
-            };
-
-            match output {
-                Ok(Output::Timeout(timeout)) => {
-                    let now = Instant::now();
-                    if now >= timeout {
-                        last_timeout = now;
-                        let mut rtc = self.rtc.write();
-                        let _ = rtc.handle_input(Input::Timeout(now));
-                    }
-                }
-                Ok(Output::Transmit(transmit)) => {
-                    // TODO: Send data to network
-                    tracing::debug!("Need to transmit data: {:?}", transmit.destination);
-                }
-                Ok(Output::Event(event)) => {
-                    self.handle_rtc_event(event).await;
-                }
-                Err(e) => {
-                    tracing::error!("RTC error: {:?}", e);
-                    break;
-                }
-            }
-
-            // Small delay to prevent busy loop
-            tokio::time::sleep(Duration::from_millis(1)).await;
         }
     }
 
     async fn handle_rtc_event(&self, event: Event) {
         match event {
             Event::Connected => {
-                tracing::info!("Subscriber {} connected to {}", self.participant_id, self.target_id);
+                tracing::info!(
+                    "Subscriber {} connected to {}",
+                    self.participant_id,
+                    self.target_id
+                );
             }
             Event::IceConnectionStateChange(state) => {
                 tracing::debug!("ICE connection state changed: {:?}", state);
                 if matches!(state, IceConnectionState::Disconnected) {
-                    tracing::info!("Subscriber {} disconnected from {}", self.participant_id, self.target_id);
+                    tracing::info!(
+                        "Subscriber {} disconnected from {}",
+                        self.participant_id,
+                        self.target_id
+                    );
                 }
             }
 

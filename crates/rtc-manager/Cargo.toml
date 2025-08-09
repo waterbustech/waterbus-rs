@@ -20,6 +20,7 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bytes = { workspace = true }
+once_cell = "1.19.0"
 
 # Async utilities
 futures = { workspace = true }
@@ -28,6 +29,7 @@ async-channel = { workspace = true }
 
 # Networking
 rustls = { workspace = true }
+systemstat = "0.2.5"
 
 # Utilities
 nanoid = { workspace = true }

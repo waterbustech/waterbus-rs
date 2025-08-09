@@ -1,31 +1,30 @@
-use std::{
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc,
 };
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use str0m::{
-    change::SdpOffer, media::{Direction, MediaKind}, Candidate, Event, IceConnectionState, Input, Output, Rtc
+    change::SdpOffer,
+    media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid},
+    Event, IceConnectionState, Rtc,
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
 
 use crate::{
     errors::RtcError,
     models::{
         connection_type::ConnectionType,
-        data_channel_msg::TrackSubscribedMessage,
         params::{IceCandidateCallback, JoinedCallback},
         streaming_protocol::StreamingProtocol,
     },
 };
 
 use super::{subscriber::Subscriber, track::Track};
+use crate::utils::udp_runtime::RtcUdpRuntime;
 
 pub struct Publisher {
     pub participant_id: String,
@@ -39,10 +38,14 @@ pub struct Publisher {
     pub is_audio_enabled: Arc<AtomicU8>,
     pub is_e2ee_enabled: Arc<AtomicU8>,
     pub streaming_protocol: StreamingProtocol,
-    pub track_event_sender: Option<mpsc::UnboundedSender<TrackSubscribedMessage>>,
-    pub track_event_receiver: Option<mpsc::UnboundedReceiver<TrackSubscribedMessage>>,
+    // pub track_event_sender: Option<mpsc::UnboundedSender<TrackSubscribedMessage>>,
+    // pub track_event_receiver: Option<mpsc::UnboundedReceiver<TrackSubscribedMessage>>,
     pub ice_candidate_callback: Option<IceCandidateCallback>,
     pub joined_callback: Option<JoinedCallback>,
+    // Map incoming mid -> kind, populated on MediaAdded
+    pub incoming_mid_kind: Arc<DashMap<Mid, MediaKind>>,
+    // Throttle keyframe requests per mid
+    pub last_kf_req: Arc<DashMap<Mid, Instant>>,
 }
 
 impl Publisher {
@@ -60,10 +63,10 @@ impl Publisher {
         // Create str0m RTC instance
         let rtc = Rtc::builder().build();
 
-        // let candidate = Candidate::host(addr, "udp").expect("a host candidate");
-        // rtc.add_local_candidate(candidate).unwrap();
+        // let (track_event_sender, track_event_receiver) = mpsc::unbounded_channel();
 
-        let (track_event_sender, track_event_receiver) = mpsc::unbounded_channel();
+        // Create event channel for runtime -> publisher
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
 
         let publisher = Arc::new(Self {
             participant_id,
@@ -77,37 +80,57 @@ impl Publisher {
             is_audio_enabled: Arc::new(AtomicU8::new(if is_audio_enabled { 1 } else { 0 })),
             is_e2ee_enabled: Arc::new(AtomicU8::new(if is_e2ee_enabled { 1 } else { 0 })),
             streaming_protocol,
-            track_event_sender: Some(track_event_sender),
-            track_event_receiver: Some(track_event_receiver),
+            // track_event_sender: Some(track_event_sender),
+            // track_event_receiver: Some(track_event_receiver),
             ice_candidate_callback: Some(ice_candidate_callback),
             joined_callback: Some(joined_callback),
+            incoming_mid_kind: Arc::new(DashMap::new()),
+            last_kf_req: Arc::new(DashMap::new()),
         });
 
-        // Start the RTC event loop
+        // Register with global UDP runtime
+        let runtime = RtcUdpRuntime::global();
+        runtime
+            .register_rtc(
+                format!("pub:{}:{}", publisher.participant_id, publisher.room_id),
+                Arc::clone(&publisher.rtc),
+                event_tx,
+            )
+            .ok();
+
+        // Announce host candidate to the client via callback
+        if let (Some(cb), Some(host)) = (
+            publisher.ice_candidate_callback.as_ref(),
+            RtcUdpRuntime::global().host_candidate(),
+        ) {
+            let ice = crate::utils::ice_utils::IceUtils::convert_from_str0m_candidate(
+                &host,
+                Some("0".to_string()),
+                Some(0),
+            );
+            (cb)(ice).await;
+        }
+
+        // Start the RTC event loop (events from runtime)
         let publisher_clone = Arc::clone(&publisher);
         tokio::spawn(async move {
-            publisher_clone.run_rtc_loop().await;
+            publisher_clone.run_event_loop(event_rx).await;
         });
 
         Ok(publisher)
     }
 
     pub fn handle_offer(&self, offer_sdp: String) -> Result<String, RtcError> {
-        info!("handle_offer: {}", offer_sdp.len());
         let mut rtc = self.rtc.write();
 
         // Parse and set remote offer
         let offer: str0m::change::SdpOffer =
             SdpOffer::from_sdp_string(&offer_sdp).map_err(|_| RtcError::FailedToSetSdp)?;
 
-        info!("parsed offer");
-
         let answer = rtc
             .sdp_api()
             .accept_offer(offer)
             .map_err(|e| RtcError::Str0mError(e))?;
-
-        info!("accepted offer");
 
         // Convert answer to SDP string
         let answer_sdp = answer.to_sdp_string();
@@ -183,43 +206,12 @@ impl Publisher {
         self.tracks.clear();
     }
 
-    async fn run_rtc_loop(&self) {
-        let mut last_timeout = Instant::now();
-
-        loop {
+    async fn run_event_loop(self: Arc<Self>, mut rx: UnboundedReceiver<Event>) {
+        while let Some(event) = rx.recv().await {
+            self.handle_rtc_event(event).await;
             if self.cancel_token.is_cancelled() {
                 break;
             }
-
-            let output = {
-                let mut rtc = self.rtc.write();
-                rtc.poll_output()
-            };
-
-            match output {
-                Ok(Output::Timeout(timeout)) => {
-                    let now = Instant::now();
-                    if now >= timeout {
-                        last_timeout = now;
-                        let mut rtc = self.rtc.write();
-                        let _ = rtc.handle_input(Input::Timeout(now));
-                    }
-                }
-                Ok(Output::Transmit(transmit)) => {
-                    // TODO: Send data to network
-                    tracing::debug!("Need to transmit data: {:?}", transmit.destination);
-                }
-                Ok(Output::Event(event)) => {
-                    self.handle_rtc_event(event).await;
-                }
-                Err(e) => {
-                    tracing::error!("RTC error: {:?}", e);
-                    break;
-                }
-            }
-
-            // Small delay to prevent busy loop
-            tokio::time::sleep(Duration::from_millis(1)).await;
         }
     }
 
@@ -240,9 +232,14 @@ impl Publisher {
 
             Event::MediaAdded(media) => {
                 tracing::info!("Media added: {:?}", media);
+                // Track kind for incoming mid
+                self.incoming_mid_kind.insert(media.mid, media.kind);
                 // TODO: Create track and notify subscribers
             }
             Event::MediaData(data) => {
+                // Ask for keyframe if stream is not contiguous (helps new subscribers)
+                self.request_keyframe_throttled(&data);
+
                 // Forward media data to subscribers
                 self.forward_media_to_subscribers(data).await;
             }
@@ -256,12 +253,65 @@ impl Publisher {
         }
     }
 
-    async fn forward_media_to_subscribers(&self, _media_data: str0m::media::MediaData) {
-        // TODO: Implement media forwarding to subscribers
-        // This is where the publisher controls its subscribers
-        for subscriber_entry in self.subscribers.iter() {
-            let _subscriber = subscriber_entry.value();
-            // Forward media data to this subscriber
+    async fn forward_media_to_subscribers(&self, media_data: MediaData) {
+        // For each subscriber, write the incoming media into its corresponding send-only mid
+        for entry in self.subscribers.iter() {
+            let subscriber = entry.value();
+
+            let Some(kind) = self
+                .incoming_mid_kind
+                .get(&media_data.mid)
+                .map(|v| *v.value())
+            else {
+                continue;
+            };
+
+            let Some(mid_out) = subscriber.get_send_mid(kind) else {
+                continue;
+            };
+            let mut rtc = subscriber.rtc.write();
+            if let Some(writer) = rtc.writer(mid_out) {
+                if let Some(pt) = writer.match_params(media_data.params) {
+                    // Errors will disconnect the subscriber's rtc; we just log and continue
+                    if let Err(e) = writer.write(
+                        pt,
+                        media_data.network_time,
+                        media_data.time,
+                        media_data.data.clone(),
+                    ) {
+                        tracing::warn!(
+                            "Forward write failed for subscriber {}: {:?}",
+                            subscriber.participant_id,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn request_keyframe_throttled(&self, data: &MediaData) {
+        if data.contiguous {
+            return;
+        }
+        let Some(kind) = self.incoming_mid_kind.get(&data.mid).map(|v| *v.value()) else {
+            return;
+        };
+        if kind != MediaKind::Video {
+            return;
+        }
+
+        let now = Instant::now();
+        if let Some(last) = self.last_kf_req.get(&data.mid) {
+            if now.duration_since(*last.value()) < Duration::from_secs(1) {
+                return;
+            }
+        }
+        self.last_kf_req.insert(data.mid, now);
+
+        let mut rtc = self.rtc.write();
+        if let Some(mut writer) = rtc.writer(data.mid) {
+            let _ = writer.request_keyframe(data.rid, KeyframeRequestKind::Fir);
         }
     }
 }

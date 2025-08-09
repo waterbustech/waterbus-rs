@@ -22,16 +22,16 @@ pub struct Room {
     pub room_id: String,
     publishers: Arc<DashMap<String, Arc<Publisher>>>,
     subscribers: Arc<DashMap<String, Arc<Subscriber>>>,
-    configs: RtcManagerConfigs,
+    config: RtcManagerConfigs,
 }
 
 impl Room {
-    pub fn new(room_id: String, configs: RtcManagerConfigs) -> Self {
+    pub fn new(room_id: String, config: RtcManagerConfigs) -> Self {
         Self {
             room_id,
             publishers: Arc::new(DashMap::new()),
             subscribers: Arc::new(DashMap::new()),
-            configs,
+            config,
         }
     }
 
@@ -121,7 +121,7 @@ impl Room {
         self.subscribers.insert(subscriber_key, subscriber.clone());
 
         // Create offer for the subscriber
-        let offer_sdp = subscriber.create_offer().await?;
+        let offer_sdp = subscriber.create_offer()?;
 
         Ok(SubscribeResponse {
             sdp: offer_sdp.clone(),
@@ -132,7 +132,7 @@ impl Room {
             is_screen_sharing: false,        // TODO: Get from publisher state
             is_hand_raising: false,          // TODO: Get from publisher state
             is_e2ee_enabled: false,          // TODO: Get from publisher state
-            video_codec: "VP8".to_string(),  // TODO: Get from publisher
+            video_codec: "H264".to_string(),  // TODO: Get from publisher
             screen_track_id: "".to_string(), // TODO: Get from publisher if screen sharing
         })
     }
@@ -164,10 +164,10 @@ impl Room {
 
         info!("str0m_candidate: {:?}", str0m_candidate);
 
-        // Add candidate to publisher's RTC instance
+        // Add remote (peer) candidate to publisher's RTC instance
         {
             let mut rtc = publisher.rtc.write();
-            rtc.add_local_candidate(str0m_candidate);
+            rtc.add_remote_candidate(str0m_candidate);
         }
 
         Ok(())
@@ -188,10 +188,10 @@ impl Room {
         // Convert IceCandidate to str0m Candidate
         let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate)?;
 
-        // Add candidate to subscriber's RTC instance
+        // Add remote (peer) candidate to subscriber's RTC instance
         {
             let mut rtc = subscriber.rtc.write();
-            rtc.add_local_candidate(str0m_candidate);
+            rtc.add_remote_candidate(str0m_candidate);
         }
 
         Ok(())
@@ -204,13 +204,15 @@ impl Room {
         sdp: String,
     ) -> Result<(), RtcError> {
         let subscriber_key = format!("{}_{}", target_id, participant_id);
-        let _subscriber = self
+        let subscriber = self
             .subscribers
             .get(&subscriber_key)
             .ok_or(RtcError::SubscriberNotFound)?;
 
         // TODO: Handle SDP answer from subscriber
         tracing::debug!("Setting SDP for subscriber {}: {}", subscriber_key, sdp);
+
+        subscriber.handle_answer(sdp)?;
 
         Ok(())
     }

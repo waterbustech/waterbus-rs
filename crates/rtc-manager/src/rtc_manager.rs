@@ -3,6 +3,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
+use crate::utils::udp_runtime::RtcUdpRuntime;
 use crate::{
     entities::room::Room,
     errors::RtcError,
@@ -10,8 +11,8 @@ use crate::{
         connection_type::ConnectionType,
         params::{
             IceCandidate, IceCandidateCallback, JoinRoomParams, JoinRoomResponse, JoinedCallback,
-            RenegotiationCallback, SubscribeHlsLiveStreamParams, SubscribeHlsLiveStreamResponse,
-            SubscribeParams, SubscribeResponse, WClient, RtcManagerConfigs,
+            RenegotiationCallback, RtcManagerConfigs, SubscribeHlsLiveStreamParams,
+            SubscribeHlsLiveStreamResponse, SubscribeParams, SubscribeResponse, WClient,
         },
     },
 };
@@ -41,6 +42,9 @@ pub struct RtcManager {
 
 impl RtcManager {
     pub fn new(configs: RtcManagerConfigs) -> Self {
+        // Initialize global UDP runtime once
+        let _ = RtcUdpRuntime::init(configs.clone());
+
         Self {
             rooms: Arc::new(DashMap::new()),
             clients: Arc::new(DashMap::new()),
@@ -48,10 +52,7 @@ impl RtcManager {
         }
     }
 
-    pub async fn join_room(
-        &self,
-        req: JoinRoomReq,
-    ) -> Result<Option<JoinRoomResponse>, RtcError> {
+    pub async fn join_room(&self, req: JoinRoomReq) -> Result<Option<JoinRoomResponse>, RtcError> {
         let client_id = &req.client_id;
         let room_id = &req.room_id;
         let participant_id = &req.participant_id;
