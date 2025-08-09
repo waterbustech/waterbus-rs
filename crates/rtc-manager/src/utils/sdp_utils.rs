@@ -1,15 +1,71 @@
+use serde_json::Value;
+
 use crate::errors::RtcError;
 
 pub struct SdpUtils;
 
 impl SdpUtils {
+    /// Normalize an incoming SDP string that might be:
+    /// - Raw SDP (v=0 ... with m= lines)
+    /// - JSON-wrapped {"type":"offer|answer","sdp":"..."}
+    /// - A JSON string literal containing the SDP with escapes
+    /// - With literal escape sequences ("\r\n", "\n") instead of real newlines
+    pub fn normalize_offer_sdp(input: &str) -> Result<String, RtcError> {
+        let mut s = input.trim().to_string();
+
+        // If it's a JSON string literal, decode it to a normal Rust string
+        if let Ok(decoded_literal) = serde_json::from_str::<String>(&s) {
+            s = decoded_literal;
+        }
+
+        // Unwrap surrounding quotes if still present
+        if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+            s = s[1..s.len() - 1].to_string();
+        }
+
+        // Replace common escaped sequences with real characters
+        s = Self::unescape_common_escapes(&s);
+
+        // Fast path: looks like SDP and has m-lines
+        if (s.contains("v=") && (s.contains("\nm=") || s.contains("\r\nm="))) || s.starts_with("v=") {
+            return Ok(s);
+        }
+
+        // JSON-wrapped RTCSessionDescriptionInit?
+        if s.starts_with('{') {
+            if let Ok(v) = serde_json::from_str::<Value>(&s) {
+                if let Some(sdp) = v.get("sdp").and_then(|v| v.as_str()) {
+                    let ss = Self::unescape_common_escapes(sdp);
+                    return Ok(ss);
+                }
+            }
+        }
+
+        // As a last attempt: try full SdpOffer JSON (str0m serialized format)
+        if let Ok(offer) = serde_json::from_str::<str0m::change::SdpOffer>(&s) {
+            return Ok(offer.to_sdp_string());
+        }
+
+        Err(RtcError::InvalidSdp)
+    }
+
+    fn unescape_common_escapes(s: &str) -> String {
+        // Turn "\r\n" and "\n" into actual newlines and collapse Windows/Unix newlines uniformly
+        let s = s.replace("\\r\\n", "\r\n");
+        let s = s.replace("\\n", "\n");
+        let s = s.replace("\\r", "\r");
+        // Some encoders escape forward slashes
+        let s = s.replace("\\/", "/");
+        s
+    }
+
     /// Parse SDP string and extract basic information
     pub fn parse_sdp_info(sdp: &str) -> Result<SdpInfo, RtcError> {
         let mut info = SdpInfo::default();
-        
+
         for line in sdp.lines() {
             let line = line.trim();
-            
+
             if line.starts_with("v=") {
                 info.version = line[2..].parse().unwrap_or(0);
             } else if line.starts_with("o=") {
@@ -35,7 +91,7 @@ impl SdpUtils {
                     let media_type = parts[0].to_string();
                     let port: u16 = parts[1].parse().unwrap_or(0);
                     let protocol = parts[2].to_string();
-                    
+
                     info.media_descriptions.push(MediaDescription {
                         media_type,
                         port,
@@ -51,7 +107,7 @@ impl SdpUtils {
                 info.fingerprint = Some(line[14..].to_string());
             }
         }
-        
+
         Ok(info)
     }
 
@@ -65,7 +121,7 @@ impl SdpUtils {
         let has_version = sdp.contains("v=");
         let has_origin = sdp.contains("o=");
         let has_session = sdp.contains("s=");
-        
+
         if !has_version || !has_origin || !has_session {
             return Err(RtcError::InvalidSdp);
         }
@@ -76,21 +132,21 @@ impl SdpUtils {
     /// Extract ICE candidates from SDP
     pub fn extract_ice_candidates(sdp: &str) -> Vec<String> {
         let mut candidates = Vec::new();
-        
+
         for line in sdp.lines() {
             let line = line.trim();
             if line.starts_with("a=candidate:") {
                 candidates.push(line[12..].to_string());
             }
         }
-        
+
         candidates
     }
 
     /// Extract media types from SDP
     pub fn extract_media_types(sdp: &str) -> Vec<String> {
         let mut media_types = Vec::new();
-        
+
         for line in sdp.lines() {
             let line = line.trim();
             if line.starts_with("m=") {
@@ -100,7 +156,7 @@ impl SdpUtils {
                 }
             }
         }
-        
+
         media_types
     }
 
@@ -119,10 +175,10 @@ impl SdpUtils {
         let mut modified_lines = Vec::new();
         let mut skip_video_attributes = false;
         let mut skip_audio_attributes = false;
-        
+
         for line in sdp.lines() {
             let line = line.trim();
-            
+
             if line.starts_with("m=video") {
                 if enable_video {
                     modified_lines.push(line.to_string());
@@ -164,7 +220,7 @@ impl SdpUtils {
                 modified_lines.push(line.to_string());
             }
         }
-        
+
         modified_lines.join("\r\n")
     }
 }

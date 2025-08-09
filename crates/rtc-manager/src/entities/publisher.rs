@@ -127,11 +127,12 @@ impl Publisher {
     pub fn handle_offer(&self, offer_sdp: String) -> Result<String, RtcError> {
         let mut rtc = self.rtc.write();
 
-        // Parse and set remote offer (support both raw SDP and JSON-wrapped SDP)
-        let offer: str0m::change::SdpOffer = match SdpOffer::from_sdp_string(&offer_sdp) {
-            Ok(o) => o,
-            Err(_) => serde_json::from_str(&offer_sdp).map_err(|_| RtcError::FailedToSetSdp)?,
-        };
+        // Normalize to raw SDP string with m-lines
+        let raw = crate::utils::sdp_utils::SdpUtils::normalize_offer_sdp(&offer_sdp)?;
+
+        // Parse and set remote offer
+        let offer: str0m::change::SdpOffer =
+            SdpOffer::from_sdp_string(&raw).map_err(|_| RtcError::FailedToSetSdp)?;
 
         let answer = rtc
             .sdp_api()

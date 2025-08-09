@@ -119,9 +119,12 @@ impl Subscriber {
     pub async fn handle_offer(&self, offer_sdp: String) -> Result<String, RtcError> {
         let mut rtc = self.rtc.write();
 
+        // Normalize input to raw SDP
+        let raw = crate::utils::sdp_utils::SdpUtils::normalize_offer_sdp(&offer_sdp)?;
+
         // Parse and set remote offer
         let offer: str0m::change::SdpOffer =
-            serde_json::from_str(&offer_sdp).map_err(|e| RtcError::JsonError(e))?;
+            str0m::change::SdpOffer::from_sdp_string(&raw).map_err(|_| RtcError::FailedToSetSdp)?;
 
         let answer = rtc
             .sdp_api()
@@ -129,7 +132,7 @@ impl Subscriber {
             .map_err(|e| RtcError::Str0mError(e))?;
 
         // Convert answer to SDP string
-        let answer_sdp = serde_json::to_string(&answer).map_err(|e| RtcError::JsonError(e))?;
+        let answer_sdp = answer.to_sdp_string();
 
         Ok(answer_sdp)
     }
