@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use std::sync::mpsc::{self};
 use systemstat::{Platform, System};
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use str0m::net::Receive;
@@ -20,7 +20,7 @@ use crate::models::rtc_dto::RtcManagerConfig;
 pub struct RtcRegistration {
     pub id: String,
     pub rtc: Arc<RwLock<Rtc>>,
-    pub event_tx: mpsc::UnboundedSender<Event>,
+    pub event_tx: mpsc::SyncSender<Event>,
 }
 
 pub struct RtcUdpRuntime {
@@ -89,7 +89,7 @@ impl RtcUdpRuntime {
         &self,
         id: String,
         rtc: Arc<RwLock<Rtc>>,
-        event_tx: mpsc::UnboundedSender<Event>,
+        event_tx: mpsc::SyncSender<Event>,
     ) -> Result<(), RtcError> {
         // Add a host candidate that matches the runtime socket
         let addr = self

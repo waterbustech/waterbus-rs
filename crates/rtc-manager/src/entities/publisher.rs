@@ -1,17 +1,20 @@
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc,
-};
 use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
+    thread,
+};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use std::sync::mpsc::{self, Receiver};
 use str0m::{
     change::SdpOffer,
-    media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid},
+    media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid, Rid},
     Event, IceConnectionState, Rtc,
 };
-use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -67,10 +70,8 @@ impl Publisher {
         // Create str0m RTC instance
         let rtc = Rtc::builder().build();
 
-        // let (track_event_sender, track_event_receiver) = mpsc::unbounded_channel();
-
         // Create event channel for runtime -> publisher
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::sync_channel(1);
 
         let publisher = Arc::new(Self {
             participant_id,
@@ -116,10 +117,8 @@ impl Publisher {
 
         // Start the RTC event loop (events from runtime)
         let publisher_clone = Arc::clone(&publisher);
-        tokio::spawn(async move {
-            publisher_clone
-                .run_event_loop(event_rx, joined_handler)
-                .await;
+        thread::spawn(move || {
+            publisher_clone.run_event_loop(event_rx, joined_handler);
         });
 
         Ok(publisher)
@@ -211,19 +210,19 @@ impl Publisher {
         self.tracks.clear();
     }
 
-    async fn run_event_loop<J>(self: Arc<Self>, mut rx: UnboundedReceiver<Event>, joined_handler: J)
+    fn run_event_loop<J>(self: Arc<Self>, rx: Receiver<Event>, joined_handler: J)
     where
         J: JoinedHandler + Clone,
     {
-        while let Some(event) = rx.recv().await {
-            self.handle_rtc_event(event, joined_handler.clone()).await;
+        while let Ok(event) = rx.recv() {
+            self.handle_rtc_event(event, joined_handler.clone());
             if self.cancel_token.is_cancelled() {
                 break;
             }
         }
     }
 
-    async fn handle_rtc_event<J>(&self, event: Event, joined_handler: J)
+    fn handle_rtc_event<J>(&self, event: Event, joined_handler: J)
     where
         J: JoinedHandler,
     {
@@ -250,7 +249,7 @@ impl Publisher {
                 self.request_keyframe_throttled(&data);
 
                 // Forward media data to subscribers
-                self.forward_media_to_subscribers(data).await;
+                self.forward_media_to_subscribers(data);
             }
             Event::RtpPacket(packet) => {
                 // Forward RTP packet to subscribers
@@ -262,7 +261,11 @@ impl Publisher {
         }
     }
 
-    async fn forward_media_to_subscribers(&self, media_data: MediaData) {
+    fn forward_media_to_subscribers(&self, media_data: MediaData) {
+        if media_data.rid.is_some() && media_data.rid != Some(Rid::from("h")) {
+            return;
+        }
+
         // For each subscriber, write the incoming media into its corresponding send-only mid
         for entry in self.subscribers.iter() {
             let subscriber = entry.value();

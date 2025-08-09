@@ -1,16 +1,19 @@
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
+    thread,
 };
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use std::sync::mpsc::{self, Receiver};
 use str0m::{
     change::{SdpAnswer, SdpPendingOffer},
     media::{Direction, MediaKind, Mid},
     Event, IceConnectionState, Rtc,
 };
-use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -66,7 +69,7 @@ impl Subscriber {
         let rtc = Rtc::builder().build();
 
         // Create event channel for runtime -> subscriber
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::sync_channel(1);
 
         let subscriber = Arc::new(Self {
             participant_id,
@@ -93,10 +96,9 @@ impl Subscriber {
             .ok();
 
         // Announce host candidate to the client via callback
-        if let (Some(cb), Some(host)) = (
-            Some(ice_handler),
-            RtcUdpRuntime::global().host_candidate(),
-        ) {
+        if let (Some(cb), Some(host)) =
+            (Some(ice_handler), RtcUdpRuntime::global().host_candidate())
+        {
             let ice = crate::utils::ice_utils::IceUtils::convert_from_str0m_candidate(
                 &host,
                 Some("0".to_string()),
@@ -107,8 +109,8 @@ impl Subscriber {
 
         // Start the RTC event loop
         let subscriber_clone = Arc::clone(&subscriber);
-        tokio::spawn(async move {
-            subscriber_clone.run_event_loop(event_rx).await;
+        thread::spawn(move || {
+            subscriber_clone.run_event_loop(event_rx);
         });
 
         Ok(subscriber)
@@ -220,16 +222,16 @@ impl Subscriber {
         self.tracks.clear();
     }
 
-    async fn run_event_loop(self: Arc<Self>, mut rx: UnboundedReceiver<Event>) {
-        while let Some(event) = rx.recv().await {
-            self.handle_rtc_event(event).await;
+    fn run_event_loop(self: Arc<Self>, rx: Receiver<Event>) {
+        while let Ok(event) = rx.recv() {
+            self.handle_rtc_event(event);
             if self.cancel_token.is_cancelled() {
                 break;
             }
         }
     }
 
-    async fn handle_rtc_event(&self, event: Event) {
+    fn handle_rtc_event(&self, event: Event) {
         match event {
             Event::Connected => {
                 tracing::info!(
@@ -268,7 +270,7 @@ impl Subscriber {
         }
     }
 
-    pub async fn receive_media_data(&self, _data: &[u8]) -> Result<(), RtcError> {
+    pub fn receive_media_data(&self, _data: &[u8]) -> Result<(), RtcError> {
         // TODO: Process incoming media data from publisher
         // This is where the subscriber receives data controlled by the publisher
         Ok(())

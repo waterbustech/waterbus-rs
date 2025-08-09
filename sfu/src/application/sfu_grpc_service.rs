@@ -57,6 +57,7 @@ impl SfuService for SfuGrpcService {
         let ice_handler = GrpcPublisherIceHandler {
             dispatcher: Arc::clone(&self.dispatcher_grpc_client),
             client_id: req.client_id.clone(),
+            tokio_handle: tokio::runtime::Handle::current(),
         };
 
         let joined_handler = GrpcJoinedHandler {
@@ -65,6 +66,7 @@ impl SfuService for SfuGrpcService {
             room_id: req.room_id.clone(),
             client_id: req.client_id.clone(),
             node_id: self.node_id.clone(),
+            tokio_handle: tokio::runtime::Handle::current(),
         };
 
         let rtc_manager = self.rtc_manager.clone();
@@ -115,12 +117,14 @@ impl SfuService for SfuGrpcService {
             dispatcher: Arc::clone(&self.dispatcher_grpc_client),
             client_id: req.client_id.clone(),
             target_id: req.target_id.clone(),
+            tokio_handle: tokio::runtime::Handle::current(),
         };
 
         let renegotiation_handler = GrpcRenegotiationHandler {
             dispatcher: Arc::clone(&self.dispatcher_grpc_client),
             client_id: req.client_id.clone(),
             target_id: req.target_id.clone(),
+            tokio_handle: tokio::runtime::Handle::current(),
         };
 
         let rtc_manager = self.rtc_manager.clone();
@@ -434,6 +438,7 @@ impl SfuService for SfuGrpcService {
 pub struct GrpcPublisherIceHandler {
     pub dispatcher: Arc<Mutex<DispatcherGrpcClient>>,
     pub client_id: String,
+    pub tokio_handle: tokio::runtime::Handle,
 }
 
 impl IceCandidateHandler for GrpcPublisherIceHandler {
@@ -441,7 +446,7 @@ impl IceCandidateHandler for GrpcPublisherIceHandler {
         let dispatcher = Arc::clone(&self.dispatcher);
         let client_id = self.client_id.clone();
 
-        tokio::spawn(async move {
+        self.tokio_handle.spawn(async move {
             let dispatcher = dispatcher.lock().await;
 
             let _ = dispatcher
@@ -463,6 +468,7 @@ pub struct GrpcSubscriberIceHandler {
     pub dispatcher: Arc<Mutex<DispatcherGrpcClient>>,
     pub client_id: String,
     pub target_id: String,
+    pub tokio_handle: tokio::runtime::Handle,
 }
 
 impl IceCandidateHandler for GrpcSubscriberIceHandler {
@@ -470,7 +476,8 @@ impl IceCandidateHandler for GrpcSubscriberIceHandler {
         let dispatcher = Arc::clone(&self.dispatcher);
         let client_id = self.client_id.clone();
         let target_id = self.target_id.clone();
-        tokio::spawn(async move {
+
+        self.tokio_handle.spawn(async move {
             let dispatcher = dispatcher.lock().await;
 
             let _ = dispatcher
@@ -495,6 +502,7 @@ pub struct GrpcJoinedHandler {
     pub room_id: String,
     pub client_id: String,
     pub node_id: String,
+    pub tokio_handle: tokio::runtime::Handle,
 }
 
 impl JoinedHandler for GrpcJoinedHandler {
@@ -505,9 +513,8 @@ impl JoinedHandler for GrpcJoinedHandler {
         let client_id = self.client_id.clone();
         let node_id = self.node_id.clone();
 
-        tokio::spawn(async move {
+        self.tokio_handle.spawn(async move {
             let dispatcher = dispatcher.lock().await;
-
             let _ = dispatcher
                 .new_user_joined(NewUserJoinedRequest {
                     participant_id,
@@ -526,6 +533,7 @@ pub struct GrpcRenegotiationHandler {
     pub dispatcher: Arc<Mutex<DispatcherGrpcClient>>,
     pub client_id: String,
     pub target_id: String,
+    pub tokio_handle: tokio::runtime::Handle,
 }
 
 impl RenegotiationHandler for GrpcRenegotiationHandler {
@@ -534,7 +542,7 @@ impl RenegotiationHandler for GrpcRenegotiationHandler {
         let client_id = self.client_id.clone();
         let target_id = self.target_id.clone();
 
-        tokio::spawn(async move {
+        self.tokio_handle.spawn(async move {
             let dispatcher = dispatcher.lock().await;
             let _ = dispatcher
                 .subscriber_renegotiate(SubscriberRenegotiateRequest {

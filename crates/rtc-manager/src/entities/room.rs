@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use str0m::{net::Protocol, Candidate};
-use tracing::info;
 
 use crate::{
     entities::{publisher::Publisher, subscriber::Subscriber},
@@ -43,8 +42,6 @@ impl Room {
     {
         let participant_id = params.participant_id.clone();
 
-        info!("participant joining {}", participant_id.clone());
-
         // Create publisher
         let publisher = Publisher::new(
             participant_id.clone(),
@@ -58,24 +55,15 @@ impl Room {
             params.joined_handler,
         )?;
 
-        info!("publisher created");
-
         // Add publisher to room
         self.publishers
             .insert(participant_id.clone(), publisher.clone());
 
-        info!("publisher added to room");
-
-        info!("connection type: {:?}", params.connection_type);
-
         // Handle SDP based on connection type
         match params.connection_type {
             ConnectionType::SFU => {
-                info!("handle_offer: {}", params.sdp.len());
                 // For SFU mode, handle the offer and create an answer
                 let answer_sdp = publisher.handle_offer(params.sdp)?;
-
-                info!("answer_sdp: {}", answer_sdp.len());
 
                 Ok(Some(JoinRoomResponse {
                     sdp: answer_sdp,
@@ -160,12 +148,8 @@ impl Room {
             .get(participant_id)
             .ok_or(RtcError::PublisherNotFound)?;
 
-        info!("add_publisher_candidate: {}", participant_id);
-
         // Convert IceCandidate to str0m Candidate
         let str0m_candidate = self.convert_ice_candidate_to_str0m(candidate)?;
-
-        info!("str0m_candidate: {:?}", str0m_candidate);
 
         // Add remote (peer) candidate to publisher's RTC instance
         {
