@@ -66,14 +66,26 @@ impl Subscriber {
         R: RenegotiationHandler,
     {
         // Create str0m RTC instance
-        let rtc = Rtc::builder().build();
+        let mut rtc = Rtc::builder().build();
+        
+        // Bind UDP socket for this subscriber
+        let host_addr = crate::utils::udp_runtime::select_host_address();
+        let socket = std::net::UdpSocket::bind(format!("{host_addr}:0"))
+            .map_err(|_| RtcError::FailedToCreateOffer)?;
+        let local_addr = socket.local_addr()
+            .map_err(|_| RtcError::FailedToCreateOffer)?;
+        
+        // Add local candidate to RTC instance
+        let candidate = str0m::Candidate::host(local_addr, str0m::net::Protocol::Udp)
+            .map_err(|_| RtcError::InvalidIceCandidate)?;
+        rtc.add_local_candidate(candidate);
 
-        // Create event channel for runtime -> subscriber
+        // Create event channel
         let (event_tx, event_rx) = mpsc::sync_channel(1);
 
         let subscriber = Arc::new(Self {
-            participant_id,
-            target_id,
+            participant_id: participant_id.clone(),
+            target_id: target_id.clone(),
             rtc: Arc::new(RwLock::new(rtc)),
             cancel_token: CancellationToken::new(),
             preferred_quality: Arc::new(AtomicU8::new(TrackQuality::Medium.as_u8())),
@@ -85,29 +97,25 @@ impl Subscriber {
             pending: Arc::new(RwLock::new(None)),
         });
 
-        // Register with global UDP runtime
-        let runtime = RtcUdpRuntime::global();
-        runtime
-            .register_rtc(
-                format!("sub:{}:{}", subscriber.participant_id, subscriber.target_id),
-                Arc::clone(&subscriber.rtc),
-                event_tx,
-            )
-            .ok();
+        // Start UDP run loop
+        let subscriber_clone = Arc::clone(&subscriber);
+        let socket_clone = socket.try_clone()
+            .map_err(|_| RtcError::FailedToCreateOffer)?;
+        thread::spawn(move || {
+            subscriber_clone.run_udp_loop(socket_clone, event_tx);
+        });
 
-        // Announce host candidate to the client via callback
-        if let (Some(cb), Some(host)) =
-            (Some(ice_handler), RtcUdpRuntime::global().host_candidate())
-        {
+        // Announce local candidate
+        if let Some(cb) = Some(ice_handler) {
             let ice = crate::utils::ice_utils::IceUtils::convert_from_str0m_candidate(
-                &host,
+                &candidate,
                 Some("0".to_string()),
                 Some(0),
             );
             cb.handle_candidate(ice);
         }
 
-        // Start the RTC event loop
+        // Start event loop
         let subscriber_clone = Arc::clone(&subscriber);
         thread::spawn(move || {
             subscriber_clone.run_event_loop(event_rx);

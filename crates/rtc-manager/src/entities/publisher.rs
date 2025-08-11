@@ -68,14 +68,26 @@ impl Publisher {
         J: JoinedHandler + Clone,
     {
         // Create str0m RTC instance
-        let rtc = Rtc::builder().build();
+        let mut rtc = Rtc::builder().build();
+        
+        // Bind UDP socket for this publisher
+        let host_addr = crate::utils::udp_runtime::select_host_address();
+        let socket = std::net::UdpSocket::bind(format!("{host_addr}:0"))
+            .map_err(|_| RtcError::FailedToCreateOffer)?;
+        let local_addr = socket.local_addr()
+            .map_err(|_| RtcError::FailedToCreateOffer)?;
+        
+        // Add local candidate to RTC instance
+        let candidate = str0m::Candidate::host(local_addr, str0m::net::Protocol::Udp)
+            .map_err(|_| RtcError::InvalidIceCandidate)?;
+        rtc.add_local_candidate(candidate);
 
-        // Create event channel for runtime -> publisher
+        // Create event channel for UDP loop -> publisher
         let (event_tx, event_rx) = mpsc::sync_channel(1);
 
         let publisher = Arc::new(Self {
-            participant_id,
-            room_id,
+            participant_id: participant_id.clone(),
+            room_id: room_id.clone(),
             rtc: Arc::new(RwLock::new(rtc)),
             connection_type: AtomicU8::new(connection_type.into()),
             cancel_token: CancellationToken::new(),
@@ -93,29 +105,25 @@ impl Publisher {
             last_kf_req: Arc::new(DashMap::new()),
         });
 
-        // Register with global UDP runtime
-        let runtime = RtcUdpRuntime::global();
-        runtime
-            .register_rtc(
-                format!("pub:{}:{}", publisher.participant_id, publisher.room_id),
-                Arc::clone(&publisher.rtc),
-                event_tx,
-            )
-            .ok();
+        // Start UDP run loop for this publisher
+        let publisher_clone = Arc::clone(&publisher);
+        let socket_clone = socket.try_clone()
+            .map_err(|_| RtcError::FailedToCreateOffer)?;
+        thread::spawn(move || {
+            publisher_clone.run_udp_loop(socket_clone, event_tx);
+        });
 
-        // Announce host candidate to the client via callback
-        if let (Some(cb), Some(host)) =
-            (Some(ice_handler), RtcUdpRuntime::global().host_candidate())
-        {
+        // Announce local candidate via ICE handler
+        if let Some(cb) = Some(ice_handler) {
             let ice = crate::utils::ice_utils::IceUtils::convert_from_str0m_candidate(
-                &host,
+                &candidate,
                 Some("0".to_string()),
                 Some(0),
             );
             cb.handle_candidate(ice);
         }
 
-        // Start the RTC event loop (events from runtime)
+        // Start event loop
         let publisher_clone = Arc::clone(&publisher);
         thread::spawn(move || {
             publisher_clone.run_event_loop(event_rx, joined_handler);
@@ -325,6 +333,62 @@ impl Publisher {
         let mut rtc = self.rtc.write();
         if let Some(mut writer) = rtc.writer(data.mid) {
             let _ = writer.request_keyframe(data.rid, KeyframeRequestKind::Fir);
+        }
+    }
+
+    fn run_udp_loop(&self, socket: std::net::UdpSocket, event_tx: mpsc::SyncSender<str0m::Event>) {
+        let mut buf = vec![0u8; 2000];
+        
+        loop {
+            if self.cancel_token.is_cancelled() {
+                break;
+            }
+
+            // Poll RTC output
+            let timeout = {
+                let mut rtc = self.rtc.write();
+                match rtc.poll_output() {
+                    Ok(str0m::Output::Timeout(t)) => t,
+                    Ok(str0m::Output::Transmit(transmit)) => {
+                        let _ = socket.send_to(&transmit.contents, transmit.destination);
+                        continue;
+                    }
+                    Ok(str0m::Output::Event(event)) => {
+                        let _ = event_tx.send(event);
+                        continue;
+                    }
+                    Err(_) => break,
+                }
+            };
+
+            // Set socket timeout
+            let duration = (timeout - std::time::Instant::now())
+                .max(std::time::Duration::from_millis(1));
+            let _ = socket.set_read_timeout(Some(duration));
+
+            // Read from socket
+            buf.resize(2000, 0);
+            if let Ok((n, source)) = socket.recv_from(&mut buf) {
+                buf.truncate(n);
+                if let Ok(contents) = buf.as_slice().try_into() {
+                    let input = str0m::Input::Receive(
+                        std::time::Instant::now(),
+                        str0m::net::Receive {
+                            proto: str0m::net::Protocol::Udp,
+                            source,
+                            destination: socket.local_addr().unwrap(),
+                            contents,
+                        },
+                    );
+                    
+                    let mut rtc = self.rtc.write();
+                    let _ = rtc.handle_input(input);
+                }
+            }
+
+            // Drive time forward
+            let mut rtc = self.rtc.write();
+            let _ = rtc.handle_input(str0m::Input::Timeout(std::time::Instant::now()));
         }
     }
 }
