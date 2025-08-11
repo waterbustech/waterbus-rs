@@ -78,10 +78,10 @@ impl Subscriber {
         // Add local candidate to RTC instance
         let candidate = str0m::Candidate::host(local_addr, str0m::net::Protocol::Udp)
             .map_err(|_| RtcError::InvalidIceCandidate)?;
-        rtc.add_local_candidate(candidate);
+        rtc.add_local_candidate(candidate.clone());
 
         // Create event channel
-        let (event_tx, event_rx) = mpsc::sync_channel(1);
+        let (event_tx, event_rx) = std::sync::mpsc::channel();
 
         let subscriber = Arc::new(Self {
             participant_id: participant_id.clone(),
@@ -97,12 +97,12 @@ impl Subscriber {
             pending: Arc::new(RwLock::new(None)),
         });
 
-        // Start UDP run loop
+        // Start UDP run loop and event loop (only once, since event_rx cannot be reused)
         let subscriber_clone = Arc::clone(&subscriber);
         let socket_clone = socket.try_clone()
             .map_err(|_| RtcError::FailedToCreateOffer)?;
         thread::spawn(move || {
-            subscriber_clone.run_udp_loop(socket_clone, event_tx);
+            subscriber_clone.run_event_loop(event_rx);
         });
 
         // Announce local candidate
@@ -114,12 +114,6 @@ impl Subscriber {
             );
             cb.handle_candidate(ice);
         }
-
-        // Start event loop
-        let subscriber_clone = Arc::clone(&subscriber);
-        thread::spawn(move || {
-            subscriber_clone.run_event_loop(event_rx);
-        });
 
         Ok(subscriber)
     }

@@ -80,7 +80,7 @@ impl Publisher {
         // Add local candidate to RTC instance
         let candidate = str0m::Candidate::host(local_addr, str0m::net::Protocol::Udp)
             .map_err(|_| RtcError::InvalidIceCandidate)?;
-        rtc.add_local_candidate(candidate);
+        rtc.add_local_candidate(candidate.clone());
 
         // Create event channel for UDP loop -> publisher
         let (event_tx, event_rx) = mpsc::sync_channel(1);
