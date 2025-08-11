@@ -21,6 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 bytes = { workspace = true }
 once_cell = "1.19.0"
+base64 = "0.21"
 
 # Async utilities
 futures = { workspace = true }
